@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Zunkiree Search - Demo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 40px 20px;
+      }
+
+      .hero {
+        text-align: center;
+        margin-bottom: 32px;
+      }
+
+      .hero h1 {
+        color: #FFFFFF;
+        font-size: 48px;
+        font-weight: 600;
+        margin-bottom: 16px;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+
+      .hero p {
+        color: rgba(255,255,255,0.9);
+        font-size: 18px;
+        max-width: 500px;
+        margin: 0 auto;
+      }
+
+      #zunkiree-search {
+        width: 100%;
+        max-width: 640px;
+      }
+
+      .examples {
+        margin-top: 60px;
+        text-align: center;
+      }
+
+      .examples h2 {
+        color: rgba(255,255,255,0.9);
+        font-size: 14px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin-bottom: 16px;
+      }
+
+      .example-queries {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 12px;
+      }
+
+      .example-query {
+        padding: 8px 16px;
+        background: rgba(255,255,255,0.15);
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 20px;
+        color: #FFFFFF;
+        font-size: 14px;
+        cursor: pointer;
+        transition: all 150ms ease;
+      }
+
+      .example-query:hover {
+        background: rgba(255,255,255,0.25);
+        transform: translateY(-1px);
+      }
+
+      .footer {
+        position: fixed;
+        bottom: 20px;
+        left: 0;
+        right: 0;
+        text-align: center;
+        color: rgba(255,255,255,0.6);
+        font-size: 12px;
+      }
+
+      @media (max-width: 640px) {
+        .hero h1 {
+          font-size: 32px;
+        }
+
+        .hero p {
+          font-size: 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="hero">
+      <h1>Ask Anything</h1>
+      <p>Get instant answers powered by AI. Search naturally, like you're talking to a friend.</p>
+    </div>
+
+    <!-- Zunkiree Search Widget -->
+    <div id="zunkiree-search"></div>
+    <script
+      type="module"
+      src="/src/main.tsx"
+      data-site-id="test"
+      data-api-url="http://localhost:8000"
+      data-mode="hero"
+      data-border-radius="rounded"
+    ></script>
+
+    <div class="examples">
+      <h2>Try asking</h2>
+      <div class="example-queries">
+        <span class="example-query">What services do you offer?</span>
+        <span class="example-query">How much does it cost?</span>
+        <span class="example-query">How can I contact you?</span>
+        <span class="example-query">What are your hours?</span>
+      </div>
+    </div>
+
+    <div class="footer">
+      Zunkiree Search v2 - Search-First Design
+    </div>
+
+    <script>
+      // Make example queries clickable
+      document.querySelectorAll('.example-query').forEach(el => {
+        el.addEventListener('click', () => {
+          const input = document.querySelector('.zk-search-input');
+          if (input) {
+            input.value = el.textContent;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.focus();
+          }
+        });
+      });
+    </script>
+  </body>
+</html>

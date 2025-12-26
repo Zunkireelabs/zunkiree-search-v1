@@ -1,0 +1,35 @@
+# Environment (NEVER commit API keys!)
+.env
+.env.*
+*.env
+.venv
+venv/
+env/
+backend/.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Node
+node_modules/
+dist/
+.next/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Temp
+temp_ss/
+
+# Windows reserved names
+nul
+NUL

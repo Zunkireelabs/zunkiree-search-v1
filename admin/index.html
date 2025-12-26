@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zunkiree Admin</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f5f5f5;
+      min-height: 100vh;
+    }
+    .header {
+      background: #2563eb;
+      color: white;
+      padding: 20px 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .header h1 {
+      font-size: 1.5rem;
+    }
+    .header-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #22c55e;
+    }
+    .status-dot.offline {
+      background: #ef4444;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 40px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+      gap: 24px;
+    }
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .card h2 {
+      font-size: 1.1rem;
+      color: #333;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      color: #374151;
+      margin-bottom: 6px;
+    }
+    input, textarea, select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 14px;
+      transition: border-color 0.2s;
+    }
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: #2563eb;
+    }
+    textarea {
+      min-height: 100px;
+      resize: vertical;
+    }
+    button {
+      background: #2563eb;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: #1d4ed8;
+    }
+    button:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+    button.secondary {
+      background: #6b7280;
+    }
+    button.secondary:hover {
+      background: #4b5563;
+    }
+    .btn-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .alert {
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+    .alert.success {
+      background: #dcfce7;
+      color: #166534;
+    }
+    .alert.error {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .alert.info {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+    .customer-list {
+      list-style: none;
+    }
+    .customer-item {
+      padding: 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .customer-name {
+      font-weight: 500;
+    }
+    .customer-id {
+      font-size: 12px;
+      color: #6b7280;
+    }
+    .job-item {
+      padding: 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      margin-bottom: 8px;
+    }
+    .job-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .job-status {
+      font-size: 12px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+    .job-status.completed {
+      background: #dcfce7;
+      color: #166534;
+    }
+    .job-status.processing {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    .job-status.failed {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .job-status.pending {
+      background: #e5e7eb;
+      color: #374151;
+    }
+    .job-details {
+      font-size: 13px;
+      color: #6b7280;
+      margin-top: 8px;
+    }
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    .tab {
+      padding: 8px 16px;
+      border-radius: 8px;
+      background: #e5e7eb;
+      color: #374151;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .tab.active {
+      background: #2563eb;
+      color: white;
+    }
+    .hidden {
+      display: none !important;
+    }
+    .embed-code {
+      background: #1f2937;
+      color: #e5e7eb;
+      padding: 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: monospace;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .copy-btn {
+      margin-top: 10px;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Zunkiree Admin</h1>
+    <div class="header-status">
+      <div class="status-dot" id="apiStatus"></div>
+      <span id="apiStatusText">Checking...</span>
+    </div>
+  </div>
+
+  <div class="container">
+    <div id="alerts"></div>
+
+    <div class="grid">
+      <!-- Create Customer -->
+      <div class="card">
+        <h2>Create Customer</h2>
+        <form id="createCustomerForm">
+          <div class="form-group">
+            <label>Company Name</label>
+            <input type="text" id="customerName" placeholder="Acme Corp" required>
+          </div>
+          <div class="form-group">
+            <label>Site ID (lowercase, no spaces)</label>
+            <input type="text" id="siteId" placeholder="acme" pattern="[a-z0-9-]+" required>
+          </div>
+          <div class="form-group">
+            <label>Allowed Domains (comma separated)</label>
+            <input type="text" id="domains" placeholder="acme.com, www.acme.com" required>
+          </div>
+          <button type="submit">Create Customer</button>
+        </form>
+      </div>
+
+      <!-- Ingest Data -->
+      <div class="card">
+        <h2>Ingest Data</h2>
+        <div class="tabs">
+          <button class="tab active" onclick="showIngestTab('url')">URL</button>
+          <button class="tab" onclick="showIngestTab('text')">Text</button>
+        </div>
+
+        <form id="ingestUrlForm">
+          <div class="form-group">
+            <label>Customer Site ID</label>
+            <input type="text" id="ingestCustomerId" placeholder="acme" required>
+          </div>
+          <div class="form-group">
+            <label>URL to Crawl</label>
+            <input type="url" id="ingestUrl" placeholder="https://acme.com/about" required>
+          </div>
+          <div class="form-group">
+            <label>Max Pages</label>
+            <input type="number" id="maxPages" value="1" min="1" max="50">
+          </div>
+          <button type="submit">Ingest URL</button>
+        </form>
+
+        <form id="ingestTextForm" class="hidden">
+          <div class="form-group">
+            <label>Customer Site ID</label>
+            <input type="text" id="textCustomerId" placeholder="acme" required>
+          </div>
+          <div class="form-group">
+            <label>Title</label>
+            <input type="text" id="textTitle" placeholder="About Us" required>
+          </div>
+          <div class="form-group">
+            <label>Content</label>
+            <textarea id="textContent" placeholder="Enter your content here..." required></textarea>
+          </div>
+          <button type="submit">Ingest Text</button>
+        </form>
+      </div>
+
+      <!-- Widget Config -->
+      <div class="card">
+        <h2>Widget Configuration</h2>
+        <form id="configForm">
+          <div class="form-group">
+            <label>Customer Site ID</label>
+            <input type="text" id="configCustomerId" placeholder="acme" required>
+          </div>
+          <div class="form-group">
+            <label>Brand Name</label>
+            <input type="text" id="brandName" placeholder="Acme Corp">
+          </div>
+          <div class="form-group">
+            <label>Tone</label>
+            <select id="tone">
+              <option value="neutral">Neutral</option>
+              <option value="formal">Formal</option>
+              <option value="friendly">Friendly</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Primary Color</label>
+            <input type="color" id="primaryColor" value="#2563eb">
+          </div>
+          <div class="form-group">
+            <label>Welcome Message</label>
+            <input type="text" id="welcomeMessage" placeholder="Hi! How can I help you?">
+          </div>
+          <button type="submit">Update Config</button>
+        </form>
+      </div>
+
+      <!-- Embed Code -->
+      <div class="card">
+        <h2>Embed Code</h2>
+        <div class="form-group">
+          <label>Customer Site ID</label>
+          <input type="text" id="embedSiteId" placeholder="acme" oninput="updateEmbedCode()">
+        </div>
+        <div class="embed-code" id="embedCode">&lt;script
+  src="https://cdn.zunkiree.ai/widget/zunkiree-widget.iife.js"
+  data-site-id="YOUR_SITE_ID"
+  data-api-url="https://api.zunkiree.ai"
+&gt;&lt;/script&gt;</div>
+        <button class="copy-btn" onclick="copyEmbedCode()">Copy Code</button>
+      </div>
+
+      <!-- Recent Jobs -->
+      <div class="card" style="grid-column: span 2;">
+        <h2>Recent Ingestion Jobs</h2>
+        <div class="form-group" style="display: flex; gap: 10px;">
+          <input type="text" id="jobsCustomerId" placeholder="Enter site ID" style="flex: 1;">
+          <button onclick="loadJobs()">Load Jobs</button>
+        </div>
+        <div id="jobsList"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = 'http://localhost:8000';
+    const ADMIN_KEY = 'zk_admin_secret_change_this_in_production';
+
+    // Check API status
+    async function checkApiStatus() {
+      try {
+        const res = await fetch(`${API_URL}/health`);
+        if (res.ok) {
+          document.getElementById('apiStatus').classList.remove('offline');
+          document.getElementById('apiStatusText').textContent = 'API Connected';
+        } else {
+          throw new Error();
+        }
+      } catch {
+        document.getElementById('apiStatus').classList.add('offline');
+        document.getElementById('apiStatusText').textContent = 'API Offline';
+      }
+    }
+
+    // Show alert
+    function showAlert(message, type = 'info') {
+      const alerts = document.getElementById('alerts');
+      const alert = document.createElement('div');
+      alert.className = `alert ${type}`;
+      alert.textContent = message;
+      alerts.appendChild(alert);
+      setTimeout(() => alert.remove(), 5000);
+    }
+
+    // Create customer
+    document.getElementById('createCustomerForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('button');
+      btn.disabled = true;
+
+      try {
+        const res = await fetch(`${API_URL}/api/v1/admin/customers`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Admin-Key': ADMIN_KEY,
+          },
+          body: JSON.stringify({
+            name: document.getElementById('customerName').value,
+            site_id: document.getElementById('siteId').value,
+            allowed_domains: document.getElementById('domains').value.split(',').map(d => d.trim()),
+          }),
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+          showAlert(`Customer created! Site ID: ${data.site_id}`, 'success');
+          e.target.reset();
+        } else {
+          showAlert(data.detail?.message || 'Failed to create customer', 'error');
+        }
+      } catch (err) {
+        showAlert('Network error', 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // Ingest URL
+    document.getElementById('ingestUrlForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('button');
+      btn.disabled = true;
+      btn.textContent = 'Ingesting...';
+
+      try {
+        const res = await fetch(`${API_URL}/api/v1/admin/ingest/url`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Admin-Key': ADMIN_KEY,
+          },
+          body: JSON.stringify({
+            customer_id: document.getElementById('ingestCustomerId').value,
+            url: document.getElementById('ingestUrl').value,
+            max_pages: parseInt(document.getElementById('maxPages').value),
+          }),
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+          showAlert(data.message, 'success');
+        } else {
+          showAlert(data.detail?.message || 'Ingestion failed', 'error');
+        }
+      } catch (err) {
+        showAlert('Network error', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Ingest URL';
+      }
+    });
+
+    // Ingest Text
+    document.getElementById('ingestTextForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('button');
+      btn.disabled = true;
+      btn.textContent = 'Ingesting...';
+
+      try {
+        const res = await fetch(`${API_URL}/api/v1/admin/ingest/text`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Admin-Key': ADMIN_KEY,
+          },
+          body: JSON.stringify({
+            customer_id: document.getElementById('textCustomerId').value,
+            title: document.getElementById('textTitle').value,
+            text: document.getElementById('textContent').value,
+          }),
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+          showAlert(data.message, 'success');
+          e.target.reset();
+        } else {
+          showAlert(data.detail?.message || 'Ingestion failed', 'error');
+        }
+      } catch (err) {
+        showAlert('Network error', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Ingest Text';
+      }
+    });
+
+    // Update config
+    document.getElementById('configForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('button');
+      btn.disabled = true;
+
+      const customerId = document.getElementById('configCustomerId').value;
+      const body = {};
+
+      const brandName = document.getElementById('brandName').value;
+      const tone = document.getElementById('tone').value;
+      const primaryColor = document.getElementById('primaryColor').value;
+      const welcomeMessage = document.getElementById('welcomeMessage').value;
+
+      if (brandName) body.brand_name = brandName;
+      if (tone) body.tone = tone;
+      if (primaryColor) body.primary_color = primaryColor;
+      if (welcomeMessage) body.welcome_message = welcomeMessage;
+
+      try {
+        const res = await fetch(`${API_URL}/api/v1/admin/config/${customerId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Admin-Key': ADMIN_KEY,
+          },
+          body: JSON.stringify(body),
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+          showAlert('Config updated!', 'success');
+        } else {
+          showAlert(data.detail?.message || 'Failed to update config', 'error');
+        }
+      } catch (err) {
+        showAlert('Network error', 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // Load jobs
+    async function loadJobs() {
+      const customerId = document.getElementById('jobsCustomerId').value;
+      if (!customerId) {
+        showAlert('Enter a site ID', 'error');
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_URL}/api/v1/admin/jobs/${customerId}`, {
+          headers: { 'X-Admin-Key': ADMIN_KEY },
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+          const jobsList = document.getElementById('jobsList');
+          if (data.jobs.length === 0) {
+            jobsList.innerHTML = '<p style="color: #6b7280; text-align: center; padding: 20px;">No jobs found</p>';
+          } else {
+            jobsList.innerHTML = data.jobs.map(job => `
+              <div class="job-item">
+                <div class="job-header">
+                  <span>${job.source_type}: ${job.source_url || job.source_filename || 'N/A'}</span>
+                  <span class="job-status ${job.status}">${job.status}</span>
+                </div>
+                <div class="job-details">
+                  Chunks: ${job.chunks_created} | Created: ${new Date(job.created_at).toLocaleString()}
+                </div>
+              </div>
+            `).join('');
+          }
+        } else {
+          showAlert(data.detail?.message || 'Failed to load jobs', 'error');
+        }
+      } catch (err) {
+        showAlert('Network error', 'error');
+      }
+    }
+
+    // Tab switching
+    function showIngestTab(tab) {
+      document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('active'));
+      event.target.classList.add('active');
+
+      if (tab === 'url') {
+        document.getElementById('ingestUrlForm').classList.remove('hidden');
+        document.getElementById('ingestTextForm').classList.add('hidden');
+      } else {
+        document.getElementById('ingestUrlForm').classList.add('hidden');
+        document.getElementById('ingestTextForm').classList.remove('hidden');
+      }
+    }
+
+    // Update embed code
+    function updateEmbedCode() {
+      const siteId = document.getElementById('embedSiteId').value || 'YOUR_SITE_ID';
+      document.getElementById('embedCode').textContent = `<script
+  src="https://cdn.zunkiree.ai/widget/zunkiree-widget.iife.js"
+  data-site-id="${siteId}"
+  data-api-url="https://api.zunkiree.ai"
+><\/script>`;
+    }
+
+    // Copy embed code
+    function copyEmbedCode() {
+      const code = document.getElementById('embedCode').textContent;
+      navigator.clipboard.writeText(code).then(() => {
+        showAlert('Copied to clipboard!', 'success');
+      });
+    }
+
+    // Initialize
+    checkApiStatus();
+    setInterval(checkApiStatus, 30000);
+  </script>
+</body>
+</html>
