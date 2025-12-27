@@ -1,7 +1,40 @@
 # Zunkiree Search v1 - Session Log
 
-> Last Updated: December 26, 2024
-> Status: **95% Complete** - Pending OpenAI credits for full testing
+> Last Updated: December 27, 2024
+> Status: **PRODUCTION DEPLOYED** - Pending OpenAI credits for content ingestion
+
+---
+
+## December 27, 2024 - Production Deployment Complete
+
+### Production URLs
+| Service | URL |
+|---------|-----|
+| **Backend API** | https://zunkiree-search-v1-production.up.railway.app |
+| **Widget CDN** | https://zunkiree-search-v1.vercel.app |
+| **API Docs** | https://zunkiree-search-v1-production.up.railway.app/docs |
+| **Widget JS** | https://zunkiree-search-v1.vercel.app/zunkiree-widget.iife.js |
+
+### Deployment Stack
+- **Backend**: Railway (FastAPI)
+- **Widget**: Vercel (CDN with CORS headers)
+- **Database**: Supabase (PostgreSQL)
+- **Vector Store**: Pinecone
+- **LLM**: OpenAI (gpt-4o-mini) - NEEDS CREDITS
+
+### Current Task: Setup ZunkireeLabs as Customer
+Setting up ZunkireeLabs (our company) as the first customer to:
+1. Showcase the widget on company website
+2. Let visitors try the AI search
+3. Demo the product capabilities
+
+### Remaining Steps
+1. ✅ Production deployment complete
+2. ⏳ Create "zunkireelabs" customer via API
+3. ⏳ Embed widget on dev-web.zunkireelabs.com
+4. ⏳ Add OpenAI credits ($5-10)
+5. ⏳ Ingest ZunkireeLabs content
+6. ⏳ Test end-to-end
 
 ---
 

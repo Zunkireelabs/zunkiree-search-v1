@@ -238,6 +238,7 @@
     <div class="header-status">
       <div class="status-dot" id="apiStatus"></div>
       <span id="apiStatusText">Checking...</span>
+      <button onclick="clearAdminKey()" style="margin-left: 16px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;">Logout</button>
     </div>
   </div>
 
@@ -346,9 +347,9 @@
           <input type="text" id="embedSiteId" placeholder="acme" oninput="updateEmbedCode()">
         </div>
         <div class="embed-code" id="embedCode">&lt;script
-  src="https://cdn.zunkiree.ai/widget/zunkiree-widget.iife.js"
+  src="https://zunkiree-search-v1.vercel.app/zunkiree-widget.iife.js"
   data-site-id="YOUR_SITE_ID"
-  data-api-url="https://api.zunkiree.ai"
+  data-api-url="https://zunkiree-search-v1-production.up.railway.app"
 &gt;&lt;/script&gt;</div>
         <button class="copy-btn" onclick="copyEmbedCode()">Copy Code</button>
       </div>
@@ -366,8 +367,28 @@
   </div>
 
   <script>
-    const API_URL = 'http://localhost:8000';
-    const ADMIN_KEY = 'zk_admin_secret_change_this_in_production';
+    const API_URL = 'https://zunkiree-search-v1-production.up.railway.app';
+
+    // AUTH-READY: Admin key stored in sessionStorage (not hardcoded in production)
+    // Future: Replace this with proper login flow + JWT tokens
+    function getAdminKey() {
+      let key = sessionStorage.getItem('zunkiree_admin_key');
+      if (!key) {
+        key = prompt('Enter Admin Key:');
+        if (key) {
+          sessionStorage.setItem('zunkiree_admin_key', key);
+        }
+      }
+      return key || '';
+    }
+
+    function clearAdminKey() {
+      sessionStorage.removeItem('zunkiree_admin_key');
+      location.reload();
+    }
+
+    // Get admin key on load
+    const ADMIN_KEY = getAdminKey();
 
     // Check API status
     async function checkApiStatus() {
@@ -599,9 +620,9 @@
     function updateEmbedCode() {
       const siteId = document.getElementById('embedSiteId').value || 'YOUR_SITE_ID';
       document.getElementById('embedCode').textContent = `<script
-  src="https://cdn.zunkiree.ai/widget/zunkiree-widget.iife.js"
+  src="https://zunkiree-search-v1.vercel.app/zunkiree-widget.iife.js"
   data-site-id="${siteId}"
-  data-api-url="https://api.zunkiree.ai"
+  data-api-url="https://zunkiree-search-v1-production.up.railway.app"
 ><\/script>`;
     }
 
