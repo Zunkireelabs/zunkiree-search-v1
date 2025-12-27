@@ -16,6 +16,10 @@ settings = get_settings()
 
 # Authentication dependency
 async def verify_admin_key(x_admin_key: str = Header(...)):
+    # DEBUG: Log comparison details (not full values)
+    print(f"DEBUG verify_admin_key: received key length={len(x_admin_key)}, first 3 chars='{x_admin_key[:3]}...'")
+    print(f"DEBUG verify_admin_key: expected key length={len(settings.api_secret_key)}, first 3 chars='{settings.api_secret_key[:3]}...'")
+    print(f"DEBUG verify_admin_key: keys match={x_admin_key == settings.api_secret_key}")
     if x_admin_key != settings.api_secret_key:
         raise HTTPException(
             status_code=401,

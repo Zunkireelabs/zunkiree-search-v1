@@ -13,6 +13,11 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     # Startup
     print("Starting Zunkiree Search API...")
+    # DEBUG: Log which env vars are loaded (names only, not values)
+    import os
+    print(f"DEBUG: API_SECRET_KEY env var exists: {'API_SECRET_KEY' in os.environ}")
+    print(f"DEBUG: api_secret_key loaded, length: {len(settings.api_secret_key)}")
+    print(f"DEBUG: api_secret_key first 3 chars: {settings.api_secret_key[:3]}...")
     try:
         await init_db()
         print("Database initialized.")
