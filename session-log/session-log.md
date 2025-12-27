@@ -1,40 +1,59 @@
 # Zunkiree Search v1 - Session Log
 
 > Last Updated: December 27, 2024
-> Status: **PRODUCTION DEPLOYED** - Pending OpenAI credits for content ingestion
+> Status: **PRODUCTION DEPLOYED** - ZunkireeLabs customer created, pending OpenAI credits
 
 ---
 
-## December 27, 2024 - Production Deployment Complete
+## December 27, 2024 - ZunkireeLabs Customer Created
 
 ### Production URLs
 | Service | URL |
 |---------|-----|
 | **Backend API** | https://zunkiree-search-v1-production.up.railway.app |
 | **Widget CDN** | https://zunkiree-search-v1.vercel.app |
+| **Admin Panel** | https://zunkiree-admin.vercel.app |
 | **API Docs** | https://zunkiree-search-v1-production.up.railway.app/docs |
 | **Widget JS** | https://zunkiree-search-v1.vercel.app/zunkiree-widget.iife.js |
 
 ### Deployment Stack
 - **Backend**: Railway (FastAPI)
 - **Widget**: Vercel (CDN with CORS headers)
-- **Database**: Supabase (PostgreSQL)
+- **Admin Panel**: Vercel (separate project)
+- **Database**: Supabase (PostgreSQL via Supavisor pooler)
 - **Vector Store**: Pinecone
 - **LLM**: OpenAI (gpt-4o-mini) - NEEDS CREDITS
 
-### Current Task: Setup ZunkireeLabs as Customer
-Setting up ZunkireeLabs (our company) as the first customer to:
-1. Showcase the widget on company website
-2. Let visitors try the AI search
-3. Demo the product capabilities
+### ZunkireeLabs Customer (Created)
+| Field | Value |
+|-------|-------|
+| **Customer ID** | `063be854-4061-4b2c-b730-3a27e3a4afe7` |
+| **Site ID** | `zunkireelabs` |
+| **API Key** | `zk_live_zunkireelabs_kFgdkzGSASr_8-olH3Y0SnsWU9GnAV_b` |
+| **Allowed Domains** | dev-web.zunkireelabs.com, zunkireelabs.com, www.zunkireelabs.com, localhost |
 
-### Remaining Steps
+### Widget Embed Code for ZunkireeLabs
+```html
+<script
+  src="https://zunkiree-search-v1.vercel.app/zunkiree-widget.iife.js"
+  data-site-id="zunkireelabs"
+  data-api-url="https://zunkiree-search-v1-production.up.railway.app"
+></script>
+```
+
+### Progress
 1. ✅ Production deployment complete
-2. ⏳ Create "zunkireelabs" customer via API
-3. ⏳ Embed widget on dev-web.zunkireelabs.com
-4. ⏳ Add OpenAI credits ($5-10)
-5. ⏳ Ingest ZunkireeLabs content
-6. ⏳ Test end-to-end
+2. ✅ Admin panel deployed to Vercel
+3. ✅ Database connection fixed (switched to Supabase pooler for IPv4 compatibility)
+4. ✅ Created "zunkireelabs" customer via API
+5. ⏳ Embed widget on dev-web.zunkireelabs.com
+6. ⏳ Add OpenAI credits ($5-10)
+7. ⏳ Ingest ZunkireeLabs content
+8. ⏳ Test end-to-end
+
+### Issues Fixed Today
+- **Admin key validation**: Railway env var had malformed value, fixed by re-adding
+- **Database connection**: Supabase direct connection not IPv4 compatible, switched to Supavisor pooler (`aws-1-ap-south-1.pooler.supabase.com:6543`)
 
 ---
 
@@ -296,9 +315,16 @@ Tables are auto-created on first backend startup.
 
 ---
 
-## Test Customer Created
+## Customers Created
 
-A test customer was created during development:
+### ZunkireeLabs (Production)
+```
+Site ID: zunkireelabs
+API Key: zk_live_zunkireelabs_kFgdkzGSASr_8-olH3Y0SnsWU9GnAV_b
+Allowed Domains: dev-web.zunkireelabs.com, zunkireelabs.com, www.zunkireelabs.com, localhost
+```
+
+### Test Customer (Development)
 ```
 Site ID: test
 API Key: zk_live_test_L9dcIYzWTZxwoU-zKk6RMwTbf526hAPR
