@@ -1,7 +1,35 @@
 # Zunkiree Search v1 - Session Log
 
-> Last Updated: December 27, 2024
-> Status: **PRODUCTION DEPLOYED** - ZunkireeLabs customer created, pending OpenAI credits
+> Last Updated: December 28, 2024
+> Status: **WIDGET LIVE ON ZUNKIREELABS** - Visual validation complete, pending OpenAI credits for AI responses
+
+---
+
+## December 28, 2024 - Widget Embedded on ZunkireeLabs Website
+
+### Milestone
+Widget successfully embedded and validated on dev-web.zunkireelabs.com
+
+### What Was Done
+1. ✅ Cleaned up debug logging from backend (removed temporary troubleshooting code)
+2. ✅ Generated embed prompt for ZunkireeLabs website (VPS)
+3. ✅ Widget embedded on dev-web.zunkireelabs.com
+4. ✅ Visual validation passed:
+   - Widget script loads without errors
+   - Floating search button appears
+   - Search modal opens on click
+   - UI renders correctly with ZunkireeLabs branding
+
+### Current State
+- **Widget**: Live and functional (UI only)
+- **AI Responses**: Not working (expected - OpenAI credits not added yet)
+- **Phase**: Visual/frontend validation complete
+
+### Next Steps (When Ready)
+1. Add OpenAI credits ($5-10) at https://platform.openai.com/settings/organization/billing/overview
+2. Ingest ZunkireeLabs content via admin panel
+3. Test end-to-end query flow
+4. Go live with full functionality
 
 ---
 
@@ -46,8 +74,8 @@
 2. ✅ Admin panel deployed to Vercel
 3. ✅ Database connection fixed (switched to Supabase pooler for IPv4 compatibility)
 4. ✅ Created "zunkireelabs" customer via API
-5. ⏳ Embed widget on dev-web.zunkireelabs.com
-6. ⏳ Add OpenAI credits ($5-10)
+5. ✅ Widget embedded on dev-web.zunkireelabs.com (visual validation passed)
+6. ⏳ Add OpenAI credits ($5-10) - **CURRENT BLOCKER**
 7. ⏳ Ingest ZunkireeLabs content
 8. ⏳ Test end-to-end
 
@@ -288,10 +316,11 @@ Tables are auto-created on first backend startup.
 | Task | Status | Blocker |
 |------|--------|---------|
 | Add OpenAI credits | ⏳ Pending | Need $5-10 |
-| Test full ingestion | ⏳ Pending | OpenAI credits |
-| Test query flow | ⏳ Pending | OpenAI credits |
+| Ingest ZunkireeLabs content | ⏳ Pending | OpenAI credits |
+| Test end-to-end query flow | ⏳ Pending | OpenAI credits |
 | Setup pilot customers | ⏳ Pending | OpenAI credits |
-| Production deployment | ⏳ Pending | After testing |
+
+**Note:** Production deployment is COMPLETE. Widget is live on dev-web.zunkireelabs.com (visual validation passed).
 
 ---
 
