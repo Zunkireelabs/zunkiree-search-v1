@@ -21,12 +21,13 @@ interface WidgetProps {
 }
 
 export function Widget({ siteId, apiUrl }: WidgetProps) {
-  const [isOpen, setIsOpen] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [config, setConfig] = useState<WidgetConfig | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   // Fetch widget config
   useEffect(() => {
@@ -34,13 +35,6 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       .then(res => res.json())
       .then(data => {
         setConfig(data)
-        if (data.welcome_message) {
-          setMessages([{
-            id: 'welcome',
-            role: 'assistant',
-            content: data.welcome_message,
-          }])
-        }
       })
       .catch(err => {
         console.error('Failed to load widget config:', err)
@@ -48,13 +42,8 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
           brand_name: 'Assistant',
           primary_color: '#2563eb',
           placeholder_text: 'Ask a question...',
-          welcome_message: 'Hi! How can I help you today?',
+          welcome_message: null,
         })
-        setMessages([{
-          id: 'welcome',
-          role: 'assistant',
-          content: 'Hi! How can I help you today?',
-        }])
       })
   }, [apiUrl, siteId])
 
@@ -63,9 +52,21 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  // Focus input when expanded
+  useEffect(() => {
+    if (isExpanded && inputRef.current) {
+      inputRef.current.focus()
+    }
+  }, [isExpanded])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!input.trim() || isLoading) return
+
+    // Expand if not already
+    if (!isExpanded) {
+      setIsExpanded(true)
+    }
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -115,6 +116,17 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
 
   const handleSuggestionClick = (suggestion: string) => {
     setInput(suggestion)
+    inputRef.current?.focus()
+  }
+
+  const handleInputFocus = () => {
+    if (messages.length > 0) {
+      setIsExpanded(true)
+    }
+  }
+
+  const handleClose = () => {
+    setIsExpanded(false)
   }
 
   const primaryColor = config?.primary_color || '#2563eb'
@@ -123,78 +135,67 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     <>
       <style>{styles(primaryColor)}</style>
 
-      {/* Trigger Button */}
-      {!isOpen && (
-        <button
-          className="zk-trigger"
-          onClick={() => setIsOpen(true)}
-          aria-label="Open chat"
-        >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
-        </button>
-      )}
-
-      {/* Chat Container */}
-      {isOpen && (
-        <div className="zk-container">
-          {/* Header */}
-          <div className="zk-header">
-            <span className="zk-header-title">{config?.brand_name || 'Assistant'}</span>
-            <button
-              className="zk-close"
-              onClick={() => setIsOpen(false)}
-              aria-label="Close chat"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
-
-          {/* Messages */}
-          <div className="zk-messages">
-            {messages.map(message => (
-              <div key={message.id} className={`zk-message zk-message-${message.role}`}>
-                <div className="zk-message-content">
-                  {message.content}
-                </div>
-                {message.suggestions && message.suggestions.length > 0 && (
-                  <div className="zk-suggestions">
-                    {message.suggestions.map((suggestion, idx) => (
-                      <button
-                        key={idx}
-                        className="zk-suggestion"
-                        onClick={() => handleSuggestionClick(suggestion)}
-                      >
-                        {suggestion}
-                      </button>
-                    ))}
+      <div className={`zk-widget ${isExpanded ? 'zk-expanded' : ''}`}>
+        {/* Messages Panel - Only visible when expanded */}
+        {isExpanded && messages.length > 0 && (
+          <div className="zk-messages-panel">
+            <div className="zk-panel-header">
+              <span className="zk-panel-title">{config?.brand_name || 'Assistant'}</span>
+              <button
+                className="zk-close"
+                onClick={handleClose}
+                aria-label="Minimize chat"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+            </div>
+            <div className="zk-messages">
+              {messages.map(message => (
+                <div key={message.id} className={`zk-message zk-message-${message.role}`}>
+                  <div className="zk-message-content">
+                    {message.content}
                   </div>
-                )}
-              </div>
-            ))}
-            {isLoading && (
-              <div className="zk-message zk-message-assistant">
-                <div className="zk-message-content zk-typing">
-                  <span></span>
-                  <span></span>
-                  <span></span>
+                  {message.suggestions && message.suggestions.length > 0 && (
+                    <div className="zk-suggestions">
+                      {message.suggestions.map((suggestion, idx) => (
+                        <button
+                          key={idx}
+                          className="zk-suggestion"
+                          onClick={() => handleSuggestionClick(suggestion)}
+                        >
+                          {suggestion}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
-            <div ref={messagesEndRef} />
+              ))}
+              {isLoading && (
+                <div className="zk-message zk-message-assistant">
+                  <div className="zk-message-content zk-typing">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
           </div>
+        )}
 
-          {/* Input */}
-          <form className="zk-input-area" onSubmit={handleSubmit}>
+        {/* Bottom Input Bar - Always visible */}
+        <form className="zk-input-bar" onSubmit={handleSubmit}>
+          <div className="zk-input-wrapper">
             <input
+              ref={inputRef}
               type="text"
               className="zk-input"
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onFocus={handleInputFocus}
               placeholder={config?.placeholder_text || 'Ask a question...'}
               disabled={isLoading}
             />
@@ -209,9 +210,12 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
                 <polygon points="22 2 15 22 11 13 2 9 22 2" />
               </svg>
             </button>
-          </form>
-        </div>
-      )}
+          </div>
+          <div className="zk-powered-by">
+            Powered by <a href="https://zunkireelabs.com" target="_blank" rel="noopener noreferrer">Zunkiree</a>
+          </div>
+        </form>
+      </div>
     </>
   )
 }
