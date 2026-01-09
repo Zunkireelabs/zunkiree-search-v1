@@ -27,7 +27,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [config, setConfig] = useState<WidgetConfig | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
   // Fetch widget config
   useEffect(() => {
@@ -76,6 +76,9 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
 
     setMessages(prev => [...prev, userMessage])
     setInput('')
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto'
+    }
     setIsLoading(true)
 
     try {
@@ -117,6 +120,11 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   const handleSuggestionClick = (suggestion: string) => {
     setInput(suggestion)
     inputRef.current?.focus()
+    setTimeout(() => {
+      if (inputRef.current) {
+        adjustTextareaHeight(inputRef.current)
+      }
+    }, 0)
   }
 
   const handleInputFocus = () => {
@@ -127,6 +135,29 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
 
   const handleClose = () => {
     setIsExpanded(false)
+  }
+
+  const adjustTextareaHeight = (textarea: HTMLTextAreaElement) => {
+    // Reset height to auto to get the correct scrollHeight
+    textarea.style.height = 'auto'
+    const scrollHeight = textarea.scrollHeight
+    // Max height is 216px (9 lines × 24px)
+    textarea.style.height = `${Math.min(scrollHeight, 216)}px`
+  }
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value)
+    adjustTextareaHeight(e.target)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Submit on Enter (without Shift)
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      if (input.trim() && !isLoading) {
+        handleSubmit(e as unknown as React.FormEvent)
+      }
+    }
   }
 
   const primaryColor = config?.primary_color || '#2563eb'
@@ -188,28 +219,30 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
 
         {/* Bottom Input Bar - Always visible */}
         <form className="zk-input-bar" onSubmit={handleSubmit}>
-          <div className="zk-input-wrapper">
-            <input
-              ref={inputRef}
-              type="text"
-              className="zk-input"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onFocus={handleInputFocus}
-              placeholder={config?.placeholder_text || 'Ask a question...'}
-              disabled={isLoading}
-            />
-            <button
-              type="submit"
-              className="zk-send"
-              disabled={!input.trim() || isLoading}
-              aria-label="Send message"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="22" y1="2" x2="11" y2="13" />
-                <polygon points="22 2 15 22 11 13 2 9 22 2" />
-              </svg>
-            </button>
+          <div className="zk-input-container">
+            <div className="zk-input-inner">
+              <textarea
+                ref={inputRef}
+                className="zk-input"
+                value={input}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                onFocus={handleInputFocus}
+                placeholder={config?.placeholder_text || 'Ask a question...'}
+                disabled={isLoading}
+                rows={1}
+              />
+              <button
+                type="submit"
+                className="zk-send"
+                disabled={!input.trim() || isLoading}
+                aria-label="Send message"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M5 12h14M12 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
           </div>
           <div className="zk-powered-by">
             Powered by <a href="https://zunkireelabs.com" target="_blank" rel="noopener noreferrer">Zunkiree</a>

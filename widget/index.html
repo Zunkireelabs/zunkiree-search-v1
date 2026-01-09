@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Zunkiree Search - Demo</title>
+    <title>Demo: Customer Website with Zunkiree Search</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
       * {
         box-sizing: border-box;
@@ -16,141 +16,236 @@
 
       body {
         font-family: 'Inter', system-ui, -apple-system, sans-serif;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        min-height: 100vh;
+        background: #f9fafb;
+        color: #1f2937;
+        line-height: 1.6;
+      }
+
+      /* Simulated Customer Website */
+      .demo-header {
+        background: white;
+        border-bottom: 1px solid #e5e7eb;
+        padding: 16px 24px;
         display: flex;
-        flex-direction: column;
+        justify-content: space-between;
         align-items: center;
-        justify-content: center;
-        padding: 40px 20px;
+        position: sticky;
+        top: 0;
+        z-index: 100;
       }
 
-      .hero {
-        text-align: center;
-        margin-bottom: 32px;
+      .demo-logo {
+        font-weight: 700;
+        font-size: 20px;
+        color: #4f46e5;
       }
 
-      .hero h1 {
-        color: #FFFFFF;
-        font-size: 48px;
-        font-weight: 600;
-        margin-bottom: 16px;
-        text-shadow: 0 2px 4px rgba(0,0,0,0.1);
-      }
-
-      .hero p {
-        color: rgba(255,255,255,0.9);
-        font-size: 18px;
-        max-width: 500px;
-        margin: 0 auto;
-      }
-
-      #zunkiree-search {
-        width: 100%;
-        max-width: 640px;
-      }
-
-      .examples {
-        margin-top: 60px;
-        text-align: center;
-      }
-
-      .examples h2 {
-        color: rgba(255,255,255,0.9);
-        font-size: 14px;
-        font-weight: 500;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        margin-bottom: 16px;
-      }
-
-      .example-queries {
+      .demo-nav {
         display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 12px;
+        gap: 24px;
       }
 
-      .example-query {
-        padding: 8px 16px;
-        background: rgba(255,255,255,0.15);
-        border: 1px solid rgba(255,255,255,0.2);
-        border-radius: 20px;
-        color: #FFFFFF;
+      .demo-nav a {
+        color: #6b7280;
+        text-decoration: none;
         font-size: 14px;
-        cursor: pointer;
-        transition: all 150ms ease;
       }
 
-      .example-query:hover {
-        background: rgba(255,255,255,0.25);
-        transform: translateY(-1px);
+      .demo-nav a:hover {
+        color: #4f46e5;
       }
 
-      .footer {
-        position: fixed;
-        bottom: 20px;
-        left: 0;
-        right: 0;
+      .demo-hero {
+        background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+        color: white;
+        padding: 80px 24px;
         text-align: center;
-        color: rgba(255,255,255,0.6);
-        font-size: 12px;
+      }
+
+      .demo-hero h1 {
+        font-size: 48px;
+        font-weight: 700;
+        margin-bottom: 16px;
+      }
+
+      .demo-hero p {
+        font-size: 18px;
+        opacity: 0.9;
+        max-width: 600px;
+        margin: 0 auto 32px;
+      }
+
+      .demo-hero-btn {
+        background: white;
+        color: #4f46e5;
+        padding: 12px 32px;
+        border-radius: 8px;
+        font-weight: 600;
+        text-decoration: none;
+        display: inline-block;
+      }
+
+      .demo-section {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 80px 24px;
+      }
+
+      .demo-section h2 {
+        font-size: 32px;
+        font-weight: 700;
+        margin-bottom: 16px;
+        text-align: center;
+      }
+
+      .demo-section > p {
+        text-align: center;
+        color: #6b7280;
+        margin-bottom: 48px;
+      }
+
+      .demo-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 24px;
+      }
+
+      .demo-card {
+        background: white;
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      }
+
+      .demo-card h3 {
+        font-size: 18px;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+
+      .demo-card p {
+        color: #6b7280;
+        font-size: 14px;
+      }
+
+      .demo-footer {
+        background: #1f2937;
+        color: white;
+        padding: 48px 24px;
+        text-align: center;
+      }
+
+      .demo-footer p {
+        opacity: 0.7;
+        font-size: 14px;
+      }
+
+      /* Notice banner */
+      .demo-notice {
+        background: #fef3c7;
+        border-bottom: 1px solid #fcd34d;
+        padding: 12px 24px;
+        text-align: center;
+        font-size: 14px;
+        color: #92400e;
+      }
+
+      /* Add padding at bottom so content isn't hidden by widget */
+      body {
+        padding-bottom: 100px;
       }
 
       @media (max-width: 640px) {
-        .hero h1 {
+        .demo-hero h1 {
           font-size: 32px;
         }
-
-        .hero p {
-          font-size: 16px;
+        .demo-nav {
+          display: none;
         }
       }
     </style>
   </head>
   <body>
-    <div class="hero">
-      <h1>Ask Anything</h1>
-      <p>Get instant answers powered by AI. Search naturally, like you're talking to a friend.</p>
+    <!-- Notice that this is a demo -->
+    <div class="demo-notice">
+      This is a simulated customer website. The Zunkiree Search widget floats at the bottom.
     </div>
 
-    <!-- Zunkiree Search Widget -->
-    <div id="zunkiree-search"></div>
+    <!-- Simulated Customer Website Header -->
+    <header class="demo-header">
+      <div class="demo-logo">Acme Corp</div>
+      <nav class="demo-nav">
+        <a href="#">Products</a>
+        <a href="#">Solutions</a>
+        <a href="#">Pricing</a>
+        <a href="#">About</a>
+        <a href="#">Contact</a>
+      </nav>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="demo-hero">
+      <h1>Welcome to Acme Corp</h1>
+      <p>We build amazing products that help businesses grow. Discover how we can transform your workflow today.</p>
+      <a href="#" class="demo-hero-btn">Get Started</a>
+    </section>
+
+    <!-- Services Section -->
+    <section class="demo-section">
+      <h2>Our Services</h2>
+      <p>Everything you need to succeed in the digital world.</p>
+      <div class="demo-cards">
+        <div class="demo-card">
+          <h3>Web Development</h3>
+          <p>Custom websites and web applications built with modern technologies.</p>
+        </div>
+        <div class="demo-card">
+          <h3>Mobile Apps</h3>
+          <p>Native and cross-platform mobile applications for iOS and Android.</p>
+        </div>
+        <div class="demo-card">
+          <h3>Cloud Solutions</h3>
+          <p>Scalable cloud infrastructure and DevOps services.</p>
+        </div>
+        <div class="demo-card">
+          <h3>AI & Machine Learning</h3>
+          <p>Intelligent automation and data-driven insights for your business.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- About Section -->
+    <section class="demo-section" style="background: white;">
+      <h2>About Us</h2>
+      <p>We've been helping businesses succeed for over 10 years.</p>
+      <div class="demo-cards">
+        <div class="demo-card">
+          <h3>Our Mission</h3>
+          <p>To empower businesses with technology that makes a difference.</p>
+        </div>
+        <div class="demo-card">
+          <h3>Our Team</h3>
+          <p>50+ talented professionals dedicated to your success.</p>
+        </div>
+        <div class="demo-card">
+          <h3>Our Values</h3>
+          <p>Innovation, integrity, and customer-first approach.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="demo-footer">
+      <p>&copy; 2024 Acme Corp. All rights reserved.</p>
+      <p style="margin-top: 8px; opacity: 0.5;">This is a demo website to showcase the Zunkiree Search widget.</p>
+    </footer>
+
+    <!-- Zunkiree Search Widget - Floating at bottom -->
     <script
       type="module"
       src="/src/main.tsx"
       data-site-id="zunkireelabs"
       data-api-url="https://zunkiree-search-v1-production.up.railway.app"
-      data-mode="hero"
-      data-border-radius="rounded"
     ></script>
-
-    <div class="examples">
-      <h2>Try asking</h2>
-      <div class="example-queries">
-        <span class="example-query">What services do you offer?</span>
-        <span class="example-query">How much does it cost?</span>
-        <span class="example-query">How can I contact you?</span>
-        <span class="example-query">What are your hours?</span>
-      </div>
-    </div>
-
-    <div class="footer">
-      Zunkiree Search v2 - Search-First Design
-    </div>
-
-    <script>
-      // Make example queries clickable
-      document.querySelectorAll('.example-query').forEach(el => {
-        el.addEventListener('click', () => {
-          const input = document.querySelector('.zk-search-input');
-          if (input) {
-            input.value = el.textContent;
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            input.focus();
-          }
-        });
-      });
-    </script>
   </body>
 </html>

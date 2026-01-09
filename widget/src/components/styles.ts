@@ -20,7 +20,7 @@ export const styles = (primaryColor: string) => `
   /* Messages Panel */
   .zk-messages-panel {
     width: 100%;
-    max-width: 800px;
+    max-width: 600px;
     max-height: 400px;
     background: white;
     border-radius: 16px 16px 0 0;
@@ -175,75 +175,175 @@ export const styles = (primaryColor: string) => `
     color: ${primaryColor};
   }
 
+  /* Animated border custom property */
+  @property --border-angle {
+    syntax: '<angle>';
+    initial-value: 0deg;
+    inherits: false;
+  }
+
   /* Bottom Input Bar */
   .zk-input-bar {
     width: 100%;
-    max-width: 800px;
+    max-width: 600px;
     padding: 12px 16px 16px;
-    background: white;
-    box-shadow: 0 -2px 16px rgba(0, 0, 0, 0.08);
+    background: transparent;
     margin: 0 16px;
   }
 
-  .zk-widget:not(.zk-expanded) .zk-input-bar {
-    border-radius: 24px 24px 0 0;
-    margin-bottom: 0;
+  /* Input Container with Animated Border */
+  .zk-input-container {
+    position: relative;
+    background: #e5e7eb;
+    border-radius: 24px;
+    padding: 1.5px;
+    isolation: isolate;
   }
 
-  .zk-widget.zk-expanded .zk-input-bar {
-    border-radius: 0;
-    box-shadow: none;
-    border-top: 1px solid #e5e7eb;
+  /* Subtle base border */
+  .zk-input-container::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 24px;
+    padding: 2px;
+    background: conic-gradient(
+      from var(--border-angle),
+      transparent 0%,
+      transparent 5%,
+      #3b82f6 10%,
+      #06b6d4 15%,
+      #84cc16 20%,
+      #eab308 25%,
+      transparent 30%,
+      transparent 100%
+    );
+    -webkit-mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+    animation: rotate-border 3s linear infinite;
   }
 
-  .zk-input-wrapper {
+  /* Glow effect - follows the spark */
+  .zk-input-container::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: 27px;
+    background: conic-gradient(
+      from var(--border-angle),
+      transparent 0%,
+      transparent 5%,
+      #3b82f6 10%,
+      #06b6d4 15%,
+      #84cc16 20%,
+      #eab308 25%,
+      transparent 30%,
+      transparent 100%
+    );
+    filter: blur(8px);
+    opacity: 0.6;
+    z-index: -1;
+    animation: rotate-border 3s linear infinite;
+  }
+
+  @keyframes rotate-border {
+    0% {
+      --border-angle: 0deg;
+    }
+    100% {
+      --border-angle: 360deg;
+    }
+  }
+
+  .zk-input-inner {
+    position: relative;
+    background: white;
+    border-radius: 22px;
+    padding: 12px 16px;
+    min-height: 48px;
     display: flex;
-    gap: 8px;
-    align-items: center;
+    align-items: flex-end;
   }
 
   .zk-input {
     flex: 1;
-    padding: 12px 16px;
-    border: 1px solid #e5e7eb;
-    border-radius: 24px;
-    font-size: 14px;
+    border: none;
+    font-size: 15px;
     outline: none;
-    transition: border-color 0.15s, box-shadow 0.15s;
-    background: #fafafa;
+    background: transparent;
+    resize: none;
+    line-height: 24px;
+    color: #1f2937;
+    min-height: 24px;
+    max-height: 216px;
+    overflow-y: auto;
+    font-family: inherit;
+    padding: 0;
+    padding-right: 8px;
+    margin: 0;
+    margin-right: 48px;
   }
 
-  .zk-input:focus {
-    border-color: ${primaryColor};
-    box-shadow: 0 0 0 3px ${primaryColor}20;
-    background: white;
+  /* Custom scrollbar styling */
+  .zk-input::-webkit-scrollbar {
+    width: 6px;
   }
 
-  .zk-input:disabled {
-    background: #f3f4f6;
-    cursor: not-allowed;
+  .zk-input::-webkit-scrollbar-track {
+    background: transparent;
+    margin: 4px 0;
+  }
+
+  .zk-input::-webkit-scrollbar-thumb {
+    background: #d1d5db;
+    border-radius: 3px;
+  }
+
+  .zk-input::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
+  }
+
+  /* Firefox scrollbar */
+  .zk-input {
+    scrollbar-width: thin;
+    scrollbar-color: #d1d5db transparent;
   }
 
   .zk-input::placeholder {
     color: #9ca3af;
   }
 
+  .zk-input:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
   .zk-send {
-    width: 44px;
-    height: 44px;
+    position: absolute;
+    bottom: 8px;
+    right: 12px;
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
-    background: ${primaryColor};
-    color: white;
+    background: #f3f4f6;
+    color: #374151;
     border: none;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: opacity 0.15s, transform 0.15s;
+    transition: background 0.15s, transform 0.15s, color 0.15s;
     flex-shrink: 0;
   }
 
   .zk-send:hover:not(:disabled) {
+    background: #e5e7eb;
     transform: scale(1.05);
   }
 
