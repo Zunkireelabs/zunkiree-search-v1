@@ -108,20 +108,21 @@ export const ZunkireeSearch: React.FC<ZunkireeSearchProps> = ({
     setError(null);
     setResult(null);
 
+    const payload = { site_id: siteId, question: query };
+    console.log('[Zunkiree] Request payload:', payload);
+
     try {
       const response = await fetch(`${apiUrl}/api/v1/query`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          site_id: siteId,
-          question: query,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        console.error('[Zunkiree] Error response:', response.status, errorData);
         throw new Error(errorData.error?.message || 'Search failed');
       }
 

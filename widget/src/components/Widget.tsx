@@ -6,6 +6,7 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   suggestions?: string[]
+  isError?: boolean
 }
 
 interface WidgetConfig {
@@ -74,26 +75,31 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       content: input.trim(),
     }
 
-    setMessages(prev => [...prev, userMessage])
+    // Clear previous error messages before new query
+    setMessages(prev => [...prev.filter(m => !m.isError), userMessage])
     setInput('')
     if (inputRef.current) {
       inputRef.current.style.height = 'auto'
     }
     setIsLoading(true)
 
+    const payload = {
+      site_id: siteId,
+      question: userMessage.content,
+    }
+    console.log('[Zunkiree] Request payload:', payload)
+
     try {
       const response = await fetch(`${apiUrl}/api/v1/query`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          site_id: siteId,
-          question: userMessage.content,
-        }),
+        body: JSON.stringify(payload),
       })
 
       const data = await response.json()
 
       if (!response.ok) {
+        console.error('[Zunkiree] Error response:', response.status, data)
         throw new Error(data.detail?.message || 'Failed to get answer')
       }
 
@@ -106,10 +112,12 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
 
       setMessages(prev => [...prev, assistantMessage])
     } catch (error) {
+      console.error('[Zunkiree] Fetch error:', error)
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again later.',
+        content: 'Sorry, I encountered an error. Please try again.',
+        isError: true,
       }
       setMessages(prev => [...prev, errorMessage])
     } finally {
