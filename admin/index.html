@@ -349,7 +349,7 @@
         <div class="embed-code" id="embedCode">&lt;script
   src="https://zunkiree-search-v1.vercel.app/zunkiree-widget.iife.js"
   data-site-id="YOUR_SITE_ID"
-  data-api-url="https://zunkiree-search-v1-production.up.railway.app"
+  data-api-url="https://api.zunkireelabs.com"
 &gt;&lt;/script&gt;</div>
         <button class="copy-btn" onclick="copyEmbedCode()">Copy Code</button>
       </div>
@@ -367,7 +367,7 @@
   </div>
 
   <script>
-    const API_URL = 'https://zunkiree-search-v1-production.up.railway.app';
+    const API_URL = 'https://api.zunkireelabs.com';
 
     // AUTH-READY: Admin key stored in sessionStorage (not hardcoded in production)
     // Future: Replace this with proper login flow + JWT tokens
@@ -622,7 +622,7 @@
       document.getElementById('embedCode').textContent = `<script
   src="https://zunkiree-search-v1.vercel.app/zunkiree-widget.iife.js"
   data-site-id="${siteId}"
-  data-api-url="https://zunkiree-search-v1-production.up.railway.app"
+  data-api-url="https://api.zunkireelabs.com"
 ><\/script>`;
     }
 
