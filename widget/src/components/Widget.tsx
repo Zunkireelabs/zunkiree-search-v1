@@ -76,7 +76,14 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     }
 
     // Clear previous error messages before new query
-    setMessages(prev => [...prev.filter(m => !m.isError), userMessage])
+    setMessages(prev => {
+      console.log('[Zunkiree] Before filtering:', prev)
+      const filtered = prev.filter(m => !m.isError)
+      console.log('[Zunkiree] After filtering:', filtered)
+      const newMessages = [...filtered, userMessage]
+      console.log('[Zunkiree] Setting new messages:', newMessages)
+      return newMessages
+    })
     setInput('')
     if (inputRef.current) {
       inputRef.current.style.height = 'auto'
@@ -113,6 +120,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       setMessages(prev => [...prev, assistantMessage])
     } catch (error) {
       console.error('[Zunkiree] Fetch error:', error)
+      console.log('[Zunkiree] Adding error message')
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
