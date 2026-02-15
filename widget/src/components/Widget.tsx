@@ -29,81 +29,6 @@ type WidgetMode = 'bottom-minimized' | 'bottom-expanded' | 'right-docked'
 
 const DOCK_MIN_WIDTH = 1200
 const WIDGET_ROOT_ID = 'zunkiree-widget-root'
-const WRAPPER_ID = 'zk-layout-wrapper'
-const MAIN_CONTENT_ID = 'zk-main-content'
-const RIGHT_DOCK_ID = 'zk-right-dock'
-
-// ── DOM layout injection (enter dock) ──────────────────────────────
-function enterDockLayout() {
-  if (document.getElementById(WRAPPER_ID)) return
-
-  const widgetRoot = document.getElementById(WIDGET_ROOT_ID)
-  if (!widgetRoot) return
-
-  // Snapshot scroll before mutating DOM
-  const scrollY = window.scrollY
-
-  // 1. Create structural wrapper
-  const wrapper = document.createElement('div')
-  wrapper.id = WRAPPER_ID
-
-  const mainContent = document.createElement('div')
-  mainContent.id = MAIN_CONTENT_ID
-
-  const rightDock = document.createElement('div')
-  rightDock.id = RIGHT_DOCK_ID
-
-  // 2. Move all body children (except widget root) into mainContent
-  const bodyChildren = Array.from(document.body.childNodes)
-  for (const child of bodyChildren) {
-    if (child === widgetRoot) continue
-    mainContent.appendChild(child)
-  }
-
-  // 3. Assemble wrapper → body
-  wrapper.appendChild(mainContent)
-  wrapper.appendChild(rightDock)
-  document.body.appendChild(wrapper)
-
-  // 4. Move widget root into dock column
-  rightDock.appendChild(widgetRoot)
-
-  // 5. Neutralize body margin so wrapper fills viewport
-  document.body.classList.add('zk-docked-active')
-
-  // 6. Restore scroll position inside main content
-  mainContent.scrollTop = scrollY
-}
-
-// ── DOM layout teardown (exit dock) ────────────────────────────────
-function exitDockLayout() {
-  const wrapper = document.getElementById(WRAPPER_ID)
-  if (!wrapper) return
-
-  const mainContent = document.getElementById(MAIN_CONTENT_ID)
-  const widgetRoot = document.getElementById(WIDGET_ROOT_ID)
-  if (!mainContent) return
-
-  // Snapshot scroll from the main content container
-  const scrollTop = mainContent.scrollTop
-
-  // 1. Move all mainContent children back to body
-  while (mainContent.firstChild) {
-    document.body.appendChild(mainContent.firstChild)
-  }
-
-  // 2. Move widget root back to body
-  if (widgetRoot) {
-    document.body.appendChild(widgetRoot)
-  }
-
-  // 3. Remove wrapper + body class (no DOM residue)
-  wrapper.remove()
-  document.body.classList.remove('zk-docked-active')
-
-  // 4. Restore scroll position on window
-  window.scrollTo(0, scrollTop)
-}
 
 export function Widget({ siteId, apiUrl }: WidgetProps) {
   const [mode, setMode] = useState<WidgetMode>('bottom-minimized')
@@ -131,16 +56,20 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       })
   }, [apiUrl, siteId])
 
-  // ── Structural DOM layout for dock mode ──
-  // useLayoutEffect prevents flash between React commit and browser paint
+  // ── Dock mode: toggle classes on <html> + widget root ──
+  // useLayoutEffect runs before paint → no flash
   useLayoutEffect(() => {
+    const root = document.getElementById(WIDGET_ROOT_ID)
     if (mode === 'right-docked') {
-      enterDockLayout()
+      document.documentElement.classList.add('zk-docked')
+      root?.classList.add('zk-docked-mode')
     } else {
-      exitDockLayout()
+      document.documentElement.classList.remove('zk-docked')
+      root?.classList.remove('zk-docked-mode')
     }
     return () => {
-      exitDockLayout()
+      document.documentElement.classList.remove('zk-docked')
+      root?.classList.remove('zk-docked-mode')
     }
   }, [mode])
 

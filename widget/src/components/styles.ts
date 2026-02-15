@@ -8,40 +8,19 @@ export const styles = (primaryColor: string) => `
     padding: 0;
   }
 
-  /* ===== Dock Mode: Body + Layout Wrapper ===== */
-  body.zk-docked-active {
-    margin: 0 !important;
+  /* ===== Dock Mode: padding-right on body, fixed widget root ===== */
+  html.zk-docked body {
+    padding-right: 420px !important;
+    transition: padding-right 200ms ease;
   }
 
-  #zk-layout-wrapper {
-    display: flex;
-    width: 100%;
-    height: 100vh;
-    overflow: hidden;
-  }
-
-  #zk-main-content {
-    flex: 1;
-    min-width: 0;
-    overflow-y: auto;
-  }
-
-  #zk-right-dock {
+  #zunkiree-widget-root.zk-docked-mode {
+    position: fixed;
+    top: 0;
+    right: 0;
     width: 420px;
-    flex-shrink: 0;
-    overflow: hidden;
-    border-left: 1px solid rgba(0, 0, 0, 0.06);
-    background: #fff;
-    animation: zk-dock-enter 200ms ease-out both;
-  }
-
-  #zk-right-dock > #zunkiree-widget-root {
-    height: 100%;
-  }
-
-  @keyframes zk-dock-enter {
-    from { width: 0; }
-    to { width: 420px; }
+    height: 100vh;
+    z-index: 2147483000;
   }
 
   /* ===== Collapsed Bar ===== */
@@ -759,9 +738,8 @@ export const styles = (primaryColor: string) => `
       opacity: 1;
     }
 
-    #zk-right-dock {
-      animation: none;
-      width: 420px;
+    html.zk-docked body {
+      transition: none;
     }
 
     .zk-message {
