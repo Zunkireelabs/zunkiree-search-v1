@@ -147,7 +147,7 @@ export const styles = (primaryColor: string) => `
     left: 50%;
     width: min(1000px, 90%);
     height: min(80vh, 760px);
-    background: white;
+    background: linear-gradient(248.35deg, #86cdff -11.3%, #f4f4fe 16.44%, #fff 28.3%, #fff 72.47%, #ebeafe 89.69%, #bec6f7 101.94%);
     border-radius: 24px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
     z-index: 9999;
