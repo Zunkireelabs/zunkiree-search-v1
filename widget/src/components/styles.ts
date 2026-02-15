@@ -129,8 +129,8 @@ export const styles = (primaryColor: string) => `
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.04);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
     z-index: 9998;
     animation: zk-backdrop-fade 200ms ease-out both;
   }
