@@ -453,9 +453,10 @@ export const styles = (primaryColor: string) => `
 
   .zk-input {
     flex: 1;
-    border: none;
+    border: none !important;
     font-size: 14px;
-    outline: none;
+    outline: none !important;
+    box-shadow: none !important;
     background: transparent;
     resize: none;
     line-height: 22px;
