@@ -32,12 +32,11 @@ export function CollapsedBar({
             width="20"
             height="20"
             viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
+            fill="currentColor"
           >
-            <circle cx="11" cy="11" r="8" />
-            <path d="m21 21-4.3-4.3" />
+            <path d="M10 2l1.5 4.5L16 8l-4.5 1.5L10 14l-1.5-4.5L4 8l4.5-1.5L10 2z" />
+            <path d="M18 12l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3z" />
+            <path d="M6 16l.75 2.25L9 19l-2.25.75L6 22l-.75-2.25L3 19l2.25-.75L6 16z" opacity="0.7" />
           </svg>
           <span className="zk-collapsed-bar__placeholder">
             Ask {brandName} a question&hellip;
