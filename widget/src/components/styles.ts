@@ -8,19 +8,40 @@ export const styles = (primaryColor: string) => `
     padding: 0;
   }
 
-  /* ===== Body Layout Shift (Docked Mode) ===== */
+  /* ===== Dock Mode: Body + Layout Wrapper ===== */
   body.zk-docked-active {
-    margin-right: 460px !important;
-    transition: margin-right 200ms ease;
+    margin: 0 !important;
   }
 
-  #zunkiree-widget-root.zk-docked-mode {
-    position: fixed;
-    top: 0;
-    right: 0;
-    width: 460px;
+  #zk-layout-wrapper {
+    display: flex;
+    width: 100%;
     height: 100vh;
-    z-index: 9999;
+    overflow: hidden;
+  }
+
+  #zk-main-content {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+  }
+
+  #zk-right-dock {
+    width: 420px;
+    flex-shrink: 0;
+    overflow: hidden;
+    border-left: 1px solid rgba(0, 0, 0, 0.06);
+    background: #fff;
+    animation: zk-dock-enter 200ms ease-out both;
+  }
+
+  #zk-right-dock > #zunkiree-widget-root {
+    height: 100%;
+  }
+
+  @keyframes zk-dock-enter {
+    from { width: 0; }
+    to { width: 420px; }
   }
 
   /* ===== Collapsed Bar ===== */
@@ -302,27 +323,14 @@ export const styles = (primaryColor: string) => `
     flex-shrink: 0;
   }
 
-  /* ===== Docked Panel ===== */
+  /* ===== Docked Panel (inside #zk-right-dock) ===== */
   .zk-docked {
     width: 100%;
-    height: 100vh;
+    height: 100%;
     background: linear-gradient(248.35deg, #86cdff -11.3%, #f4f4fe 16.44%, #fff 28.3%, #fff 72.47%, #ebeafe 89.69%, #bec6f7 101.94%);
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     display: flex;
     flex-direction: column;
-    border-left: 1px solid rgba(0, 0, 0, 0.08);
-    animation: zk-dock-slide-in 200ms ease-out both;
-  }
-
-  @keyframes zk-dock-slide-in {
-    from {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-    to {
-      transform: translateX(0);
-      opacity: 1;
-    }
   }
 
   /* Docked Header */
@@ -723,8 +731,8 @@ export const styles = (primaryColor: string) => `
     }
   }
 
-  /* ===== Mobile: Hide dock button ===== */
-  @media (max-width: 767px) {
+  /* ===== Desktop-only dock button (>= 1200px) ===== */
+  @media (max-width: 1199px) {
     .zk-dock-btn {
       display: none;
     }
@@ -751,10 +759,9 @@ export const styles = (primaryColor: string) => `
       opacity: 1;
     }
 
-    .zk-docked {
+    #zk-right-dock {
       animation: none;
-      transform: translateX(0);
-      opacity: 1;
+      width: 420px;
     }
 
     .zk-message {

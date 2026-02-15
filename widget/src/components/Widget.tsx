@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { styles } from './styles'
 import { CollapsedBar } from './CollapsedBar'
 import { ExpandedPanel } from './ExpandedPanel'
@@ -25,10 +25,88 @@ interface WidgetProps {
   apiUrl: string
 }
 
-type WidgetMode = 'minimized' | 'expanded' | 'docked'
+type WidgetMode = 'bottom-minimized' | 'bottom-expanded' | 'right-docked'
+
+const DOCK_MIN_WIDTH = 1200
+const WIDGET_ROOT_ID = 'zunkiree-widget-root'
+const WRAPPER_ID = 'zk-layout-wrapper'
+const MAIN_CONTENT_ID = 'zk-main-content'
+const RIGHT_DOCK_ID = 'zk-right-dock'
+
+// ── DOM layout injection (enter dock) ──────────────────────────────
+function enterDockLayout() {
+  if (document.getElementById(WRAPPER_ID)) return
+
+  const widgetRoot = document.getElementById(WIDGET_ROOT_ID)
+  if (!widgetRoot) return
+
+  // Snapshot scroll before mutating DOM
+  const scrollY = window.scrollY
+
+  // 1. Create structural wrapper
+  const wrapper = document.createElement('div')
+  wrapper.id = WRAPPER_ID
+
+  const mainContent = document.createElement('div')
+  mainContent.id = MAIN_CONTENT_ID
+
+  const rightDock = document.createElement('div')
+  rightDock.id = RIGHT_DOCK_ID
+
+  // 2. Move all body children (except widget root) into mainContent
+  const bodyChildren = Array.from(document.body.childNodes)
+  for (const child of bodyChildren) {
+    if (child === widgetRoot) continue
+    mainContent.appendChild(child)
+  }
+
+  // 3. Assemble wrapper → body
+  wrapper.appendChild(mainContent)
+  wrapper.appendChild(rightDock)
+  document.body.appendChild(wrapper)
+
+  // 4. Move widget root into dock column
+  rightDock.appendChild(widgetRoot)
+
+  // 5. Neutralize body margin so wrapper fills viewport
+  document.body.classList.add('zk-docked-active')
+
+  // 6. Restore scroll position inside main content
+  mainContent.scrollTop = scrollY
+}
+
+// ── DOM layout teardown (exit dock) ────────────────────────────────
+function exitDockLayout() {
+  const wrapper = document.getElementById(WRAPPER_ID)
+  if (!wrapper) return
+
+  const mainContent = document.getElementById(MAIN_CONTENT_ID)
+  const widgetRoot = document.getElementById(WIDGET_ROOT_ID)
+  if (!mainContent) return
+
+  // Snapshot scroll from the main content container
+  const scrollTop = mainContent.scrollTop
+
+  // 1. Move all mainContent children back to body
+  while (mainContent.firstChild) {
+    document.body.appendChild(mainContent.firstChild)
+  }
+
+  // 2. Move widget root back to body
+  if (widgetRoot) {
+    document.body.appendChild(widgetRoot)
+  }
+
+  // 3. Remove wrapper + body class (no DOM residue)
+  wrapper.remove()
+  document.body.classList.remove('zk-docked-active')
+
+  // 4. Restore scroll position on window
+  window.scrollTo(0, scrollTop)
+}
 
 export function Widget({ siteId, apiUrl }: WidgetProps) {
-  const [mode, setMode] = useState<WidgetMode>('minimized')
+  const [mode, setMode] = useState<WidgetMode>('bottom-minimized')
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -53,20 +131,28 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       })
   }, [apiUrl, siteId])
 
-  // Body layout shift for docked mode
-  useEffect(() => {
-    const root = document.getElementById('zunkiree-widget-root')
-    if (mode === 'docked') {
-      document.body.classList.add('zk-docked-active')
-      root?.classList.add('zk-docked-mode')
+  // ── Structural DOM layout for dock mode ──
+  // useLayoutEffect prevents flash between React commit and browser paint
+  useLayoutEffect(() => {
+    if (mode === 'right-docked') {
+      enterDockLayout()
     } else {
-      document.body.classList.remove('zk-docked-active')
-      root?.classList.remove('zk-docked-mode')
+      exitDockLayout()
     }
     return () => {
-      document.body.classList.remove('zk-docked-active')
-      root?.classList.remove('zk-docked-mode')
+      exitDockLayout()
     }
+  }, [mode])
+
+  // ── Exit dock if viewport shrinks below threshold ──
+  useEffect(() => {
+    function handleResize() {
+      if (mode === 'right-docked' && window.innerWidth < DOCK_MIN_WIDTH) {
+        setMode('bottom-expanded')
+      }
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
   }, [mode])
 
   // Query API — UNCHANGED
@@ -74,7 +160,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     e.preventDefault()
     if (!input.trim() || isLoading) return
 
-    if (mode === 'minimized') setMode('expanded')
+    if (mode === 'bottom-minimized') setMode('bottom-expanded')
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -133,17 +219,26 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
 
   const handleSuggestionClick = (suggestion: string) => {
     setInput(suggestion)
-    if (mode === 'minimized') setMode('expanded')
+    if (mode === 'bottom-minimized') setMode('bottom-expanded')
   }
 
   const handleOpen = () => {
     hasAnimated.current = true
-    setMode('expanded')
+    setMode('bottom-expanded')
   }
 
-  const handleClose = () => {
+  const handleMinimize = () => {
     hasAnimated.current = true
-    setMode('minimized')
+    setMode('bottom-minimized')
+  }
+
+  const handleDock = () => {
+    if (window.innerWidth < DOCK_MIN_WIDTH) return
+    setMode('right-docked')
+  }
+
+  const handleUndock = () => {
+    setMode('bottom-expanded')
   }
 
   const brandName = config?.brand_name || siteId
@@ -165,7 +260,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     <>
       <style>{styles(primaryColor)}</style>
 
-      {mode === 'minimized' && (
+      {mode === 'bottom-minimized' && (
         <CollapsedBar
           brandName={brandName}
           suggestions={getSuggestions()}
@@ -175,7 +270,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
         />
       )}
 
-      {mode === 'expanded' && (
+      {mode === 'bottom-expanded' && (
         <ExpandedPanel
           brandName={brandName}
           messages={messages}
@@ -185,13 +280,13 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
           onInputChange={setInput}
           onSubmit={handleSubmit}
           onSuggestionClick={handleSuggestionClick}
-          onClose={handleClose}
-          onDock={() => setMode('docked')}
+          onClose={handleMinimize}
+          onDock={handleDock}
           placeholder={placeholder}
         />
       )}
 
-      {mode === 'docked' && (
+      {mode === 'right-docked' && (
         <DockedPanel
           brandName={brandName}
           messages={messages}
@@ -201,8 +296,8 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
           onInputChange={setInput}
           onSubmit={handleSubmit}
           onSuggestionClick={handleSuggestionClick}
-          onMinimize={() => setMode('minimized')}
-          onUndock={() => setMode('expanded')}
+          onMinimize={handleMinimize}
+          onUndock={handleUndock}
           placeholder={placeholder}
         />
       )}
