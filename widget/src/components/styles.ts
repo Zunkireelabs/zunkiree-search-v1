@@ -8,12 +8,7 @@ export const styles = (primaryColor: string) => `
     padding: 0;
   }
 
-  /* ===== Dock Mode: padding-right on body, fixed widget root ===== */
-  html.zk-docked body {
-    padding-right: 420px !important;
-    transition: padding-right 200ms ease;
-  }
-
+  /* ===== Dock Mode: pure fixed overlay, zero host modifications ===== */
   #zunkiree-widget-root.zk-docked-mode {
     position: fixed;
     top: 0;
@@ -736,10 +731,6 @@ export const styles = (primaryColor: string) => `
       animation: none;
       transform: translateX(-50%) translateY(0);
       opacity: 1;
-    }
-
-    html.zk-docked body {
-      transition: none;
     }
 
     .zk-message {

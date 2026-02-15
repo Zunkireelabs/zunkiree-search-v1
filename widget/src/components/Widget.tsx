@@ -56,19 +56,16 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       })
   }, [apiUrl, siteId])
 
-  // ── Dock mode: toggle classes on <html> + widget root ──
-  // useLayoutEffect runs before paint → no flash
+  // ── Dock mode: toggle class on widget root only ──
+  // Pure overlay — never touches host DOM/body/html
   useLayoutEffect(() => {
     const root = document.getElementById(WIDGET_ROOT_ID)
     if (mode === 'right-docked') {
-      document.documentElement.classList.add('zk-docked')
       root?.classList.add('zk-docked-mode')
     } else {
-      document.documentElement.classList.remove('zk-docked')
       root?.classList.remove('zk-docked-mode')
     }
     return () => {
-      document.documentElement.classList.remove('zk-docked')
       root?.classList.remove('zk-docked-mode')
     }
   }, [mode])
