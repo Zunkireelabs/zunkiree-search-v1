@@ -43,25 +43,27 @@ export function CollapsedBar({
 
         {/* Input area - clicking opens expanded panel */}
         <div className="zk-collapsed-bar__input-wrap" onClick={onClick}>
-          <div className="zk-collapsed-bar__input-inner">
-            <svg
-              className="zk-collapsed-bar__icon"
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-            >
-              <path d="M10 2l1.5 4.5L16 8l-4.5 1.5L10 14l-1.5-4.5L4 8l4.5-1.5L10 2z" />
-              <path d="M18 12l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3z" />
-              <path d="M6 16l.75 2.25L9 19l-2.25.75L6 22l-.75-2.25L3 19l2.25-.75L6 16z" opacity="0.7" />
-            </svg>
-            <span className="zk-collapsed-bar__placeholder">
-              Ask {brandName} a question&hellip;
-            </span>
-            <div className="zk-collapsed-bar__send">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <path d="M5 12h14M12 5l7 7-7 7" />
+          <div className="zk-input-container">
+            <div className="zk-input-inner zk-collapsed-bar__input-inner">
+              <svg
+                className="zk-collapsed-bar__icon"
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                <path d="M10 2l1.5 4.5L16 8l-4.5 1.5L10 14l-1.5-4.5L4 8l4.5-1.5L10 2z" />
+                <path d="M18 12l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3z" />
+                <path d="M6 16l.75 2.25L9 19l-2.25.75L6 22l-.75-2.25L3 19l2.25-.75L6 16z" opacity="0.7" />
               </svg>
+              <span className="zk-collapsed-bar__placeholder">
+                Ask {brandName} a question&hellip;
+              </span>
+              <div className="zk-collapsed-bar__send">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M5 12h14M12 5l7 7-7 7" />
+                </svg>
+              </div>
             </div>
           </div>
         </div>

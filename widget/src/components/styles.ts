@@ -25,13 +25,16 @@ export const styles = (primaryColor: string) => `
     opacity: 1;
   }
 
-  /* Card container */
+  /* Card container - glassmorphic */
   .zk-collapsed-bar__card {
     position: relative;
-    background: linear-gradient(135deg, #eb1600 0%, #ff4532 50%, #d41200 100%);
+    background: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 20px;
     padding: 20px;
-    box-shadow: 0 8px 32px rgba(235, 22, 0, 0.25), 0 2px 8px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.06);
   }
 
   /* Minimize button - top right */
@@ -66,68 +69,15 @@ export const styles = (primaryColor: string) => `
   }
 
   .zk-collapsed-bar__input-inner {
-    position: relative;
     display: flex;
     align-items: center;
     gap: 10px;
     height: 48px;
     padding: 0 8px 0 14px;
-    background: white;
-    border-radius: 12px;
-    isolation: isolate;
+    cursor: pointer;
   }
 
-  .zk-collapsed-bar__input-inner::before {
-    content: '';
-    position: absolute;
-    inset: -1.5px;
-    border-radius: 13.5px;
-    padding: 1.5px;
-    background: conic-gradient(
-      from var(--border-angle),
-      transparent 0%,
-      transparent 6%,
-      #3b82f6 8%,
-      #06b6d4 10%,
-      #84cc16 12%,
-      #eab308 14%,
-      transparent 16%,
-      transparent 100%
-    );
-    -webkit-mask:
-      linear-gradient(#fff 0 0) content-box,
-      linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor;
-    mask:
-      linear-gradient(#fff 0 0) content-box,
-      linear-gradient(#fff 0 0);
-    mask-composite: exclude;
-    animation: rotate-border 4s linear infinite;
-  }
-
-  .zk-collapsed-bar__input-inner::after {
-    content: '';
-    position: absolute;
-    inset: -3px;
-    border-radius: 15px;
-    background: conic-gradient(
-      from var(--border-angle),
-      transparent 0%,
-      transparent 6%,
-      #3b82f6 8%,
-      #06b6d4 10%,
-      #84cc16 12%,
-      #eab308 14%,
-      transparent 16%,
-      transparent 100%
-    );
-    filter: blur(6px);
-    opacity: 0.5;
-    z-index: -1;
-    animation: rotate-border 4s linear infinite;
-  }
-
-  .zk-collapsed-bar__input-inner:hover {
+  .zk-collapsed-bar__input-wrap:hover .zk-input-inner {
     background: #fafafa;
   }
 
@@ -163,17 +113,17 @@ export const styles = (primaryColor: string) => `
     margin-top: 12px;
   }
 
-  /* Card-variant chips (on colored background) */
+  /* Card-variant chips (on glass background) */
   .zk-chip--card {
-    background: rgba(255, 255, 255, 0.15);
-    border-color: rgba(255, 255, 255, 0.35);
-    color: white;
+    background: rgba(255, 255, 255, 0.85);
+    border-color: rgba(0, 0, 0, 0.08);
+    color: #374151;
   }
 
   .zk-chip--card:hover {
-    background: rgba(255, 255, 255, 0.25);
-    border-color: rgba(255, 255, 255, 0.5);
-    color: white;
+    background: white;
+    border-color: #eb1600;
+    color: #eb1600;
   }
 
   /* ===== Expanded Panel ===== */
