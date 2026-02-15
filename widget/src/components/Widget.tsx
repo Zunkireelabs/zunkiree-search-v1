@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { styles } from './styles'
 import { CollapsedBar } from './CollapsedBar'
 import { ExpandedPanel } from './ExpandedPanel'
+import { DockedPanel } from './DockedPanel'
 
 interface Message {
   id: string
@@ -24,8 +25,10 @@ interface WidgetProps {
   apiUrl: string
 }
 
+type WidgetMode = 'minimized' | 'expanded' | 'docked'
+
 export function Widget({ siteId, apiUrl }: WidgetProps) {
-  const [isOpen, setIsOpen] = useState(false)
+  const [mode, setMode] = useState<WidgetMode>('minimized')
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -50,12 +53,28 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       })
   }, [apiUrl, siteId])
 
+  // Body layout shift for docked mode
+  useEffect(() => {
+    const root = document.getElementById('zunkiree-widget-root')
+    if (mode === 'docked') {
+      document.body.classList.add('zk-docked-active')
+      root?.classList.add('zk-docked-mode')
+    } else {
+      document.body.classList.remove('zk-docked-active')
+      root?.classList.remove('zk-docked-mode')
+    }
+    return () => {
+      document.body.classList.remove('zk-docked-active')
+      root?.classList.remove('zk-docked-mode')
+    }
+  }, [mode])
+
   // Query API — UNCHANGED
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!input.trim() || isLoading) return
 
-    if (!isOpen) setIsOpen(true)
+    if (mode === 'minimized') setMode('expanded')
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -114,17 +133,17 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
 
   const handleSuggestionClick = (suggestion: string) => {
     setInput(suggestion)
-    if (!isOpen) setIsOpen(true)
+    if (mode === 'minimized') setMode('expanded')
   }
 
   const handleOpen = () => {
     hasAnimated.current = true
-    setIsOpen(true)
+    setMode('expanded')
   }
 
   const handleClose = () => {
     hasAnimated.current = true
-    setIsOpen(false)
+    setMode('minimized')
   }
 
   const brandName = config?.brand_name || siteId
@@ -140,11 +159,13 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     return config?.quick_actions || []
   }
 
+  const placeholder = config?.placeholder_text || `Ask ${brandName} a question\u2026`
+
   return (
     <>
       <style>{styles(primaryColor)}</style>
 
-      {!isOpen ? (
+      {mode === 'minimized' && (
         <CollapsedBar
           brandName={brandName}
           suggestions={getSuggestions()}
@@ -152,7 +173,9 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
           onClick={handleOpen}
           onSuggestionClick={handleSuggestionClick}
         />
-      ) : (
+      )}
+
+      {mode === 'expanded' && (
         <ExpandedPanel
           brandName={brandName}
           messages={messages}
@@ -163,7 +186,24 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
           onSubmit={handleSubmit}
           onSuggestionClick={handleSuggestionClick}
           onClose={handleClose}
-          placeholder={config?.placeholder_text || `Ask ${brandName} a question\u2026`}
+          onDock={() => setMode('docked')}
+          placeholder={placeholder}
+        />
+      )}
+
+      {mode === 'docked' && (
+        <DockedPanel
+          brandName={brandName}
+          messages={messages}
+          suggestions={getSuggestions()}
+          input={input}
+          isLoading={isLoading}
+          onInputChange={setInput}
+          onSubmit={handleSubmit}
+          onSuggestionClick={handleSuggestionClick}
+          onMinimize={() => setMode('minimized')}
+          onUndock={() => setMode('expanded')}
+          placeholder={placeholder}
         />
       )}
     </>

@@ -1,10 +1,29 @@
 export const styles = (primaryColor: string) => `
   /* ===== Reset ===== */
   .zk-collapsed-bar *,
-  .zk-expanded-panel * {
+  .zk-expanded-panel *,
+  .zk-docked * {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
+  }
+
+  /* ===== Body Layout Shift (Docked Mode) ===== */
+  body.zk-docked-active {
+    display: flex !important;
+  }
+
+  body.zk-docked-active > *:not(#zunkiree-widget-root) {
+    flex: 1 1 auto;
+    min-width: 0;
+    transition: flex 200ms ease;
+  }
+
+  #zunkiree-widget-root.zk-docked-mode {
+    width: 460px;
+    flex: 0 0 460px;
+    height: 100vh;
+    transition: width 200ms ease;
   }
 
   /* ===== Collapsed Bar ===== */
@@ -188,7 +207,15 @@ export const styles = (primaryColor: string) => `
     color: #111827;
   }
 
-  .zk-expanded-panel__close {
+  /* ===== Shared Header Controls ===== */
+  .zk-expanded-panel__controls,
+  .zk-docked__controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .zk-header-btn {
     background: none;
     border: none;
     color: #9ca3af;
@@ -202,7 +229,7 @@ export const styles = (primaryColor: string) => `
     transition: background 150ms, color 150ms;
   }
 
-  .zk-expanded-panel__close:hover {
+  .zk-header-btn:hover {
     background: #f3f4f6;
     color: #374151;
   }
@@ -274,6 +301,116 @@ export const styles = (primaryColor: string) => `
   /* Input Section - sticky bottom */
   .zk-expanded-panel__input {
     padding: 16px 24px;
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
+    flex-shrink: 0;
+  }
+
+  /* ===== Docked Panel ===== */
+  .zk-docked {
+    width: 100%;
+    height: 100vh;
+    background: linear-gradient(248.35deg, #86cdff -11.3%, #f4f4fe 16.44%, #fff 28.3%, #fff 72.47%, #ebeafe 89.69%, #bec6f7 101.94%);
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid rgba(0, 0, 0, 0.08);
+    animation: zk-dock-slide-in 200ms ease-out both;
+  }
+
+  @keyframes zk-dock-slide-in {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  /* Docked Header */
+  .zk-docked__header {
+    display: flex;
+    align-items: center;
+    height: 64px;
+    padding: 0 20px;
+    background: white;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    flex-shrink: 0;
+  }
+
+  .zk-docked__title {
+    flex: 1;
+    font-weight: 600;
+    font-size: 16px;
+    color: #111827;
+  }
+
+  /* Docked Hero */
+  .zk-docked__hero {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+  }
+
+  .zk-docked__hero-title {
+    font-size: 22px;
+    font-weight: 600;
+    color: #111827;
+    text-align: center;
+    margin-bottom: 20px;
+    line-height: 1.2;
+  }
+
+  .zk-docked__hero-chips {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  /* Docked Messages */
+  .zk-docked__messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 16px;
+    min-height: 0;
+  }
+
+  .zk-docked__messages-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .zk-docked__messages::-webkit-scrollbar {
+    width: 5px;
+  }
+
+  .zk-docked__messages::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .zk-docked__messages::-webkit-scrollbar-thumb {
+    background: #e5e7eb;
+    border-radius: 3px;
+  }
+
+  .zk-docked__messages::-webkit-scrollbar-thumb:hover {
+    background: #d1d5db;
+  }
+
+  .zk-docked__messages {
+    scrollbar-width: thin;
+    scrollbar-color: #e5e7eb transparent;
+  }
+
+  /* Docked Input */
+  .zk-docked__input {
+    padding: 16px;
     border-top: 1px solid rgba(0, 0, 0, 0.06);
     flex-shrink: 0;
   }
@@ -589,6 +726,13 @@ export const styles = (primaryColor: string) => `
     }
   }
 
+  /* ===== Mobile: Hide dock button ===== */
+  @media (max-width: 767px) {
+    .zk-dock-btn {
+      display: none;
+    }
+  }
+
   /* ===== Reduced Motion ===== */
   @media (prefers-reduced-motion: reduce) {
     .zk-collapsed-bar {
@@ -607,6 +751,12 @@ export const styles = (primaryColor: string) => `
     .zk-expanded-panel {
       animation: none;
       transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+
+    .zk-docked {
+      animation: none;
+      transform: translateX(0);
       opacity: 1;
     }
 

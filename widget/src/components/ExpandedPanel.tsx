@@ -18,6 +18,7 @@ interface ExpandedPanelProps {
   onSubmit: (e: React.FormEvent) => void
   onSuggestionClick: (suggestion: string) => void
   onClose: () => void
+  onDock: () => void
   placeholder: string
 }
 
@@ -31,6 +32,7 @@ export function ExpandedPanel({
   onSubmit,
   onSuggestionClick,
   onClose,
+  onDock,
   placeholder,
 }: ExpandedPanelProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -88,17 +90,33 @@ export function ExpandedPanel({
         {/* Header - 64px */}
         <div className="zk-expanded-panel__header">
           <span className="zk-expanded-panel__title">{brandName}</span>
-          <button
-            className="zk-expanded-panel__close"
-            onClick={onClose}
-            aria-label="Close panel"
-            type="button"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+          <div className="zk-expanded-panel__controls">
+            <button
+              className="zk-header-btn zk-dock-btn"
+              onClick={onDock}
+              aria-label="Dock panel"
+              type="button"
+              title="Dock to side"
+            >
+              {/* Panel-right / dock icon */}
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="2" y="4" width="20" height="16" rx="2" />
+                <line x1="14" y1="4" x2="14" y2="20" />
+              </svg>
+            </button>
+            <button
+              className="zk-header-btn"
+              onClick={onClose}
+              aria-label="Minimize panel"
+              type="button"
+              title="Minimize"
+            >
+              {/* Minus icon */}
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Hero Section - only when no messages */}
