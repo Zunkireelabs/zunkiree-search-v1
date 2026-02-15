@@ -28,10 +28,8 @@ export const styles = (primaryColor: string) => `
   /* Card container - glassmorphic */
   .zk-collapsed-bar__card {
     position: relative;
-    background: rgba(15, 15, 15, 0.55);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: #0a0a0a;
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 20px;
     padding: 20px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.06);
