@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import init_db
-from app.api import query_router, widget_router, admin_router
+from app.api import query_router, widget_router, admin_router, client_router
 
 settings = get_settings()
 
@@ -46,6 +46,7 @@ app.add_middleware(
 app.include_router(query_router, prefix="/api/v1")
 app.include_router(widget_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
+app.include_router(client_router, prefix="/api/v1")
 
 
 @app.get("/")

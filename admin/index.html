@@ -262,6 +262,14 @@
             <label>Allowed Domains (comma separated)</label>
             <input type="text" id="domains" placeholder="acme.com, www.acme.com" required>
           </div>
+          <div class="form-group">
+            <label>Email (optional - for client admin login)</label>
+            <input type="email" id="customerEmail" placeholder="admin@acme.com">
+          </div>
+          <div class="form-group">
+            <label>Password (optional - for client admin login)</label>
+            <input type="password" id="customerPassword" placeholder="Min 8 characters">
+          </div>
           <button type="submit">Create Customer</button>
         </form>
       </div>
@@ -367,7 +375,7 @@
   </div>
 
   <script>
-    const API_URL = 'https://api.zunkireelabs.com';
+    const API_URL = 'http://localhost:8000';
 
     // AUTH-READY: Admin key stored in sessionStorage (not hardcoded in production)
     // Future: Replace this with proper login flow + JWT tokens
@@ -429,11 +437,18 @@
             'Content-Type': 'application/json',
             'X-Admin-Key': ADMIN_KEY,
           },
-          body: JSON.stringify({
-            name: document.getElementById('customerName').value,
-            site_id: document.getElementById('siteId').value,
-            allowed_domains: document.getElementById('domains').value.split(',').map(d => d.trim()),
-          }),
+          body: JSON.stringify((() => {
+            const payload = {
+              name: document.getElementById('customerName').value,
+              site_id: document.getElementById('siteId').value,
+              allowed_domains: document.getElementById('domains').value.split(',').map(d => d.trim()),
+            };
+            const email = document.getElementById('customerEmail').value;
+            const password = document.getElementById('customerPassword').value;
+            if (email) payload.email = email;
+            if (password) payload.password = password;
+            return payload;
+          })()),
         });
 
         const data = await res.json();

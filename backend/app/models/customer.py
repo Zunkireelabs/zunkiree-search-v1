@@ -15,6 +15,8 @@ class Customer(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     site_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     api_key: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True, index=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

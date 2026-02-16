@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zunkiree Client Dashboard</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f5f5f5;
+      min-height: 100vh;
+    }
+    .header {
+      background: #2563eb;
+      color: white;
+      padding: 20px 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .header h1 {
+      font-size: 1.5rem;
+    }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 14px;
+    }
+    .header-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #22c55e;
+    }
+    .status-dot.offline {
+      background: #ef4444;
+    }
+    .logout-btn {
+      background: rgba(255,255,255,0.2);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: white;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .logout-btn:hover {
+      background: rgba(255,255,255,0.3);
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 40px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+      gap: 24px;
+    }
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .card h2 {
+      font-size: 1.1rem;
+      color: #333;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      color: #374151;
+      margin-bottom: 6px;
+    }
+    input, textarea, select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 14px;
+      transition: border-color 0.2s;
+    }
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: #2563eb;
+    }
+    textarea {
+      min-height: 100px;
+      resize: vertical;
+    }
+    button {
+      background: #2563eb;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: #1d4ed8;
+    }
+    button:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+    button.secondary {
+      background: #6b7280;
+    }
+    button.secondary:hover {
+      background: #4b5563;
+    }
+    .btn-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .alert {
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+    .alert.success {
+      background: #dcfce7;
+      color: #166534;
+    }
+    .alert.error {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .alert.info {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+    .profile-field {
+      margin-bottom: 12px;
+    }
+    .profile-label {
+      font-size: 12px;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .profile-value {
+      font-size: 15px;
+      color: #111827;
+      margin-top: 2px;
+    }
+    .job-item {
+      padding: 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      margin-bottom: 8px;
+    }
+    .job-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .job-status {
+      font-size: 12px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+    .job-status.completed {
+      background: #dcfce7;
+      color: #166534;
+    }
+    .job-status.processing {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    .job-status.failed {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .job-status.pending {
+      background: #e5e7eb;
+      color: #374151;
+    }
+    .job-details {
+      font-size: 13px;
+      color: #6b7280;
+      margin-top: 8px;
+    }
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    .tab {
+      padding: 8px 16px;
+      border-radius: 8px;
+      background: #e5e7eb;
+      color: #374151;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .tab.active {
+      background: #2563eb;
+      color: white;
+    }
+    .hidden {
+      display: none !important;
+    }
+    .embed-code {
+      background: #1f2937;
+      color: #e5e7eb;
+      padding: 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: monospace;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .copy-btn {
+      margin-top: 10px;
+      font-size: 13px;
+    }
+
+    /* Login */
+    .login-wrapper {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: calc(100vh - 80px);
+    }
+    .login-card {
+      background: white;
+      border-radius: 12px;
+      padding: 40px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      width: 100%;
+      max-width: 400px;
+    }
+    .login-card h2 {
+      text-align: center;
+      margin-bottom: 24px;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Zunkiree Dashboard</h1>
+    <div class="header-right">
+      <div class="header-status">
+        <div class="status-dot" id="apiStatus"></div>
+        <span id="apiStatusText">Checking...</span>
+      </div>
+      <span id="headerUser" class="hidden"></span>
+      <button class="logout-btn hidden" id="logoutBtn" onclick="logout()">Logout</button>
+    </div>
+  </div>
+
+  <!-- Login View -->
+  <div id="loginView">
+    <div class="login-wrapper">
+      <div class="login-card">
+        <h2>Client Login</h2>
+        <div id="loginAlerts"></div>
+        <form id="loginForm">
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="loginEmail" placeholder="you@company.com" required>
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input type="password" id="loginPassword" placeholder="Your password" required>
+          </div>
+          <button type="submit" style="width:100%; margin-top: 8px;">Sign In</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dashboard View -->
+  <div id="dashboardView" class="hidden">
+    <div class="container">
+      <div id="alerts"></div>
+
+      <div class="grid">
+        <!-- Profile -->
+        <div class="card">
+          <h2>Profile</h2>
+          <div id="profileContent">
+            <div class="profile-field">
+              <div class="profile-label">Name</div>
+              <div class="profile-value" id="profileName">-</div>
+            </div>
+            <div class="profile-field">
+              <div class="profile-label">Site ID</div>
+              <div class="profile-value" id="profileSiteId">-</div>
+            </div>
+            <div class="profile-field">
+              <div class="profile-label">Email</div>
+              <div class="profile-value" id="profileEmail">-</div>
+            </div>
+            <div class="profile-field">
+              <div class="profile-label">Member Since</div>
+              <div class="profile-value" id="profileCreated">-</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Ingest Data -->
+        <div class="card">
+          <h2>Ingest Data</h2>
+          <div class="tabs">
+            <button class="tab active" onclick="showIngestTab('url')">URL</button>
+            <button class="tab" onclick="showIngestTab('text')">Text</button>
+          </div>
+
+          <form id="ingestUrlForm">
+            <div class="form-group">
+              <label>URL to Crawl</label>
+              <input type="url" id="ingestUrl" placeholder="https://yoursite.com/about" required>
+            </div>
+            <div class="form-group">
+              <label>Max Pages</label>
+              <input type="number" id="maxPages" value="1" min="1" max="50">
+            </div>
+            <button type="submit">Ingest URL</button>
+          </form>
+
+          <form id="ingestTextForm" class="hidden">
+            <div class="form-group">
+              <label>Title</label>
+              <input type="text" id="textTitle" placeholder="About Us" required>
+            </div>
+            <div class="form-group">
+              <label>Content</label>
+              <textarea id="textContent" placeholder="Enter your content here..." required></textarea>
+            </div>
+            <button type="submit">Ingest Text</button>
+          </form>
+        </div>
+
+        <!-- Widget Config -->
+        <div class="card">
+          <h2>Widget Configuration</h2>
+          <form id="configForm">
+            <div class="form-group">
+              <label>Brand Name</label>
+              <input type="text" id="brandName" placeholder="Acme Corp">
+            </div>
+            <div class="form-group">
+              <label>Tone</label>
+              <select id="tone">
+                <option value="neutral">Neutral</option>
+                <option value="formal">Formal</option>
+                <option value="friendly">Friendly</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Primary Color</label>
+              <input type="color" id="primaryColor" value="#2563eb">
+            </div>
+            <div class="form-group">
+              <label>Welcome Message</label>
+              <input type="text" id="welcomeMessage" placeholder="Hi! How can I help you?">
+            </div>
+            <div class="btn-group">
+              <button type="button" class="secondary" onclick="loadConfig()">Load Current</button>
+              <button type="submit">Save Config</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Embed Code -->
+        <div class="card">
+          <h2>Embed Code</h2>
+          <p style="font-size: 13px; color: #6b7280; margin-bottom: 16px;">Copy this snippet and paste it into your website's HTML.</p>
+          <div class="embed-code" id="embedCode">Loading...</div>
+          <button class="copy-btn" onclick="copyEmbedCode()">Copy Code</button>
+        </div>
+
+        <!-- Ingestion Jobs -->
+        <div class="card" style="grid-column: span 2;">
+          <h2 style="display: flex; justify-content: space-between; align-items: center;">
+            Ingestion Jobs
+            <button onclick="loadJobs()" style="font-size: 12px; padding: 6px 14px;">Refresh</button>
+          </h2>
+          <div id="jobsList"><p style="color: #6b7280; text-align: center; padding: 20px;">Loading...</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = 'http://localhost:8000';
+    const TOKEN_KEY = 'zunkiree_client_token';
+
+    // --- Token management ---
+    function getToken() {
+      return sessionStorage.getItem(TOKEN_KEY);
+    }
+
+    function setToken(token) {
+      sessionStorage.setItem(TOKEN_KEY, token);
+    }
+
+    function clearToken() {
+      sessionStorage.removeItem(TOKEN_KEY);
+    }
+
+    // --- API helper ---
+    async function apiCall(path, options = {}) {
+      const token = getToken();
+      const headers = options.headers || {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      if (options.body && typeof options.body === 'object' && !(options.body instanceof FormData)) {
+        headers['Content-Type'] = 'application/json';
+        options.body = JSON.stringify(options.body);
+      }
+      options.headers = headers;
+
+      const res = await fetch(`${API_URL}${path}`, options);
+
+      if (res.status === 401 && path !== '/api/v1/client/login') {
+        clearToken();
+        showLoginView();
+        throw new Error('Session expired');
+      }
+
+      return res;
+    }
+
+    // --- View management ---
+    function showLoginView() {
+      document.getElementById('loginView').classList.remove('hidden');
+      document.getElementById('dashboardView').classList.add('hidden');
+      document.getElementById('logoutBtn').classList.add('hidden');
+      document.getElementById('headerUser').classList.add('hidden');
+    }
+
+    function showDashboardView() {
+      document.getElementById('loginView').classList.add('hidden');
+      document.getElementById('dashboardView').classList.remove('hidden');
+      document.getElementById('logoutBtn').classList.remove('hidden');
+      document.getElementById('headerUser').classList.remove('hidden');
+    }
+
+    function logout() {
+      clearToken();
+      showLoginView();
+    }
+
+    // --- Alerts ---
+    function showAlert(message, type = 'info', containerId = 'alerts') {
+      const alerts = document.getElementById(containerId);
+      const alert = document.createElement('div');
+      alert.className = `alert ${type}`;
+      alert.textContent = message;
+      alerts.appendChild(alert);
+      setTimeout(() => alert.remove(), 5000);
+    }
+
+    // --- API status ---
+    async function checkApiStatus() {
+      try {
+        const res = await fetch(`${API_URL}/health`);
+        if (res.ok) {
+          document.getElementById('apiStatus').classList.remove('offline');
+          document.getElementById('apiStatusText').textContent = 'API Connected';
+        } else {
+          throw new Error();
+        }
+      } catch {
+        document.getElementById('apiStatus').classList.add('offline');
+        document.getElementById('apiStatusText').textContent = 'API Offline';
+      }
+    }
+
+    // --- Login ---
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('button');
+      btn.disabled = true;
+      btn.textContent = 'Signing in...';
+
+      try {
+        const res = await apiCall('/api/v1/client/login', {
+          method: 'POST',
+          body: {
+            email: document.getElementById('loginEmail').value,
+            password: document.getElementById('loginPassword').value,
+          },
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+          setToken(data.token);
+          document.getElementById('headerUser').textContent = data.customer.name;
+          showDashboardView();
+          loadDashboard();
+        } else {
+          showAlert(data.detail || 'Login failed', 'error', 'loginAlerts');
+        }
+      } catch (err) {
+        if (err.message !== 'Session expired') {
+          showAlert('Network error', 'error', 'loginAlerts');
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Sign In';
+      }
+    });
+
+    // --- Dashboard load ---
+    async function loadDashboard() {
+      await Promise.all([
+        loadProfile(),
+        loadConfig(),
+        loadJobs(),
+        loadEmbedCode(),
+      ]);
+    }
+
+    // --- Profile ---
+    async function loadProfile() {
+      try {
+        const res = await apiCall('/api/v1/client/me');
+        const data = await res.json();
+        if (res.ok) {
+          document.getElementById('profileName').textContent = data.name;
+          document.getElementById('profileSiteId').textContent = data.site_id;
+          document.getElementById('profileEmail').textContent = data.email || '-';
+          document.getElementById('profileCreated').textContent = new Date(data.created_at).toLocaleDateString();
+          document.getElementById('headerUser').textContent = data.name;
+        }
+      } catch (err) {
+        if (err.message !== 'Session expired') {
+          showAlert('Failed to load profile', 'error');
+        }
+      }
+    }
+
+    // --- Ingest URL ---
+    document.getElementById('ingestUrlForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('button');
+      btn.disabled = true;
+      btn.textContent = 'Ingesting...';
+
+      try {
+        const res = await apiCall('/api/v1/client/ingest/url', {
+          method: 'POST',
+          body: {
+            url: document.getElementById('ingestUrl').value,
+            max_pages: parseInt(document.getElementById('maxPages').value),
+          },
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+          showAlert(data.message, 'success');
+          loadJobs();
+        } else {
+          showAlert(data.detail?.message || data.detail || 'Ingestion failed', 'error');
+        }
+      } catch (err) {
+        if (err.message !== 'Session expired') {
+          showAlert('Network error', 'error');
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Ingest URL';
+      }
+    });
+
+    // --- Ingest Text ---
+    document.getElementById('ingestTextForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('button');
+      btn.disabled = true;
+      btn.textContent = 'Ingesting...';
+
+      try {
+        const res = await apiCall('/api/v1/client/ingest/text', {
+          method: 'POST',
+          body: {
+            title: document.getElementById('textTitle').value,
+            text: document.getElementById('textContent').value,
+          },
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+          showAlert(data.message, 'success');
+          e.target.reset();
+          loadJobs();
+        } else {
+          showAlert(data.detail?.message || data.detail || 'Ingestion failed', 'error');
+        }
+      } catch (err) {
+        if (err.message !== 'Session expired') {
+          showAlert('Network error', 'error');
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Ingest Text';
+      }
+    });
+
+    // --- Widget Config ---
+    async function loadConfig() {
+      try {
+        const res = await apiCall('/api/v1/client/config');
+        const data = await res.json();
+        if (res.ok) {
+          if (data.brand_name) document.getElementById('brandName').value = data.brand_name;
+          if (data.tone) document.getElementById('tone').value = data.tone;
+          if (data.primary_color) document.getElementById('primaryColor').value = data.primary_color;
+          if (data.welcome_message) document.getElementById('welcomeMessage').value = data.welcome_message;
+        }
+      } catch (err) {
+        if (err.message !== 'Session expired') {
+          showAlert('Failed to load config', 'error');
+        }
+      }
+    }
+
+    document.getElementById('configForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('button[type="submit"]');
+      btn.disabled = true;
+
+      const body = {};
+      const brandName = document.getElementById('brandName').value;
+      const tone = document.getElementById('tone').value;
+      const primaryColor = document.getElementById('primaryColor').value;
+      const welcomeMessage = document.getElementById('welcomeMessage').value;
+
+      if (brandName) body.brand_name = brandName;
+      if (tone) body.tone = tone;
+      if (primaryColor) body.primary_color = primaryColor;
+      if (welcomeMessage) body.welcome_message = welcomeMessage;
+
+      try {
+        const res = await apiCall('/api/v1/client/config', {
+          method: 'PUT',
+          body: body,
+        });
+
+        if (res.ok) {
+          showAlert('Config updated!', 'success');
+        } else {
+          const data = await res.json();
+          showAlert(data.detail?.message || data.detail || 'Failed to update config', 'error');
+        }
+      } catch (err) {
+        if (err.message !== 'Session expired') {
+          showAlert('Network error', 'error');
+        }
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // --- Jobs ---
+    async function loadJobs() {
+      try {
+        const res = await apiCall('/api/v1/client/jobs');
+        const data = await res.json();
+        if (res.ok) {
+          const jobsList = document.getElementById('jobsList');
+          if (data.jobs.length === 0) {
+            jobsList.innerHTML = '<p style="color: #6b7280; text-align: center; padding: 20px;">No ingestion jobs yet</p>';
+          } else {
+            jobsList.innerHTML = data.jobs.map(job => `
+              <div class="job-item">
+                <div class="job-header">
+                  <span>${job.source_type}: ${job.source_url || job.source_filename || 'N/A'}</span>
+                  <span class="job-status ${job.status}">${job.status}</span>
+                </div>
+                <div class="job-details">
+                  Chunks: ${job.chunks_created} | Created: ${new Date(job.created_at).toLocaleString()}
+                </div>
+              </div>
+            `).join('');
+          }
+        }
+      } catch (err) {
+        if (err.message !== 'Session expired') {
+          document.getElementById('jobsList').innerHTML = '<p style="color: #991b1b; text-align: center; padding: 20px;">Failed to load jobs</p>';
+        }
+      }
+    }
+
+    // --- Embed Code ---
+    async function loadEmbedCode() {
+      try {
+        const res = await apiCall('/api/v1/client/embed-code');
+        const data = await res.json();
+        if (res.ok) {
+          document.getElementById('embedCode').textContent = data.embed_code;
+        }
+      } catch (err) {
+        if (err.message !== 'Session expired') {
+          document.getElementById('embedCode').textContent = 'Failed to load embed code';
+        }
+      }
+    }
+
+    function copyEmbedCode() {
+      const code = document.getElementById('embedCode').textContent;
+      navigator.clipboard.writeText(code).then(() => {
+        showAlert('Copied to clipboard!', 'success');
+      });
+    }
+
+    // --- Tab switching ---
+    function showIngestTab(tab) {
+      document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('active'));
+      event.target.classList.add('active');
+
+      if (tab === 'url') {
+        document.getElementById('ingestUrlForm').classList.remove('hidden');
+        document.getElementById('ingestTextForm').classList.add('hidden');
+      } else {
+        document.getElementById('ingestUrlForm').classList.add('hidden');
+        document.getElementById('ingestTextForm').classList.remove('hidden');
+      }
+    }
+
+    // --- Initialize ---
+    async function init() {
+      checkApiStatus();
+      setInterval(checkApiStatus, 30000);
+
+      const token = getToken();
+      if (token) {
+        // Validate token by loading profile
+        try {
+          const res = await apiCall('/api/v1/client/me');
+          if (res.ok) {
+            showDashboardView();
+            loadDashboard();
+          } else {
+            clearToken();
+            showLoginView();
+          }
+        } catch {
+          showLoginView();
+        }
+      } else {
+        showLoginView();
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

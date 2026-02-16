@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.database import get_db
 from app.models import Customer, Domain, WidgetConfig, IngestionJob
 from app.services.ingestion import get_ingestion_service
+from app.services.auth import hash_password
 from app.config import get_settings
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -29,6 +30,8 @@ class CreateCustomerRequest(BaseModel):
     name: str = Field(..., description="Customer display name")
     site_id: str = Field(..., pattern="^[a-z0-9-]+$", description="Unique site identifier (lowercase, alphanumeric, hyphens)")
     allowed_domains: list[str] = Field(..., description="List of allowed domains")
+    email: str | None = Field(None, description="Optional login email for client admin")
+    password: str | None = Field(None, description="Optional login password for client admin")
 
 
 class CreateCustomerResponse(BaseModel):
@@ -105,11 +108,24 @@ async def create_customer(
     # Generate API key
     api_key = f"zk_live_{request.site_id}_{secrets.token_urlsafe(24)}"
 
+    # Check email uniqueness if provided
+    if request.email:
+        result = await db.execute(
+            select(Customer).where(Customer.email == request.email)
+        )
+        if result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "DUPLICATE_EMAIL", "message": "Email already in use"},
+            )
+
     # Create customer
     customer = Customer(
         name=request.name,
         site_id=request.site_id,
         api_key=api_key,
+        email=request.email,
+        password_hash=hash_password(request.password) if request.password else None,
     )
     db.add(customer)
     await db.flush()
@@ -373,6 +389,50 @@ async def list_jobs(
         ],
         total=len(jobs),
     )
+
+
+class SetCredentialsRequest(BaseModel):
+    email: str = Field(..., description="Customer login email")
+    password: str = Field(..., min_length=8, description="Customer login password")
+
+
+@router.put("/customers/{site_id}/credentials")
+async def set_customer_credentials(
+    site_id: str,
+    request: SetCredentialsRequest,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """Set or reset customer login credentials."""
+    result = await db.execute(
+        select(Customer).where(Customer.site_id == site_id)
+    )
+    customer = result.scalar_one_or_none()
+
+    if not customer:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "CUSTOMER_NOT_FOUND", "message": "Customer not found"},
+        )
+
+    # Check email uniqueness (exclude current customer)
+    result = await db.execute(
+        select(Customer).where(
+            Customer.email == request.email,
+            Customer.id != customer.id,
+        )
+    )
+    if result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "DUPLICATE_EMAIL", "message": "Email already in use by another customer"},
+        )
+
+    customer.email = request.email
+    customer.password_hash = hash_password(request.password)
+    await db.commit()
+
+    return {"message": "Credentials updated successfully", "email": request.email}
 
 
 @router.post("/reindex/{customer_id}", response_model=JobResponse)
