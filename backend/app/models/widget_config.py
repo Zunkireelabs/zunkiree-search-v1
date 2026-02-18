@@ -30,6 +30,7 @@ class WidgetConfig(Base):
     max_response_length: Mapped[int] = mapped_column(Integer, default=500)
     show_sources: Mapped[bool] = mapped_column(Boolean, default=True)
     show_suggestions: Mapped[bool] = mapped_column(Boolean, default=True)
+    quick_actions: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON string of suggestion strings
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

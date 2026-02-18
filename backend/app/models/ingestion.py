@@ -51,6 +51,7 @@ class DocumentChunk(Base):
     )
     vector_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
     content_preview: Mapped[str | None] = mapped_column(String(500), nullable=True)
     source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_title: Mapped[str | None] = mapped_column(String(255), nullable=True)

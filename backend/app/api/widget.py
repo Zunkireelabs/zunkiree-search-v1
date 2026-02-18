@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +19,7 @@ class WidgetConfigResponse(BaseModel):
     welcome_message: str | None
     show_sources: bool
     show_suggestions: bool
+    quick_actions: list[str] = []
 
 
 @router.get("/config/{site_id}", response_model=WidgetConfigResponse)
@@ -61,7 +64,16 @@ async def get_widget_config(
             welcome_message=None,
             show_sources=True,
             show_suggestions=True,
+            quick_actions=[],
         )
+
+    # Parse quick_actions from JSON string
+    quick_actions: list[str] = []
+    if config.quick_actions:
+        try:
+            quick_actions = json.loads(config.quick_actions)
+        except (json.JSONDecodeError, TypeError):
+            quick_actions = []
 
     return WidgetConfigResponse(
         brand_name=config.brand_name,
@@ -71,4 +83,5 @@ async def get_widget_config(
         welcome_message=config.welcome_message,
         show_sources=config.show_sources,
         show_suggestions=config.show_suggestions,
+        quick_actions=quick_actions,
     )

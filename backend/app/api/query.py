@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +10,12 @@ from app.config import get_settings
 
 router = APIRouter(prefix="/query", tags=["query"])
 settings = get_settings()
+
+GREETING_WORDS = {
+    "hi", "hello", "hey", "yo",
+    "good morning", "good afternoon",
+    "good evening", "hola",
+}
 
 
 class QueryRequest(BaseModel):
@@ -45,21 +53,35 @@ async def submit_query(
             detail={"code": "EMPTY_QUESTION", "message": "Question cannot be empty"},
         )
 
-    # Handle greeting intent before RAG
-    GREETING_WORDS = {
-        "hi", "hello", "hey", "yo",
-        "good morning", "good afternoon",
-        "good evening", "hola",
-    }
+    query_service = get_query_service()
+
+    # Resolve tenant FIRST — greeting needs tenant context
+    try:
+        customer = await query_service._get_customer(db, query.site_id)
+        if not customer:
+            raise ValueError("Invalid site_id")
+        config = await query_service._get_widget_config(db, customer.id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "INVALID_SITE_ID", "message": str(e)},
+        )
+
+    # Handle greeting intent AFTER tenant resolution
     cleaned = query.question.lower().strip()
     if cleaned in GREETING_WORDS:
+        brand_name = config.brand_name if config else customer.name
+        # Use config quick_actions for greeting suggestions
+        suggestions: list[str] = []
+        if config and config.quick_actions:
+            try:
+                suggestions = json.loads(config.quick_actions)
+            except (json.JSONDecodeError, TypeError):
+                suggestions = []
+
         return QueryResponse(
-            answer="Hi! I'm Zunkiree Search. How can I help you today?",
-            suggestions=[
-                "What does Zunkiree Labs do?",
-                "How does your AI search work?",
-                "Can you show me a demo?",
-            ],
+            answer=f"Hi! I'm {brand_name}. How can I help you today?",
+            suggestions=suggestions,
             sources=[],
         )
 
@@ -67,8 +89,6 @@ async def submit_query(
     origin = request.headers.get("origin")
     user_agent = request.headers.get("user-agent")
     ip_address = request.client.host if request.client else None
-
-    query_service = get_query_service()
 
     try:
         result = await query_service.process_query(

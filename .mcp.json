@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "supabase": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-supabase"],
+      "env": {
+        "SUPABASE_CONNECTION_STRING": "postgresql://postgres.qzgcowcrtggmttfczbdo:r4HuWLWPegFBjTq4t803@aws-1-ap-south-1.pooler.supabase.com:5432/postgres"
+      }
+    }
+  }
+}

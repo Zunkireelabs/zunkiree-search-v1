@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from openai import AsyncOpenAI
 from app.config import get_settings
+from app.utils.chunking import count_tokens
 
 settings = get_settings()
 
@@ -109,6 +110,7 @@ class LLMService:
         tone: str = "neutral",
         fallback_message: str = "I don't have that information yet.",
         max_tokens: int = 500,
+        show_suggestions: bool = True,
     ) -> dict:
         """
         Generate an answer using the LLM.
@@ -120,15 +122,31 @@ class LLMService:
             tone: Response tone (formal, neutral, friendly)
             fallback_message: Message to use when answer not found
             max_tokens: Maximum tokens in response
+            show_suggestions: Whether to generate follow-up suggestions
 
         Returns:
             Dict with 'answer' and 'suggestions'
         """
-        # Build context from chunks
-        context = "\n\n---\n\n".join([
-            chunk.get("content", chunk.get("metadata", {}).get("content", ""))
-            for chunk in context_chunks
-        ])
+        # Build context from chunks with source labels and token cap
+        max_context_tokens = 4000
+        context_parts = []
+        running_tokens = 0
+
+        for chunk in context_chunks:
+            content = chunk.get("content", "")
+            if not content:
+                continue
+
+            source_title = chunk.get("source_title", "")
+            part = f"[Source: {source_title}]\n{content}" if source_title else content
+            part_tokens = count_tokens(part)
+
+            if running_tokens + part_tokens > max_context_tokens:
+                break
+            context_parts.append(part)
+            running_tokens += part_tokens
+
+        context = "\n\n---\n\n".join(context_parts)
 
         if not context.strip():
             return {
@@ -152,8 +170,10 @@ class LLMService:
             temperature=settings.llm_temperature,
         )
 
-        # Generate follow-up suggestions
-        suggestions = await self._generate_suggestions(question, answer, brand_name)
+        # Generate follow-up suggestions only if enabled
+        suggestions = []
+        if show_suggestions:
+            suggestions = await self._generate_suggestions(question, answer, brand_name)
 
         return {
             "answer": answer,

@@ -269,20 +269,21 @@ class IngestionService:
                 "id": vector_id,
                 "values": embedding,
                 "metadata": {
-                    "content": chunk["content"][:1000],  # Limit metadata size
                     "source_url": chunk.get("source_url", ""),
                     "source_title": chunk.get("source_title", ""),
                     "chunk_index": chunk["chunk_index"],
                     "job_id": str(job.id),
+                    "site_id": site_id,
                 },
             })
 
-            # Create document chunk record
+            # Create document chunk record with full content in Postgres
             doc_chunk = DocumentChunk(
                 customer_id=job.customer_id,
                 job_id=job.id,
                 vector_id=vector_id,
                 chunk_index=chunk["chunk_index"],
+                content=chunk["content"],
                 content_preview=chunk["content"][:500],
                 source_url=chunk.get("source_url"),
                 source_title=chunk.get("source_title"),

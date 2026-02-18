@@ -3,13 +3,17 @@ import hashlib
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.models import Customer, WidgetConfig, Domain, QueryLog
+from app.models import Customer, WidgetConfig, Domain, QueryLog, DocumentChunk
 from app.services.embeddings import get_embedding_service
 from app.services.vector_store import get_vector_store_service
 from app.services.llm import get_llm_service
+from app.utils.chunking import count_tokens
 from app.config import get_settings
 
 settings = get_settings()
+
+# Maximum tokens of context to feed the LLM (prevents exceeding model limits)
+MAX_CONTEXT_TOKENS = 4000
 
 
 class QueryService:
@@ -30,16 +34,14 @@ class QueryService:
         """
         Process a user query end-to-end.
 
-        Args:
-            db: Database session
-            site_id: Customer's site ID
-            question: User's question
-            origin: Request origin domain
-            user_agent: User agent string
-            ip_address: Client IP address
-
-        Returns:
-            Dict with answer, suggestions, and sources
+        Flow:
+        1. Validate customer + origin
+        2. Embed question via OpenAI
+        3. Retrieve top-k vector IDs from Pinecone (namespace = site_id)
+        4. Fetch full chunk content from PostgreSQL (filtered by customer_id)
+        5. Assemble token-capped context
+        6. Generate answer via LLM
+        7. Log query
         """
         start_time = time.time()
 
@@ -58,21 +60,55 @@ class QueryService:
         # Generate query embedding
         query_embedding = await self.embedding_service.create_embedding(question)
 
-        # Retrieve relevant chunks
-        chunks = await self.vector_store.query_vectors(
+        # Retrieve relevant vector IDs from Pinecone (scores only, no metadata)
+        vector_matches = await self.vector_store.query_vectors(
             query_vector=query_embedding,
             namespace=site_id,
             top_k=settings.top_k_chunks,
+            site_id=site_id,
         )
 
-        # Generate answer
+        # Extract vector IDs
+        vector_ids = [match["id"] for match in vector_matches]
+
+        # No-data detection: if Pinecone returned 0 results, return fallback immediately
+        if not vector_ids:
+            fallback = config.fallback_message if config else "I don't have that information yet."
+            return {
+                "answer": fallback,
+                "suggestions": [],
+                "sources": [],
+            }
+
+        # Fetch full chunk content from PostgreSQL (defense-in-depth: filter by customer_id)
+        db_chunks = await self._fetch_chunks_by_vector_ids(db, vector_ids, customer.id)
+
+        # Build ordered chunk list preserving Pinecone relevance ranking
+        vector_id_to_score = {match["id"]: match["score"] for match in vector_matches}
+        chunks_for_llm = []
+        for chunk in db_chunks:
+            chunks_for_llm.append({
+                "content": chunk.content,
+                "source_url": chunk.source_url or "",
+                "source_title": chunk.source_title or "Source",
+                "score": vector_id_to_score.get(chunk.vector_id, 0),
+            })
+
+        # Sort by Pinecone relevance score (highest first)
+        chunks_for_llm.sort(key=lambda c: c["score"], reverse=True)
+
+        # Determine if suggestions should be generated
+        show_suggestions = config.show_suggestions if config else True
+
+        # Generate answer with token-capped context
         result = await self.llm_service.generate_answer(
             question=question,
-            context_chunks=chunks,
+            context_chunks=chunks_for_llm,
             brand_name=config.brand_name if config else customer.name,
             tone=config.tone if config else "neutral",
             fallback_message=config.fallback_message if config else "I don't have that information yet.",
             max_tokens=config.max_response_length if config else 500,
+            show_suggestions=show_suggestions,
         )
 
         # Calculate response time
@@ -84,29 +120,49 @@ class QueryService:
             customer_id=customer.id,
             question=question,
             answer=result["answer"],
-            chunks_used=len(chunks),
+            chunks_used=len(chunks_for_llm),
             response_time_ms=response_time_ms,
             origin=origin,
             user_agent=user_agent,
             ip_address=ip_address,
         )
 
-        # Build sources from chunks
+        # Build deduplicated sources list
         sources = []
         seen_urls = set()
-        for chunk in chunks:
-            metadata = chunk.get("metadata", {})
-            url = metadata.get("source_url")
-            title = metadata.get("source_title", "Source")
+        for chunk in chunks_for_llm:
+            url = chunk["source_url"]
+            title = chunk["source_title"]
             if url and url not in seen_urls:
                 sources.append({"title": title, "url": url})
                 seen_urls.add(url)
 
         return {
             "answer": result["answer"],
-            "suggestions": result["suggestions"] if config and config.show_suggestions else [],
+            "suggestions": result["suggestions"] if show_suggestions else [],
             "sources": sources if config and config.show_sources else [],
         }
+
+    async def _fetch_chunks_by_vector_ids(
+        self,
+        db: AsyncSession,
+        vector_ids: list[str],
+        customer_id,
+    ) -> list[DocumentChunk]:
+        """
+        Fetch full chunk content from PostgreSQL by vector IDs.
+        Defense-in-depth: always filter by customer_id to prevent cross-tenant leakage.
+        """
+        if not vector_ids:
+            return []
+
+        result = await db.execute(
+            select(DocumentChunk).where(
+                DocumentChunk.vector_id.in_(vector_ids),
+                DocumentChunk.customer_id == customer_id,
+            )
+        )
+        return list(result.scalars().all())
 
     async def _get_customer(self, db: AsyncSession, site_id: str) -> Customer | None:
         """Get customer by site_id."""

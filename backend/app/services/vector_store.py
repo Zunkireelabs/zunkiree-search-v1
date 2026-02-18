@@ -42,32 +42,38 @@ class VectorStoreService:
         query_vector: list[float],
         namespace: str,
         top_k: int = 5,
-        include_metadata: bool = True,
+        site_id: str | None = None,
     ) -> list[dict]:
         """
-        Query vectors from Pinecone.
+        Query vectors from Pinecone. Returns vector IDs and scores only.
+        Full content is fetched from PostgreSQL by the query service.
 
         Args:
             query_vector: The query embedding
             namespace: Customer namespace (site_id)
             top_k: Number of results to return
-            include_metadata: Whether to include metadata
+            site_id: Optional site_id for metadata filter (defense-in-depth)
 
         Returns:
-            List of matches with scores and metadata
+            List of matches with IDs and scores
         """
+        # Defense-in-depth: metadata filter even though namespace already isolates
+        query_filter = None
+        if site_id:
+            query_filter = {"site_id": {"$eq": site_id}}
+
         results = self.index.query(
             vector=query_vector,
             namespace=namespace,
             top_k=top_k,
-            include_metadata=include_metadata,
+            include_metadata=False,
+            filter=query_filter,
         )
 
         return [
             {
                 "id": match.id,
                 "score": match.score,
-                "metadata": match.metadata if include_metadata else {},
             }
             for match in results.matches
         ]
