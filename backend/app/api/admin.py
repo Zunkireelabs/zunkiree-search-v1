@@ -57,6 +57,30 @@ class IngestQARequest(BaseModel):
     answer: str = Field(..., min_length=10, description="The answer")
 
 
+class QAPair(BaseModel):
+    question: str = Field(..., min_length=5, description="The question")
+    answer: str = Field(..., min_length=10, description="The answer")
+
+
+class IngestQABatchRequest(BaseModel):
+    site_id: str = Field(..., description="Customer site_id")
+    qa_pairs: list[QAPair] = Field(..., min_length=1, max_length=50, description="Q&A pairs to ingest")
+
+
+class QABatchJobResult(BaseModel):
+    question: str
+    job_id: str
+    status: str
+    chunks_created: int
+
+
+class QABatchResponse(BaseModel):
+    total: int
+    succeeded: int
+    failed: int
+    results: list[QABatchJobResult]
+
+
 class JobResponse(BaseModel):
     job_id: str
     status: str
@@ -443,6 +467,66 @@ async def ingest_qa(
             status_code=500,
             detail={"code": "INGESTION_FAILED", "message": str(e)},
         )
+
+
+@router.post("/ingest/qa/batch", response_model=QABatchResponse)
+async def ingest_qa_batch(
+    request: IngestQABatchRequest,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """Ingest multiple Q&A seed pairs in a single request."""
+    # Get customer
+    result = await db.execute(
+        select(Customer).where(Customer.site_id == request.site_id)
+    )
+    customer = result.scalar_one_or_none()
+
+    if not customer:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "CUSTOMER_NOT_FOUND", "message": "Customer not found"},
+        )
+
+    ingestion_service = get_ingestion_service()
+    results = []
+    succeeded = 0
+    failed = 0
+
+    for pair in request.qa_pairs:
+        try:
+            job = await ingestion_service.ingest_qa(
+                db=db,
+                customer_id=customer.id,
+                site_id=customer.site_id,
+                question=pair.question,
+                answer=pair.answer,
+            )
+            results.append(QABatchJobResult(
+                question=pair.question[:80],
+                job_id=str(job.id),
+                status=job.status,
+                chunks_created=job.chunks_created,
+            ))
+            if job.status == "completed":
+                succeeded += 1
+            else:
+                failed += 1
+        except Exception:
+            failed += 1
+            results.append(QABatchJobResult(
+                question=pair.question[:80],
+                job_id="",
+                status="failed",
+                chunks_created=0,
+            ))
+
+    return QABatchResponse(
+        total=len(request.qa_pairs),
+        succeeded=succeeded,
+        failed=failed,
+        results=results,
+    )
 
 
 @router.put("/config/{customer_id}")

@@ -269,6 +269,31 @@
       margin-top: 10px;
       font-size: 13px;
     }
+    .qa-pair {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 12px;
+      position: relative;
+    }
+    .qa-pair .remove-pair {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: #ef4444;
+      color: white;
+      border: none;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      font-size: 14px;
+      cursor: pointer;
+      padding: 0;
+      line-height: 24px;
+    }
+    .qa-pair .remove-pair:hover {
+      background: #dc2626;
+    }
   </style>
 </head>
 <body>
@@ -351,7 +376,8 @@
         <h2>Ingest Data</h2>
         <div class="tabs">
           <button class="tab active" onclick="showIngestTab('url')">URL</button>
-          <button class="tab" onclick="showIngestTab('text')">Text</button>
+          <button class="tab" onclick="showIngestTab('file')">File</button>
+          <button class="tab" onclick="showIngestTab('qa')">QA Seeds</button>
         </div>
 
         <form id="ingestUrlForm">
@@ -370,21 +396,40 @@
           <button type="submit">Ingest URL</button>
         </form>
 
-        <form id="ingestTextForm" class="hidden">
+        <form id="ingestFileForm" class="hidden">
           <div class="form-group">
             <label>Customer Site ID</label>
-            <input type="text" id="textCustomerId" placeholder="acme" required>
+            <input type="text" id="fileCustomerId" placeholder="acme" required>
           </div>
           <div class="form-group">
-            <label>Title</label>
-            <input type="text" id="textTitle" placeholder="About Us" required>
+            <label>File (PDF, DOCX, or TXT — max 10MB)</label>
+            <input type="file" id="fileInput" accept=".pdf,.docx,.txt" required>
           </div>
-          <div class="form-group">
-            <label>Content</label>
-            <textarea id="textContent" placeholder="Enter your content here..." required></textarea>
-          </div>
-          <button type="submit">Ingest Text</button>
+          <button type="submit">Upload & Ingest</button>
         </form>
+
+        <div id="ingestQAForm" class="hidden">
+          <div class="form-group">
+            <label>Customer Site ID</label>
+            <input type="text" id="qaCustomerId" placeholder="acme" required>
+          </div>
+          <div id="qaPairsContainer">
+            <div class="qa-pair" data-index="0">
+              <div class="form-group">
+                <label>Question #1</label>
+                <input type="text" class="qa-question" placeholder="What is your return policy?" required>
+              </div>
+              <div class="form-group">
+                <label>Answer #1</label>
+                <textarea class="qa-answer" placeholder="We offer a 30-day return policy..." required></textarea>
+              </div>
+            </div>
+          </div>
+          <div class="btn-group">
+            <button type="button" class="secondary" onclick="addQAPair()">+ Add Pair</button>
+            <button type="button" onclick="submitQABatch()">Ingest All QA Pairs</button>
+          </div>
+        </div>
       </div>
 
       <!-- Widget Config -->
@@ -554,6 +599,7 @@
         const data = await res.json();
         if (res.ok) {
           showAlert(data.message, 'success');
+          refreshTenantOverview();
         } else {
           showAlert(data.detail?.message || 'Ingestion failed', 'error');
         }
@@ -565,41 +611,157 @@
       }
     });
 
-    // Ingest Text
-    document.getElementById('ingestTextForm').addEventListener('submit', async (e) => {
+    // Ingest File
+    document.getElementById('ingestFileForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const btn = e.target.querySelector('button');
+      const btn = e.target.querySelector('button[type="submit"]');
       btn.disabled = true;
-      btn.textContent = 'Ingesting...';
+      btn.textContent = 'Uploading...';
 
       try {
-        const res = await fetch(`${API_URL}/api/v1/admin/ingest/text`, {
+        const siteId = document.getElementById('fileCustomerId').value;
+        const fileInput = document.getElementById('fileInput');
+        if (!fileInput.files.length) {
+          showAlert('Select a file', 'error');
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+
+        const res = await fetch(`${API_URL}/api/v1/admin/ingest/file?site_id=${encodeURIComponent(siteId)}`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Admin-Key': ADMIN_KEY,
-          },
-          body: JSON.stringify({
-            customer_id: document.getElementById('textCustomerId').value,
-            title: document.getElementById('textTitle').value,
-            text: document.getElementById('textContent').value,
-          }),
+          headers: { 'X-Admin-Key': ADMIN_KEY },
+          body: formData,
         });
 
         const data = await res.json();
         if (res.ok) {
           showAlert(data.message, 'success');
           e.target.reset();
+          refreshTenantOverview();
         } else {
-          showAlert(data.detail?.message || 'Ingestion failed', 'error');
+          showAlert(data.detail?.message || 'File ingestion failed', 'error');
         }
       } catch (err) {
         showAlert('Network error', 'error');
       } finally {
         btn.disabled = false;
-        btn.textContent = 'Ingest Text';
+        btn.textContent = 'Upload & Ingest';
       }
     });
+
+    // QA Seeds
+    let qaPairCount = 1;
+
+    function addQAPair() {
+      qaPairCount++;
+      const container = document.getElementById('qaPairsContainer');
+      const div = document.createElement('div');
+      div.className = 'qa-pair';
+      div.dataset.index = qaPairCount - 1;
+      div.innerHTML = `
+        <button type="button" class="remove-pair" onclick="removeQAPair(this)">&times;</button>
+        <div class="form-group">
+          <label>Question #${qaPairCount}</label>
+          <input type="text" class="qa-question" placeholder="What is your return policy?" required>
+        </div>
+        <div class="form-group">
+          <label>Answer #${qaPairCount}</label>
+          <textarea class="qa-answer" placeholder="We offer a 30-day return policy..." required></textarea>
+        </div>
+      `;
+      container.appendChild(div);
+    }
+
+    function removeQAPair(btn) {
+      const pair = btn.closest('.qa-pair');
+      const container = document.getElementById('qaPairsContainer');
+      if (container.children.length > 1) {
+        pair.remove();
+        renumberQAPairs();
+      }
+    }
+
+    function renumberQAPairs() {
+      const pairs = document.querySelectorAll('#qaPairsContainer .qa-pair');
+      pairs.forEach((pair, i) => {
+        pair.querySelectorAll('label').forEach(label => {
+          label.textContent = label.textContent.replace(/#\d+/, `#${i + 1}`);
+        });
+      });
+      qaPairCount = pairs.length;
+    }
+
+    async function submitQABatch() {
+      const siteId = document.getElementById('qaCustomerId').value;
+      if (!siteId) {
+        showAlert('Enter a Site ID', 'error');
+        return;
+      }
+
+      const pairs = [];
+      const pairEls = document.querySelectorAll('#qaPairsContainer .qa-pair');
+      for (const el of pairEls) {
+        const q = el.querySelector('.qa-question').value.trim();
+        const a = el.querySelector('.qa-answer').value.trim();
+        if (!q || !a) {
+          showAlert('All questions and answers are required', 'error');
+          return;
+        }
+        if (q.length < 5) {
+          showAlert('Questions must be at least 5 characters', 'error');
+          return;
+        }
+        if (a.length < 10) {
+          showAlert('Answers must be at least 10 characters', 'error');
+          return;
+        }
+        pairs.push({ question: q, answer: a });
+      }
+
+      const btn = document.querySelector('#ingestQAForm button:last-child');
+      btn.disabled = true;
+      btn.textContent = 'Ingesting...';
+
+      try {
+        const res = await fetch(`${API_URL}/api/v1/admin/ingest/qa/batch`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Admin-Key': ADMIN_KEY,
+          },
+          body: JSON.stringify({ site_id: siteId, qa_pairs: pairs }),
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+          showAlert(`${data.succeeded}/${data.total} QA pairs ingested successfully`, 'success');
+          // Reset form to single pair
+          document.getElementById('qaPairsContainer').innerHTML = `
+            <div class="qa-pair" data-index="0">
+              <div class="form-group">
+                <label>Question #1</label>
+                <input type="text" class="qa-question" placeholder="What is your return policy?" required>
+              </div>
+              <div class="form-group">
+                <label>Answer #1</label>
+                <textarea class="qa-answer" placeholder="We offer a 30-day return policy..." required></textarea>
+              </div>
+            </div>
+          `;
+          qaPairCount = 1;
+          refreshTenantOverview();
+        } else {
+          showAlert(data.detail?.message || 'QA ingestion failed', 'error');
+        }
+      } catch (err) {
+        showAlert('Network error', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Ingest All QA Pairs';
+      }
+    }
 
     // Update config
     document.getElementById('configForm').addEventListener('submit', async (e) => {
@@ -716,6 +878,7 @@
       }
 
       overview.classList.remove('hidden');
+      syncSiteIdFields();
       document.getElementById('ovSiteId').textContent = siteId;
       document.getElementById('ovBrandName').textContent = '...';
       document.getElementById('ovChunks').textContent = '...';
@@ -775,13 +938,33 @@
       document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('active'));
       event.target.classList.add('active');
 
+      document.getElementById('ingestUrlForm').classList.add('hidden');
+      document.getElementById('ingestFileForm').classList.add('hidden');
+      document.getElementById('ingestQAForm').classList.add('hidden');
+
       if (tab === 'url') {
         document.getElementById('ingestUrlForm').classList.remove('hidden');
-        document.getElementById('ingestTextForm').classList.add('hidden');
-      } else {
-        document.getElementById('ingestUrlForm').classList.add('hidden');
-        document.getElementById('ingestTextForm').classList.remove('hidden');
+      } else if (tab === 'file') {
+        document.getElementById('ingestFileForm').classList.remove('hidden');
+      } else if (tab === 'qa') {
+        document.getElementById('ingestQAForm').classList.remove('hidden');
       }
+    }
+
+    // Auto-fill site_id fields from tenant selector
+    function syncSiteIdFields() {
+      const siteId = document.getElementById('tenantSelect').value;
+      if (siteId) {
+        document.getElementById('ingestCustomerId').value = siteId;
+        document.getElementById('fileCustomerId').value = siteId;
+        document.getElementById('qaCustomerId').value = siteId;
+      }
+    }
+
+    // Refresh tenant overview after ingestion
+    function refreshTenantOverview() {
+      const siteId = document.getElementById('tenantSelect').value;
+      if (siteId) onTenantSelected();
     }
 
     // Update embed code
