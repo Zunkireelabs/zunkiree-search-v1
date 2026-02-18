@@ -2,7 +2,7 @@ import time
 import hashlib
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.models import Customer, WidgetConfig, Domain, QueryLog, DocumentChunk
 from app.services.embeddings import get_embedding_service
@@ -66,25 +66,30 @@ class QueryService:
         # [TEMP-LOG] Log Pinecone query params
         logger.warning("[QUERY-TRACE] pinecone_namespace=%s site_id_filter=%s top_k=%s embedding_dim=%d", site_id, site_id, settings.top_k_chunks, len(query_embedding))
 
-        # Retrieve relevant vector IDs from Pinecone (scores only, no metadata)
+        # --- Hybrid retrieval: vector + keyword ---
+
+        # List A: Pinecone vector search
         vector_matches = await self.vector_store.query_vectors(
             query_vector=query_embedding,
             namespace=site_id,
             top_k=settings.top_k_chunks,
             site_id=site_id,
         )
-
-        # Extract vector IDs
         vector_ids = [match["id"] for match in vector_matches]
+        logger.warning("[QUERY-TRACE] vector_results_ids=%s", vector_ids[:5])
 
-        # [TEMP-LOG] Log Pinecone results
-        logger.warning("[QUERY-TRACE] pinecone_matches=%d vector_ids=%s", len(vector_matches), vector_ids[:5])
+        # List B: Postgres full-text keyword search
+        keyword_ids = await self._keyword_search(db, customer.id, question, limit=settings.top_k_chunks)
+        logger.warning("[QUERY-TRACE] keyword_results_ids=%s", keyword_ids[:5])
 
-        # No-data detection: if Pinecone returned 0 results, return fallback immediately
-        if not vector_ids:
+        # Fuse results via Reciprocal Rank Fusion
+        fused_ids = _reciprocal_rank_fusion(vector_ids, keyword_ids, k=60, top_n=settings.top_k_chunks)
+        logger.warning("[QUERY-TRACE] fused_results_ids=%s", fused_ids[:5])
+
+        # No-data detection: if both searches returned 0 results, return fallback
+        if not fused_ids:
             fallback = config.fallback_message if config else "I don't have that information yet."
-            # [TEMP-LOG] Fallback: 0 Pinecone matches
-            logger.warning("[QUERY-TRACE] FALLBACK_TRIGGERED reason=zero_pinecone_matches site_id=%s", site_id)
+            logger.warning("[QUERY-TRACE] FALLBACK_TRIGGERED reason=zero_fused_matches site_id=%s", site_id)
             return {
                 "answer": fallback,
                 "suggestions": [],
@@ -92,25 +97,25 @@ class QueryService:
             }
 
         # Fetch full chunk content from PostgreSQL (defense-in-depth: filter by customer_id)
-        db_chunks = await self._fetch_chunks_by_vector_ids(db, vector_ids, customer.id)
+        db_chunks = await self._fetch_chunks_by_vector_ids(db, fused_ids, customer.id)
 
         # [TEMP-LOG] Log Postgres chunk fetch results
-        logger.warning("[QUERY-TRACE] postgres_chunks=%d customer_id=%s vector_ids_requested=%d", len(db_chunks), customer.id, len(vector_ids))
-        if len(db_chunks) < len(vector_ids):
-            logger.warning("[QUERY-TRACE] CHUNK_MISMATCH missing_count=%d (Pinecone returned IDs not found in Postgres)", len(vector_ids) - len(db_chunks))
+        logger.warning("[QUERY-TRACE] postgres_chunks=%d customer_id=%s vector_ids_requested=%d", len(db_chunks), customer.id, len(fused_ids))
+        if len(db_chunks) < len(fused_ids):
+            logger.warning("[QUERY-TRACE] CHUNK_MISMATCH missing_count=%d", len(fused_ids) - len(db_chunks))
 
-        # Build ordered chunk list preserving Pinecone relevance ranking
-        vector_id_to_score = {match["id"]: match["score"] for match in vector_matches}
+        # Build ordered chunk list preserving RRF fusion ranking
+        fused_rank = {vid: idx for idx, vid in enumerate(fused_ids)}
         chunks_for_llm = []
         for chunk in db_chunks:
             chunks_for_llm.append({
                 "content": chunk.content,
                 "source_url": chunk.source_url or "",
                 "source_title": chunk.source_title or "Source",
-                "score": vector_id_to_score.get(chunk.vector_id, 0),
+                "score": len(fused_ids) - fused_rank.get(chunk.vector_id, len(fused_ids)),
             })
 
-        # Sort by Pinecone relevance score (highest first)
+        # Sort by fusion rank (highest score = best rank)
         chunks_for_llm.sort(key=lambda c: c["score"], reverse=True)
 
         # Determine if suggestions should be generated
@@ -158,6 +163,31 @@ class QueryService:
             "suggestions": result["suggestions"] if show_suggestions else [],
             "sources": sources if config and config.show_sources else [],
         }
+
+    async def _keyword_search(
+        self,
+        db: AsyncSession,
+        customer_id,
+        question: str,
+        limit: int = 5,
+    ) -> list[str]:
+        """
+        Full-text keyword search on document_chunks.
+        Returns ranked list of vector_ids.
+        """
+        result = await db.execute(
+            text("""
+                SELECT vector_id,
+                       ts_rank(search_vector, plainto_tsquery('english', :query)) AS rank
+                FROM document_chunks
+                WHERE customer_id = :customer_id
+                  AND search_vector @@ plainto_tsquery('english', :query)
+                ORDER BY rank DESC
+                LIMIT :limit
+            """),
+            {"query": question, "customer_id": str(customer_id), "limit": limit},
+        )
+        return [row[0] for row in result.fetchall()]
 
     async def _fetch_chunks_by_vector_ids(
         self,
@@ -263,6 +293,25 @@ class QueryService:
         )
         db.add(log)
         await db.commit()
+
+
+def _reciprocal_rank_fusion(
+    list_a: list[str],
+    list_b: list[str],
+    k: int = 60,
+    top_n: int = 5,
+) -> list[str]:
+    """
+    Reciprocal Rank Fusion of two ranked ID lists.
+    Score per ID = sum of 1/(k + rank) across lists where it appears.
+    """
+    scores: dict[str, float] = {}
+    for rank, vid in enumerate(list_a):
+        scores[vid] = scores.get(vid, 0) + 1.0 / (k + rank)
+    for rank, vid in enumerate(list_b):
+        scores[vid] = scores.get(vid, 0) + 1.0 / (k + rank)
+    sorted_ids = sorted(scores, key=scores.get, reverse=True)
+    return sorted_ids[:top_n]
 
 
 # Singleton instance

@@ -2,7 +2,7 @@ import uuid
 import logging
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.models import Customer, IngestionJob, DocumentChunk
 from app.services.embeddings import get_embedding_service
@@ -446,6 +446,19 @@ class IngestionService:
         await self.vector_store.upsert_vectors(vectors, namespace=site_id)
 
         # Commit document chunks
+        await db.commit()
+
+        # Backfill search_vector for full-text search
+        vector_ids = [v["id"] for v in vectors]
+        await db.execute(
+            text("""
+                UPDATE document_chunks
+                SET search_vector = to_tsvector('english', content)
+                WHERE vector_id = ANY(:vector_ids)
+                AND search_vector IS NULL
+            """),
+            {"vector_ids": vector_ids},
+        )
         await db.commit()
 
     async def delete_customer_data(

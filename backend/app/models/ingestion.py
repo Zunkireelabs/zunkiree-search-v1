@@ -1,6 +1,8 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, DateTime, ForeignKey, Integer, Text
+from sqlalchemy import String, DateTime, ForeignKey, Integer, Text, Column
+from sqlalchemy.types import TypeDecorator
+from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -56,6 +58,7 @@ class DocumentChunk(Base):
     source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    search_vector = Column("search_vector", nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Relationships
