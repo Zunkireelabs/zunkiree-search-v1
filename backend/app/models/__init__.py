@@ -3,6 +3,8 @@ from app.models.domain import Domain
 from app.models.widget_config import WidgetConfig
 from app.models.ingestion import IngestionJob, DocumentChunk
 from app.models.query_log import QueryLog
+from app.models.verification import VerificationSession
+from app.models.user_profile import UserProfile
 
 __all__ = [
     "Customer",
@@ -11,4 +13,6 @@ __all__ = [
     "IngestionJob",
     "DocumentChunk",
     "QueryLog",
+    "VerificationSession",
+    "UserProfile",
 ]

@@ -25,6 +25,7 @@ class Customer(Base):
     ingestion_jobs: Mapped[list["IngestionJob"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
     document_chunks: Mapped[list["DocumentChunk"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
     query_logs: Mapped[list["QueryLog"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
+    user_profiles: Mapped[list["UserProfile"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
 
 
 # Import at bottom to avoid circular imports
@@ -32,3 +33,4 @@ from app.models.domain import Domain
 from app.models.widget_config import WidgetConfig
 from app.models.ingestion import IngestionJob, DocumentChunk
 from app.models.query_log import QueryLog
+from app.models.user_profile import UserProfile

@@ -50,6 +50,7 @@ export const ZunkireeSearch: React.FC<ZunkireeSearchProps> = ({
   const [result, setResult] = useState<SearchResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<SearchError | null>(null);
+  const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
   const [stylesInjected, setStylesInjected] = useState(false);
 
   // Inject styles
@@ -108,7 +109,7 @@ export const ZunkireeSearch: React.FC<ZunkireeSearchProps> = ({
     setError(null);
     setResult(null);
 
-    const payload = { site_id: siteId, question: query };
+    const payload = { site_id: siteId, question: query, session_id: sessionId };
     console.log('[Zunkiree] Request payload:', payload);
 
     try {
@@ -127,6 +128,7 @@ export const ZunkireeSearch: React.FC<ZunkireeSearchProps> = ({
       }
 
       const data = await response.json();
+      if (data.session_id) setSessionId(data.session_id);
       setResult({
         answer: data.answer,
         suggestions: data.suggestions || [],

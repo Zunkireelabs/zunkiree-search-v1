@@ -16,9 +16,10 @@ settings = get_settings()
 SYSTEM_PROMPT_TEMPLATE = """You are a helpful assistant for {brand_name}.
 
 INSTRUCTIONS:
-- Answer questions ONLY using the provided context below
-- If the answer is not in the context, say "{fallback_message}"
-- Never make up information or provide information not in the context
+- Use the provided context below as your primary source of information
+- If the context contains relevant information, base your answer on it
+- If the context doesn't fully cover the question but it relates to what {brand_name} does, provide a helpful and accurate general response — do NOT refuse to answer
+- Only say "{fallback_message}" if the question is completely unrelated to what {brand_name} does
 - Keep responses concise, clear, and helpful
 - Tone: {tone}
 - Do not mention that you are using "context" or "provided information"
@@ -114,6 +115,8 @@ class LLMService:
         fallback_message: str = "I don't have that information yet.",
         max_tokens: int = 500,
         show_suggestions: bool = True,
+        user_email: str | None = None,
+        user_profile: dict | None = None,
     ) -> dict:
         """
         Generate an answer using the LLM.
@@ -152,11 +155,7 @@ class LLMService:
         context = "\n\n---\n\n".join(context_parts)
 
         if not context.strip():
-            return {
-                "answer": fallback_message,
-                "suggestions": [],
-                "context_tokens": 0,
-            }
+            context = f"No specific indexed data is available for this query. You are the assistant for {brand_name}. Answer helpfully if the question relates to their domain."
 
         # Build system prompt
         system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
@@ -165,6 +164,30 @@ class LLMService:
             fallback_message=fallback_message,
             context=context,
         )
+
+        if user_email:
+            identity_parts = [f"The person asking is verified as {user_email}."]
+            if user_profile:
+                if user_profile.get("name"):
+                    identity_parts.append(f"Their name is {user_profile['name']}.")
+                if user_profile.get("user_type"):
+                    identity_parts.append(f"Their user type is {user_profile['user_type'].replace('_', ' ')}.")
+                if user_profile.get("lead_intent"):
+                    identity_parts.append(f"Their lead intent is {user_profile['lead_intent'].replace('_', ' ')}.")
+                custom = user_profile.get("custom_fields")
+                if custom and isinstance(custom, dict):
+                    for key, val in custom.items():
+                        identity_parts.append(f"Their {key.replace('_', ' ')} is {val}.")
+            identity_parts.append(
+                "IMPORTANT: You know who this user is. "
+                "Filter and personalize all answers using their profile data. "
+                "Match context records to this user's email, name, or custom fields. "
+                "If the question is about their status, eligibility, recommendations, or anything personal, "
+                "search the context for records that relate to this specific user and present those results. "
+                "Address them by name. Never tell them to 'check a portal' or 'log in elsewhere' — "
+                "you ARE their portal. Answer directly with what the data shows about them."
+            )
+            system_prompt += "\nIDENTIFIED USER: " + " ".join(identity_parts) + "\n"
 
         # Generate answer using provider
         answer = await self.provider.generate(

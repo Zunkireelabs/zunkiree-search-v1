@@ -36,6 +36,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [config, setConfig] = useState<WidgetConfig | null>(null)
+  const [sessionId, setSessionId] = useState(() => crypto.randomUUID())
   const [dockPortalTarget, setDockPortalTarget] = useState<HTMLElement | null>(null)
   const hasAnimated = useRef(false)
 
@@ -98,6 +99,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     const payload = {
       site_id: siteId,
       question: userMessage.content,
+      session_id: sessionId,
     }
     console.log('[Zunkiree] Request payload:', payload)
 
@@ -114,6 +116,8 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
         console.error('[Zunkiree] Error response:', response.status, data)
         throw new Error(data.detail?.message || 'Failed to get answer')
       }
+
+      if (data.session_id) setSessionId(data.session_id)
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),

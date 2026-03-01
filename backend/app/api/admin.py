@@ -97,6 +97,9 @@ class UpdateConfigRequest(BaseModel):
     show_sources: bool | None = None
     show_suggestions: bool | None = None
     confidence_threshold: float | None = Field(None, ge=0.1, le=0.5)
+    enable_identity_verification: bool | None = None
+    identity_custom_fields: str | None = None  # JSON array of {"key", "label", "required"}
+    lead_intents: str | None = None  # JSON array of lead intent configs
 
 
 class JobInfo(BaseModel):

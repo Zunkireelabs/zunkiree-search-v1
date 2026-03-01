@@ -32,6 +32,9 @@ class WidgetConfig(Base):
     show_suggestions: Mapped[bool] = mapped_column(Boolean, default=True)
     quick_actions: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON string of suggestion strings
     confidence_threshold: Mapped[float] = mapped_column(Float, default=0.25)
+    enable_identity_verification: Mapped[bool] = mapped_column(Boolean, default=False)
+    identity_custom_fields: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array of custom field defs
+    lead_intents: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array of lead intent configs
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

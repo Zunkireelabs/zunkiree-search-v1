@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.3
     llm_max_tokens: int = 500
 
+    # SMTP / Email verification
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 465
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
+
     # Embeddings
     embedding_model: str = "text-embedding-3-large"
     embedding_dimensions: int = 3072

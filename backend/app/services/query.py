@@ -33,6 +33,8 @@ class QueryService:
         origin: str | None = None,
         user_agent: str | None = None,
         ip_address: str | None = None,
+        user_email: str | None = None,
+        user_profile: dict | None = None,
     ) -> dict:
         """
         Process a user query end-to-end.
@@ -93,43 +95,10 @@ class QueryService:
         )
 
         if top_score is not None and top_score < threshold:
-            fallback = config.fallback_message if config else "I don't have that information yet."
-            response_time_ms = int((time.time() - start_time) * 1000)
-
             logger.info(
-                "[CONFIDENCE-GUARD] site_id=%s top_score=%.3f threshold=%.2f skipped_llm=True",
+                "[CONFIDENCE-GUARD] site_id=%s top_score=%.3f threshold=%.2f allowing_llm_general_knowledge=True",
                 site_id, top_score, threshold,
             )
-
-            await self._log_query(
-                db=db,
-                customer_id=customer.id,
-                question=question,
-                answer=fallback,
-                chunks_used=0,
-                response_time_ms=response_time_ms,
-                origin=origin,
-                user_agent=user_agent,
-                ip_address=ip_address,
-                top_score=top_score,
-                avg_score=avg_score,
-                fallback_triggered=True,
-                retrieval_mode="hybrid_threshold",
-                context_tokens=0,
-                confidence_threshold=threshold,
-                retrieval_blocked=True,
-            )
-
-            logger.info(
-                "[RAG-METRICS] site_id=%s top_score=%.3f avg_score=%.3f fallback=%s mode=%s blocked=%s llm_declined=%s empty=%s context_tokens=%s",
-                site_id, top_score, avg_score or 0, True, "hybrid_threshold", True, False, False, 0,
-            )
-
-            return {
-                "answer": fallback,
-                "suggestions": [],
-                "sources": [],
-            }
 
         # --- Phase 4A: Adaptive top_k and reranking decisions ---
         if top_score is not None and top_score > 0.6:
@@ -154,49 +123,18 @@ class QueryService:
             site_id, top_score or 0, adaptive_top_k, rerank_needed, fusion_top_n,
         )
 
-        # List B: Postgres full-text keyword search
-        keyword_ids = await self._keyword_search(db, customer.id, question, limit=initial_fetch_k)
+        # List B: Postgres full-text keyword search (boost with email if verified)
+        keyword_query = f"{question} {user_email}" if user_email else question
+        keyword_ids = await self._keyword_search(db, customer.id, keyword_query, limit=initial_fetch_k)
         logger.warning("[QUERY-TRACE] keyword_results_ids=%s", keyword_ids[:5])
 
         # Fuse results via Reciprocal Rank Fusion
         fused_ids = _reciprocal_rank_fusion(vector_ids, keyword_ids, k=60, top_n=fusion_top_n)
         logger.warning("[QUERY-TRACE] fused_results_ids=%s", fused_ids[:5])
 
-        # No-data detection: if both searches returned 0 results, return fallback
+        # No-data detection: if both searches returned 0 results, LLM will use general knowledge
         if not fused_ids:
-            fallback = config.fallback_message if config else "I don't have that information yet."
-            logger.warning("[QUERY-TRACE] FALLBACK_TRIGGERED reason=zero_fused_matches site_id=%s", site_id)
-
-            response_time_ms = int((time.time() - start_time) * 1000)
-            await self._log_query(
-                db=db,
-                customer_id=customer.id,
-                question=question,
-                answer=fallback,
-                chunks_used=0,
-                response_time_ms=response_time_ms,
-                origin=origin,
-                user_agent=user_agent,
-                ip_address=ip_address,
-                top_score=top_score,
-                avg_score=avg_score,
-                fallback_triggered=True,
-                retrieval_mode="hybrid",
-                context_tokens=0,
-                confidence_threshold=threshold,
-                retrieval_empty=True,
-            )
-
-            logger.info(
-                "[RAG-METRICS] site_id=%s top_score=%.3f avg_score=%.3f fallback=%s mode=%s blocked=%s llm_declined=%s empty=%s context_tokens=%s",
-                site_id, top_score or 0, avg_score or 0, True, "hybrid", False, False, True, 0,
-            )
-
-            return {
-                "answer": fallback,
-                "suggestions": [],
-                "sources": [],
-            }
+            logger.info("[QUERY-TRACE] No fused matches, LLM will attempt general knowledge answer site_id=%s", site_id)
 
         # Fetch full chunk content from PostgreSQL (defense-in-depth: filter by customer_id)
         db_chunks = await self._fetch_chunks_by_vector_ids(db, fused_ids, customer.id)
@@ -249,6 +187,8 @@ class QueryService:
             fallback_message=config.fallback_message if config else "I don't have that information yet.",
             max_tokens=config.max_response_length if config else 500,
             show_suggestions=show_suggestions,
+            user_email=user_email,
+            user_profile=user_profile,
         )
 
         # Calculate response time
