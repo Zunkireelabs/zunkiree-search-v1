@@ -12,6 +12,7 @@ export const ZK_LAYOUT_CSS = `
   #zk-host-content {
     flex: 1;
     min-width: 0;
+    transition: flex 300ms ease;
   }
 
   #zk-dock-panel {
@@ -22,11 +23,19 @@ export const ZK_LAYOUT_CSS = `
     width: 0;
     flex-shrink: 0;
     overflow: hidden;
+    transition: width 300ms ease;
+  }
+
+  /* When docked: website takes 80%, Zunkiree takes 20% */
+  #zk-layout-root.zk-dock-active #zk-host-content {
+    flex: none;
+    width: 80%;
+    overflow-x: hidden;
   }
 
   #zk-layout-root.zk-dock-active #zk-dock-panel {
-    width: 420px;
-    border-left: 1px solid rgba(0, 0, 0, 0.06);
-    transition: width 200ms ease;
+    width: 20%;
+    border-left: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.06);
   }
 `
