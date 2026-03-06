@@ -36,13 +36,15 @@ export function ExpandedPanel({
   onDock,
   placeholder,
 }: ExpandedPanelProps) {
-  const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-    // Refocus input after each new message (response received)
+    // Scroll messages to bottom without affecting parent/window scroll
+    const container = messagesRef.current
+    if (container) {
+      container.scrollTop = container.scrollHeight
+    }
     if (!isLoading) {
       inputRef.current?.focus()
     }
@@ -195,7 +197,7 @@ export function ExpandedPanel({
                 </div>
               </div>
             )}
-            <div ref={messagesEndRef} />
+            <div />
           </div>
         </div>
 

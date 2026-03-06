@@ -36,12 +36,15 @@ export function DockedPanel({
   onUndock,
   placeholder,
 }: DockedPanelProps) {
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-    // Refocus input after each new message (response received)
+    // Scroll messages to bottom without affecting parent/window scroll
+    const container = messagesContainerRef.current
+    if (container) {
+      container.scrollTop = container.scrollHeight
+    }
     if (!isLoading) {
       inputRef.current?.focus()
     }
@@ -132,7 +135,7 @@ export function DockedPanel({
       )}
 
       {/* Conversation Area */}
-      <div className="zk-docked__messages">
+      <div className="zk-docked__messages" ref={messagesContainerRef}>
         <div className="zk-docked__messages-inner">
           {messages.map(message => (
             <div key={message.id} className={`zk-message zk-message-${message.role}`}>
@@ -167,7 +170,7 @@ export function DockedPanel({
               </div>
             </div>
           )}
-          <div ref={messagesEndRef} />
+          <div />
         </div>
       </div>
 
