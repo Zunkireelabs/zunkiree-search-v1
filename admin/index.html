@@ -388,6 +388,19 @@
       color: #6b7280;
       line-height: 1.6;
     }
+    .data-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .data-table th { text-align:left; padding:10px 12px; background:#f9fafb; border-bottom:2px solid #e5e7eb; font-size:12px; text-transform:uppercase; color:#6b7280; }
+    .data-table td { padding:10px 12px; border-bottom:1px solid #f3f4f6; max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .data-table tr:hover td { background:#f9fafb; }
+    .table-controls { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:12px; }
+    .table-controls input { max-width:280px; }
+    .pagination { display:flex; align-items:center; gap:8px; margin-top:12px; font-size:13px; color:#6b7280; }
+    .pagination button { padding:6px 12px; font-size:13px; }
+    .badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:500; }
+    .badge.intent { background:#dbeafe; color:#1e40af; }
+    .badge.type { background:#fef3c7; color:#92400e; }
+    .delete-btn { background:#ef4444; padding:4px 10px; font-size:12px; border-radius:6px; }
+    .delete-btn:hover { background:#dc2626; }
   </style>
 </head>
 <body>
@@ -435,6 +448,11 @@
               <div class="stat-label">Last Ingestion</div>
               <div class="stat-value small" id="ovLastIngestion">—</div>
             </div>
+          </div>
+          <div style="margin-top: 16px; padding: 12px; background: #f9fafb; border-radius: 8px; display: flex; align-items: center; gap: 12px;">
+            <span style="font-size: 13px; color: #6b7280; white-space: nowrap;">API Key:</span>
+            <code id="ovApiKey" style="font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">—</code>
+            <button onclick="copyApiKey()" style="padding: 4px 12px; font-size: 12px; white-space: nowrap;">Copy</button>
           </div>
           <div style="margin-top: 16px;">
             <h3 style="font-size: 14px; color: #374151; margin-bottom: 10px;">Recent Jobs</h3>
@@ -495,6 +513,46 @@
       </div>
     </div>
 
+    <!-- Leads & Users -->
+    <div class="tenant-section" id="leadsSection" style="display:none;">
+      <div class="card">
+        <h2>Leads & Users</h2>
+        <div class="table-controls">
+          <input type="text" id="leadsSearch" placeholder="Search by name or email..." oninput="debounceLeadsSearch()">
+          <button onclick="exportLeads()" class="secondary" style="white-space:nowrap;">Export CSV</button>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="data-table">
+            <thead>
+              <tr><th>Name</th><th>Email</th><th>Phone</th><th>Location</th><th>Type</th><th>Intent</th><th>Custom Fields</th><th>Signed Up</th><th></th></tr>
+            </thead>
+            <tbody id="leadsTableBody"></tbody>
+          </table>
+        </div>
+        <div class="pagination" id="leadsPagination"></div>
+      </div>
+    </div>
+
+    <!-- Query History -->
+    <div class="tenant-section" id="queriesSection" style="display:none;">
+      <div class="card">
+        <h2>Query History</h2>
+        <div class="table-controls">
+          <input type="text" id="queriesSearch" placeholder="Search by question..." oninput="debounceQueriesSearch()">
+          <button onclick="exportQueries()" class="secondary" style="white-space:nowrap;">Export CSV</button>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="data-table">
+            <thead>
+              <tr><th>Question</th><th>Answer Preview</th><th>Top Score</th><th>Time (ms)</th><th>Mode</th><th>Fallback</th><th>Timestamp</th></tr>
+            </thead>
+            <tbody id="queriesTableBody"></tbody>
+          </table>
+        </div>
+        <div class="pagination" id="queriesPagination"></div>
+      </div>
+    </div>
+
     <div class="grid">
       <!-- Create Customer -->
       <div class="card">
@@ -511,6 +569,10 @@
           <div class="form-group">
             <label>Allowed Domains (comma separated)</label>
             <input type="text" id="domains" placeholder="acme.com, www.acme.com" required>
+          </div>
+          <div class="form-group">
+            <label>Contact Email (optional — sends welcome email with API key)</label>
+            <input type="email" id="contactEmail" placeholder="admin@acme.com">
           </div>
           <button type="submit">Create Customer</button>
         </form>
@@ -708,12 +770,13 @@
             name: document.getElementById('customerName').value,
             site_id: document.getElementById('siteId').value,
             allowed_domains: document.getElementById('domains').value.split(',').map(d => d.trim()),
+            contact_email: document.getElementById('contactEmail').value || null,
           }),
         });
 
         const data = await res.json();
         if (res.ok) {
-          showAlert(`Customer created! Site ID: ${data.site_id}`, 'success');
+          showAlert(`Customer created! Site ID: ${data.site_id} | API Key: ${data.api_key}`, 'success');
           e.target.reset();
         } else {
           showAlert(data.detail?.message || 'Failed to create customer', 'error');
@@ -1028,12 +1091,23 @@
       if (!siteId) {
         overview.classList.add('hidden');
         document.getElementById('retrievalSection').style.display = 'none';
+        document.getElementById('leadsSection').style.display = 'none';
+        document.getElementById('queriesSection').style.display = 'none';
         return;
       }
 
       overview.classList.remove('hidden');
+      document.getElementById('leadsSection').style.display = '';
+      document.getElementById('queriesSection').style.display = '';
+      document.getElementById('leadsSearch').value = '';
+      document.getElementById('queriesSearch').value = '';
+      leadsPage = 1;
+      queriesPage = 1;
       syncSiteIdFields();
+      loadApiKey(siteId);
       loadRetrievalStats(siteId);
+      loadLeads();
+      loadQueries();
       document.getElementById('ovSiteId').textContent = siteId;
       document.getElementById('ovBrandName').textContent = '...';
       document.getElementById('ovChunks').textContent = '...';
@@ -1086,6 +1160,179 @@
       } catch (err) {
         showAlert('Failed to load tenant data', 'error');
       }
+    }
+
+    // --- API Key ---
+    async function loadApiKey(siteId) {
+      document.getElementById('ovApiKey').textContent = '...';
+      try {
+        const res = await fetch(`${API_URL}/api/v1/admin/customers/${siteId}/api-key`, {
+          headers: { 'X-Admin-Key': ADMIN_KEY },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          document.getElementById('ovApiKey').textContent = data.api_key;
+        }
+      } catch { /* silent */ }
+    }
+
+    function copyApiKey() {
+      const key = document.getElementById('ovApiKey').textContent;
+      if (!key || key === '...' || key === '—') return;
+      navigator.clipboard.writeText(key).then(() => showAlert('API key copied!', 'success'));
+    }
+
+    // --- Leads & Query History ---
+    let leadsPage = 1, leadsPageSize = 25;
+    let queriesPage = 1, queriesPageSize = 25;
+    let leadsSearchTimer = null;
+    let queriesSearchTimer = null;
+
+    function esc(str) {
+      if (str == null) return '';
+      const el = document.createElement('span');
+      el.textContent = String(str);
+      return el.innerHTML;
+    }
+
+    function renderPagination(containerId, total, page, pageSize, callback) {
+      const container = document.getElementById(containerId);
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      container.innerHTML = `
+        <button ${page <= 1 ? 'disabled' : ''} onclick="${callback}(${page - 1})">Prev</button>
+        <span>Page ${page} of ${totalPages} (${total} total)</span>
+        <button ${page >= totalPages ? 'disabled' : ''} onclick="${callback}(${page + 1})">Next</button>
+      `;
+    }
+
+    async function loadLeads(page) {
+      if (page) leadsPage = page;
+      const siteId = document.getElementById('tenantSelect').value;
+      if (!siteId) return;
+      const search = document.getElementById('leadsSearch').value;
+      const params = new URLSearchParams({ page: leadsPage, page_size: leadsPageSize });
+      if (search) params.set('search', search);
+
+      try {
+        const res = await fetch(`${API_URL}/api/v1/admin/leads/${siteId}?${params}`, {
+          headers: { 'X-Admin-Key': ADMIN_KEY },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+
+        const tbody = document.getElementById('leadsTableBody');
+        if (data.leads.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#6b7280;padding:20px;">No leads found</td></tr>';
+        } else {
+          tbody.innerHTML = data.leads.map(l => `<tr>
+            <td>${esc(l.name)}</td>
+            <td>${esc(l.email)}</td>
+            <td>${esc(l.phone) || '—'}</td>
+            <td>${esc(l.location) || '—'}</td>
+            <td>${l.user_type ? `<span class="badge type">${esc(l.user_type)}</span>` : '—'}</td>
+            <td>${l.lead_intent ? `<span class="badge intent">${esc(l.lead_intent)}</span>` : '—'}</td>
+            <td title="${esc(l.custom_fields)}">${esc(l.custom_fields) || '—'}</td>
+            <td>${new Date(l.created_at).toLocaleDateString()}</td>
+            <td><button class="delete-btn" onclick="deleteLead('${l.id}')">Delete</button></td>
+          </tr>`).join('');
+        }
+
+        renderPagination('leadsPagination', data.total, data.page, data.page_size, 'loadLeads');
+      } catch { /* silent */ }
+    }
+
+    async function deleteLead(leadId) {
+      if (!confirm('Delete this lead? This cannot be undone.')) return;
+      const siteId = document.getElementById('tenantSelect').value;
+      try {
+        const res = await fetch(`${API_URL}/api/v1/admin/leads/${siteId}/${leadId}`, {
+          method: 'DELETE',
+          headers: { 'X-Admin-Key': ADMIN_KEY },
+        });
+        if (res.ok) {
+          showAlert('Lead deleted', 'success');
+          loadLeads();
+        } else {
+          const data = await res.json();
+          showAlert(data.detail?.message || 'Failed to delete lead', 'error');
+        }
+      } catch { showAlert('Network error', 'error'); }
+    }
+
+    async function loadQueries(page) {
+      if (page) queriesPage = page;
+      const siteId = document.getElementById('tenantSelect').value;
+      if (!siteId) return;
+      const search = document.getElementById('queriesSearch').value;
+      const params = new URLSearchParams({ page: queriesPage, page_size: queriesPageSize });
+      if (search) params.set('search', search);
+
+      try {
+        const res = await fetch(`${API_URL}/api/v1/admin/queries/${siteId}?${params}`, {
+          headers: { 'X-Admin-Key': ADMIN_KEY },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+
+        const tbody = document.getElementById('queriesTableBody');
+        if (data.queries.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#6b7280;padding:20px;">No queries found</td></tr>';
+        } else {
+          tbody.innerHTML = data.queries.map(q => `<tr>
+            <td title="${esc(q.question)}">${esc(q.question)}</td>
+            <td title="${esc(q.answer_preview)}">${esc(q.answer_preview) || '—'}</td>
+            <td>${q.top_score != null ? q.top_score.toFixed(3) : '—'}</td>
+            <td>${q.response_time_ms != null ? q.response_time_ms : '—'}</td>
+            <td>${esc(q.retrieval_mode) || '—'}</td>
+            <td>${q.fallback_triggered ? '<span style="color:#ef4444;">Yes</span>' : 'No'}</td>
+            <td>${new Date(q.created_at).toLocaleString()}</td>
+          </tr>`).join('');
+        }
+
+        renderPagination('queriesPagination', data.total, data.page, data.page_size, 'loadQueries');
+      } catch { /* silent */ }
+    }
+
+    function debounceLeadsSearch() {
+      clearTimeout(leadsSearchTimer);
+      leadsSearchTimer = setTimeout(() => { leadsPage = 1; loadLeads(); }, 400);
+    }
+
+    function debounceQueriesSearch() {
+      clearTimeout(queriesSearchTimer);
+      queriesSearchTimer = setTimeout(() => { queriesPage = 1; loadQueries(); }, 400);
+    }
+
+    async function exportLeads() {
+      const siteId = document.getElementById('tenantSelect').value;
+      if (!siteId) return;
+      try {
+        const res = await fetch(`${API_URL}/api/v1/admin/leads/${siteId}/export`, {
+          headers: { 'X-Admin-Key': ADMIN_KEY },
+        });
+        if (!res.ok) { showAlert('Export failed', 'error'); return; }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `${siteId}_leads.csv`; a.click();
+        URL.revokeObjectURL(url);
+      } catch { showAlert('Export failed', 'error'); }
+    }
+
+    async function exportQueries() {
+      const siteId = document.getElementById('tenantSelect').value;
+      if (!siteId) return;
+      try {
+        const res = await fetch(`${API_URL}/api/v1/admin/queries/${siteId}/export`, {
+          headers: { 'X-Admin-Key': ADMIN_KEY },
+        });
+        if (!res.ok) { showAlert('Export failed', 'error'); return; }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `${siteId}_queries.csv`; a.click();
+        URL.revokeObjectURL(url);
+      } catch { showAlert('Export failed', 'error'); }
     }
 
     // --- Retrieval Health ---

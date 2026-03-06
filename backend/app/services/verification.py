@@ -72,7 +72,6 @@ async def handle_code_verification(
     """
     Validate the verification code.
     Returns (code_correct, message).
-    Does NOT set state to verified — caller must use handle_post_verification().
     """
     # Check expiry
     if session.code_expires_at and datetime.utcnow() > session.code_expires_at:
@@ -102,7 +101,6 @@ async def handle_code_verification(
 
     remaining = MAX_CODE_ATTEMPTS - session.code_attempts
     if remaining <= 0:
-        # Last attempt just failed — lock out immediately instead of saying "0 remaining"
         session.state = "email_requested"
         session.verification_code = None
         session.code_attempts = 0
@@ -116,11 +114,9 @@ async def handle_post_verification(
     session: VerificationSession,
 ) -> tuple[str, UserProfile | None]:
     """
-    After code is verified, decide next state:
-    - Returning user → verified + welcome back
-    - New user → name_requested (start signup)
-
-    Returns (response_message, user_profile_or_none).
+    After code is verified, check if user exists:
+    - Returning user → verified, welcome back
+    - New user → name_requested (start signup: name → phone → location → fields)
     """
     profile = await lookup_user_profile(db, session.customer_id, session.email)
 
@@ -133,11 +129,11 @@ async def handle_post_verification(
         logger.info("[VERIFY] Returning user %s (%s)", profile.name, session.email)
         return f"Welcome back, {profile.name}!", profile
 
-    # New user — ask for name
+    # New user — ask for full name
     session.state = "name_requested"
     await db.commit()
     logger.info("[VERIFY] New user signup started for %s", session.email)
-    return "What's your name?", None
+    return "Looks like you're new here! Let's get you signed up.\n\nWhat's your full name?", None
 
 
 async def handle_name_submission(
@@ -145,39 +141,57 @@ async def handle_name_submission(
     session: VerificationSession,
     name: str,
 ) -> tuple[str, UserProfile | None]:
-    """
-    Process name submission during signup.
-    Priority: intent_signup_fields > identity_custom_fields > no fields.
-    If fields exist → fields_requested. Otherwise → create profile and verify.
-
-    Returns (response_message, user_profile_or_none).
-    """
+    """Process name submission. Move to phone_requested."""
     session.user_name = name.strip()
+    session.state = "phone_requested"
+    session.pending_custom_fields = json.dumps({})
+    await db.commit()
+    logger.info("[VERIFY] Name collected: %s, asking for phone", name.strip())
+    return "What's your mobile number?", None
 
-    # Intent-specific fields take priority over generic custom fields
+
+async def handle_phone_submission(
+    db: AsyncSession,
+    session: VerificationSession,
+    phone: str,
+) -> tuple[str, UserProfile | None]:
+    """Process phone submission. Move to location_requested."""
+    collected = json.loads(session.pending_custom_fields or "{}")
+    collected["_phone"] = phone.strip()
+    session.pending_custom_fields = json.dumps(collected)
+    session.state = "location_requested"
+    await db.commit()
+    logger.info("[VERIFY] Phone collected for session %s", session.session_id)
+    return "What's your location?", None
+
+
+async def handle_location_submission(
+    db: AsyncSession,
+    session: VerificationSession,
+    location: str,
+) -> tuple[str, UserProfile | None]:
+    """
+    Process location submission.
+    If business-specific fields exist → fields_requested.
+    Otherwise → create profile and verify.
+    """
+    collected = json.loads(session.pending_custom_fields or "{}")
+    collected["_location"] = location.strip()
+    session.pending_custom_fields = json.dumps(collected)
+
+    # Check for business-specific fields
     custom_fields = _get_intent_fields(session) or await _get_custom_fields_config(db, session.customer_id)
 
     if custom_fields:
         session.state = "fields_requested"
-        session.pending_custom_fields = json.dumps({})
         session.current_field_index = 0
         await db.commit()
-
-        # Ask for the first custom field
         field = custom_fields[0]
         label = field.get("label", field.get("key", "field"))
         return label, None
 
-    # No custom fields — create/update profile immediately
-    profile = await _upsert_user_profile(
-        db, session.customer_id, session.email, session.user_name, {},
-        user_type=session.detected_intent,
-        lead_intent=session.detected_intent,
-    )
-    session.state = "verified"
-    session.verified_at = datetime.utcnow()
-    await db.commit()
-    return None, profile
+    # No custom fields — create profile
+    return None, await _finalize_profile(db, session, collected)
 
 
 async def handle_custom_field_submission(
@@ -187,31 +201,19 @@ async def handle_custom_field_submission(
 ) -> tuple[str, UserProfile | None]:
     """
     Process a custom field value submission.
-    Priority: intent_signup_fields > identity_custom_fields.
     If more fields remain → ask next field.
     If last field → create profile and verify.
-
-    Returns (response_message, user_profile_or_none).
     """
     custom_fields = _get_intent_fields(session) or await _get_custom_fields_config(db, session.customer_id)
+    collected = json.loads(session.pending_custom_fields or "{}")
+
     if not custom_fields:
-        # Shouldn't happen, but handle gracefully
-        profile = await _upsert_user_profile(
-            db, session.customer_id, session.email, session.user_name, {},
-            user_type=session.detected_intent,
-            lead_intent=session.detected_intent,
-        )
-        session.state = "verified"
-        session.verified_at = datetime.utcnow()
-        await db.commit()
-        return None, profile
+        return None, await _finalize_profile(db, session, collected)
 
     # Store current field value
     current_idx = session.current_field_index or 0
     current_field = custom_fields[current_idx]
     field_key = current_field.get("key", f"field_{current_idx}")
-
-    collected = json.loads(session.pending_custom_fields or "{}")
     collected[field_key] = value.strip()
     session.pending_custom_fields = json.dumps(collected)
 
@@ -220,21 +222,35 @@ async def handle_custom_field_submission(
     if next_idx < len(custom_fields):
         session.current_field_index = next_idx
         await db.commit()
-
         next_field = custom_fields[next_idx]
         label = next_field.get("label", next_field.get("key", "field"))
         return label, None
 
-    # All fields collected — create or update profile
+    # All fields collected — create profile
+    return None, await _finalize_profile(db, session, collected)
+
+
+async def _finalize_profile(
+    db: AsyncSession,
+    session: VerificationSession,
+    collected: dict,
+) -> UserProfile:
+    """Extract phone/location from collected, create/update profile, mark verified."""
+    phone = collected.pop("_phone", None)
+    location = collected.pop("_location", None)
+    clean_custom = {k: v for k, v in collected.items() if not k.startswith("_")}
+
     profile = await _upsert_user_profile(
-        db, session.customer_id, session.email, session.user_name, collected,
+        db, session.customer_id, session.email, session.user_name, clean_custom,
         user_type=session.detected_intent,
         lead_intent=session.detected_intent,
+        phone=phone,
+        location=location,
     )
     session.state = "verified"
     session.verified_at = datetime.utcnow()
     await db.commit()
-    return None, profile
+    return profile
 
 
 async def lookup_user_profile(
@@ -258,12 +274,16 @@ async def _create_user_profile(
     custom_fields: dict,
     user_type: str | None = None,
     lead_intent: str | None = None,
+    phone: str | None = None,
+    location: str | None = None,
 ) -> UserProfile:
     """Create a new user profile."""
     profile = UserProfile(
         customer_id=customer_id,
         email=email,
         name=name,
+        phone=phone,
+        location=location,
         custom_fields=json.dumps(custom_fields) if custom_fields else None,
         user_type=user_type,
         lead_intent=lead_intent,
@@ -281,11 +301,12 @@ async def _upsert_user_profile(
     custom_fields: dict,
     user_type: str | None = None,
     lead_intent: str | None = None,
+    phone: str | None = None,
+    location: str | None = None,
 ) -> UserProfile:
     """Create a new user profile, or update an existing one."""
     existing = await lookup_user_profile(db, customer_id, email)
     if existing:
-        # Merge custom fields: keep old fields, add/overwrite new ones
         old_custom = {}
         if existing.custom_fields:
             try:
@@ -298,12 +319,17 @@ async def _upsert_user_profile(
             existing.user_type = existing.user_type or user_type
         if lead_intent:
             existing.lead_intent = existing.lead_intent or lead_intent
+        if phone:
+            existing.phone = phone
+        if location:
+            existing.location = location
         await db.flush()
         logger.info("[VERIFY] Existing user updated: %s (%s)", existing.name, email)
         return existing
     return await _create_user_profile(
         db, customer_id, email, name, custom_fields,
         user_type=user_type, lead_intent=lead_intent,
+        phone=phone, location=location,
     )
 
 

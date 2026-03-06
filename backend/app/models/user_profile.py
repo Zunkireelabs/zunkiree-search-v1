@@ -17,6 +17,8 @@ class UserProfile(Base):
     )
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
     custom_fields: Mapped[str | None] = mapped_column(Text, nullable=True)
     user_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     lead_intent: Mapped[str | None] = mapped_column(String(100), nullable=True)

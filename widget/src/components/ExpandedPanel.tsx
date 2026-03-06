@@ -1,4 +1,5 @@
 import React, { useRef, useEffect } from 'react'
+import { MarkdownContent } from './Markdown'
 
 interface Message {
   id: string
@@ -147,7 +148,11 @@ export function ExpandedPanel({
             {messages.map(message => (
               <div key={message.id} className={`zk-message zk-message-${message.role}`}>
                 <div className="zk-message-content">
-                  {message.content}
+                  {message.role === 'assistant' ? (
+                    <MarkdownContent content={message.content} />
+                  ) : (
+                    message.content
+                  )}
                 </div>
                 {message.suggestions && message.suggestions.length > 0 && (
                   <div className="zk-message__suggestions">

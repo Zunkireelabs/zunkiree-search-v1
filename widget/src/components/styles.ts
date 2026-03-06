@@ -456,6 +456,119 @@ export const styles = (primaryColor: string) => `
     margin-top: 8px;
   }
 
+  /* ===== Markdown Content ===== */
+  .zk-md {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+
+  .zk-md p {
+    margin: 0 0 8px 0;
+  }
+
+  .zk-md p:last-child {
+    margin-bottom: 0;
+  }
+
+  .zk-md strong {
+    font-weight: 600;
+    color: #111827;
+  }
+
+  .zk-md em {
+    font-style: italic;
+  }
+
+  .zk-md a {
+    color: ${primaryColor};
+    text-decoration: none;
+  }
+
+  .zk-md a:hover {
+    text-decoration: underline;
+  }
+
+  .zk-md .zk-heading {
+    font-weight: 600;
+    color: #111827;
+    margin: 12px 0 6px 0;
+    line-height: 1.3;
+  }
+
+  .zk-md h3.zk-heading {
+    font-size: 15px;
+  }
+
+  .zk-md h4.zk-heading {
+    font-size: 14px;
+  }
+
+  .zk-md .zk-list {
+    margin: 6px 0 10px 0;
+    padding-left: 20px;
+  }
+
+  .zk-md .zk-list li {
+    margin-bottom: 4px;
+    line-height: 1.5;
+    padding-left: 4px;
+  }
+
+  .zk-md ol.zk-list {
+    list-style-type: decimal;
+  }
+
+  .zk-md ul.zk-list {
+    list-style-type: disc;
+  }
+
+  .zk-md .zk-inline-code {
+    background: rgba(0, 0, 0, 0.06);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+
+  /* Tables */
+  .zk-md .zk-table-wrap {
+    overflow-x: auto;
+    margin: 8px 0;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+  }
+
+  .zk-md .zk-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .zk-md .zk-table th {
+    background: #f9fafb;
+    font-weight: 600;
+    color: #374151;
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 2px solid #e5e7eb;
+    white-space: nowrap;
+  }
+
+  .zk-md .zk-table td {
+    padding: 7px 12px;
+    border-bottom: 1px solid #f3f4f6;
+    color: #1f2937;
+  }
+
+  .zk-md .zk-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  .zk-md .zk-table tr:hover td {
+    background: #f9fafb;
+  }
+
   /* ===== Typing Indicator ===== */
   .zk-typing {
     display: flex;

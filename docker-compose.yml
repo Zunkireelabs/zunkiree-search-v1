@@ -13,6 +13,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+    volumes:
+      - backup-data:/backups
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.zunkiree-search-api.rule=Host(`api.zunkireelabs.com`)"
@@ -21,6 +23,25 @@ services:
       - "traefik.http.services.zunkiree-search-api.loadbalancer.server.port=8000"
     networks:
       - hosting
+
+  zunkiree-backup:
+    image: postgres:16-alpine
+    container_name: zunkiree-backup
+    restart: "no"
+    env_file:
+      - ./backend/.env
+    volumes:
+      - backup-data:/backups
+      - ./scripts:/scripts:ro
+    entrypoint: ["/bin/sh", "/scripts/backup.sh"]
+    networks:
+      - hosting
+    profiles:
+      - backup
+
+volumes:
+  backup-data:
+    driver: local
 
 networks:
   hosting:

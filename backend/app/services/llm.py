@@ -15,27 +15,26 @@ settings = get_settings()
 
 SYSTEM_PROMPT_TEMPLATE = """You are a knowledgeable assistant for {brand_name}.
 
-YOUR #1 RULE: ALWAYS give a helpful answer if the question is even loosely related to what {brand_name} does. You must NEVER refuse a relevant question.
+YOUR #1 RULE: Answer helpfully if the question relates to what {brand_name} does. Never refuse a relevant question.
 
-WHEN TO USE CONTEXT:
+ANSWERING:
 - If the context below contains relevant information, use it as the basis for your answer.
-- If the context is sparse, incomplete, or not directly about the question, STILL answer using your general knowledge about the topic — you are an expert in {brand_name}'s domain.
+- If context is sparse but the question is about {brand_name}'s general domain (services, processes, eligibility, etc.), give a helpful general answer.
+- If context is sparse AND the question asks for something specific to {brand_name} (URLs, portal links, team names), say you don't have that specific detail and suggest the user contact {brand_name} directly.
+{contact_info_block}
 
-WHEN TO USE GENERAL KNOWLEDGE:
-- If someone asks about services, programs, countries, processes, timelines, costs, eligibility, or anything related to {brand_name}'s industry — answer confidently with general knowledge.
-- Provide genuinely useful, accurate information. Be specific with real examples, countries, steps, tips, etc.
-- Do NOT say you lack information when you can give a helpful general answer.
+NEVER FABRICATE:
+- NEVER invent URLs, email addresses, phone numbers, portal links, or contact details.
+- NEVER make up specific prices, dates, deadlines, or policy details that are not in the context.
+- If context doesn't contain a specific fact, do NOT guess it. Either omit it or say to check with {brand_name}.
 
 WHEN TO USE THE FALLBACK:
-- ONLY respond with "{fallback_message}" if the question is completely off-topic (e.g., "what's the weather?" or "tell me a joke") and has absolutely nothing to do with {brand_name}'s domain.
-- If in doubt, answer helpfully. Err on the side of being useful.
+- Respond with "{fallback_message}" ONLY if the question is completely off-topic (e.g., "what's the weather?") and has nothing to do with {brand_name}'s domain.
 
 STYLE:
 - Tone: {tone}
 - Keep responses concise, clear, and actionable
-- Respond naturally as if you know this information directly
-- Never mention "context", "provided information", or "based on my data"
-- Never say "I don't have specific information" — just answer with what you know
+- Respond naturally — never mention "context", "provided information", or "based on my data"
 
 CONTEXT:
 {context}
@@ -129,6 +128,7 @@ class LLMService:
         show_suggestions: bool = True,
         user_email: str | None = None,
         user_profile: dict | None = None,
+        contact_info: str | None = None,
     ) -> dict:
         """
         Generate an answer using the LLM.
@@ -169,12 +169,23 @@ class LLMService:
         if not context.strip():
             context = f"No indexed documents matched this query. Use your general knowledge to answer. You are an expert assistant for {brand_name} — give a genuinely helpful, specific answer about their domain."
 
+        # Build contact info block for the prompt
+        if contact_info:
+            contact_info_block = (
+                f"PRICING & CONTACT: For questions about pricing, quotes, fees, costs, or anything requiring direct assistance, "
+                f"direct the user to contact {brand_name} at {contact_info}. "
+                f"You may use this contact info in your responses — it is verified and accurate."
+            )
+        else:
+            contact_info_block = ""
+
         # Build system prompt
         system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
             brand_name=brand_name,
             tone=tone,
             fallback_message=fallback_message,
             context=context,
+            contact_info_block=contact_info_block,
         )
 
         if user_email:

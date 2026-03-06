@@ -35,6 +35,8 @@ class WidgetConfig(Base):
     enable_identity_verification: Mapped[bool] = mapped_column(Boolean, default=False)
     identity_custom_fields: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array of custom field defs
     lead_intents: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array of lead intent configs
+    contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    contact_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

@@ -13,6 +13,8 @@ from app.services.verification import (
     handle_code_verification,
     handle_post_verification,
     handle_name_submission,
+    handle_phone_submission,
+    handle_location_submission,
     handle_custom_field_submission,
     lookup_user_profile,
     looks_like_email,
@@ -59,14 +61,9 @@ async def submit_query(
 ):
     """
     Submit a question and receive an AI-generated answer.
-
-    The answer is generated using RAG (Retrieval-Augmented Generation)
-    based on the customer's indexed data.
     """
-    # [TEMP-LOG] Log incoming request
     logger.warning("[QUERY-TRACE] site_id=%s question=%r origin=%s", query.site_id, query.question[:80], request.headers.get("origin"))
 
-    # Validate: reject empty questions
     if not query.question or not query.question.strip():
         raise HTTPException(
             status_code=400,
@@ -75,7 +72,6 @@ async def submit_query(
 
     query_service = get_query_service()
 
-    # Resolve tenant FIRST — greeting needs tenant context
     try:
         customer = await query_service._get_customer(db, query.site_id)
         if not customer:
@@ -89,10 +85,9 @@ async def submit_query(
 
     brand_name = config.brand_name if config else customer.name
 
-    # Handle greeting intent AFTER tenant resolution
+    # Handle greeting
     cleaned = query.question.lower().strip()
     if cleaned in GREETING_WORDS:
-        # Use config quick_actions for greeting suggestions
         suggestions: list[str] = []
         if config and config.quick_actions:
             try:
@@ -107,7 +102,7 @@ async def submit_query(
             session_id=query.session_id,
         )
 
-    # --- Identity verification + lead capture pre-processing ---
+    # --- Identity verification + lead capture ---
     user_email: str | None = None
     user_profile_dict: dict | None = None
     welcome_prefix: str | None = None
@@ -126,10 +121,9 @@ async def submit_query(
             if looks_like_code(question_to_answer):
                 code_ok, message = await handle_code_verification(db, v_session, question_to_answer)
                 if code_ok:
-                    # Code correct — check if returning or new user
                     post_msg, profile = await handle_post_verification(db, v_session)
                     if profile:
-                        # Returning user — check if lead intent has missing fields
+                        # Returning user — check for missing intent fields
                         if v_session.detected_intent and v_session.intent_signup_fields:
                             intent_fields = json.loads(v_session.intent_signup_fields)
                             existing_custom = {}
@@ -143,9 +137,8 @@ async def submit_query(
                                 if f.get("key") not in existing_custom
                             ]
                             if missing_fields:
-                                # Need to collect missing intent fields
                                 v_session.state = "fields_requested"
-                                v_session.verified_at = None  # undo premature verified_at from handle_post_verification
+                                v_session.verified_at = None
                                 v_session.intent_signup_fields = json.dumps(missing_fields)
                                 v_session.pending_custom_fields = json.dumps(existing_custom)
                                 v_session.current_field_index = 0
@@ -159,21 +152,28 @@ async def submit_query(
                                     sources=[],
                                     session_id=query.session_id,
                                 )
-                        # No missing fields — answer the pending question
+                        # Returning user, all info present — answer pending question
+                        if not v_session.pending_question:
+                            # No pending question — just welcome them back
+                            return QueryResponse(
+                                answer=f"Welcome back, {profile.name}! How can I help you today?",
+                                suggestions=_get_quick_actions(config),
+                                sources=[],
+                                session_id=query.session_id,
+                            )
                         user_email = v_session.email
                         user_profile_dict = _profile_to_dict(profile)
                         welcome_prefix = post_msg
-                        question_to_answer = v_session.pending_question or question_to_answer
+                        question_to_answer = v_session.pending_question
                     else:
-                        # New user — ask for name to sign up
+                        # New user — post_msg asks for full name
                         return QueryResponse(
-                            answer=f"Looks like you're new here! Let's get you signed up.\n\n{post_msg}",
+                            answer=post_msg,
                             suggestions=[],
                             sources=[],
                             session_id=query.session_id,
                         )
                 else:
-                    # Wrong code — return error message
                     return QueryResponse(
                         answer=message,
                         suggestions=[],
@@ -181,7 +181,6 @@ async def submit_query(
                         session_id=query.session_id,
                     )
             else:
-                # Not a code — re-prompt
                 return QueryResponse(
                     answer=f"I've sent a verification code to {v_session.email}. Please enter the 6-digit code to continue.",
                     suggestions=[],
@@ -189,41 +188,37 @@ async def submit_query(
                     session_id=query.session_id,
                 )
 
-        # State: name_requested — user is submitting their name
+        # State: name_requested — new user submitting full name
         elif v_session.state == "name_requested":
             msg, profile = await handle_name_submission(db, v_session, question_to_answer)
             if profile:
-                # No custom fields — profile created, answer pending question
-                user_email = v_session.email
-                user_profile_dict = _profile_to_dict(profile)
-                welcome_prefix = f"Welcome, {profile.name}!"
-                question_to_answer = v_session.pending_question or question_to_answer
+                return _signup_success_response(profile, query.session_id)
             else:
-                # Custom fields needed — ask first field
-                return QueryResponse(
-                    answer=msg,
-                    suggestions=[],
-                    sources=[],
-                    session_id=query.session_id,
-                )
+                return QueryResponse(answer=msg, suggestions=[], sources=[], session_id=query.session_id)
 
-        # State: fields_requested — user is submitting a custom field value
+        # State: phone_requested — new user submitting phone
+        elif v_session.state == "phone_requested":
+            msg, profile = await handle_phone_submission(db, v_session, question_to_answer)
+            if profile:
+                return _signup_success_response(profile, query.session_id)
+            else:
+                return QueryResponse(answer=msg, suggestions=[], sources=[], session_id=query.session_id)
+
+        # State: location_requested — new user submitting location
+        elif v_session.state == "location_requested":
+            msg, profile = await handle_location_submission(db, v_session, question_to_answer)
+            if profile:
+                return _signup_success_response(profile, query.session_id)
+            else:
+                return QueryResponse(answer=msg, suggestions=[], sources=[], session_id=query.session_id)
+
+        # State: fields_requested — custom field value
         elif v_session.state == "fields_requested":
             msg, profile = await handle_custom_field_submission(db, v_session, question_to_answer)
             if profile:
-                # All fields collected — profile created/updated, answer pending question
-                user_email = v_session.email
-                user_profile_dict = _profile_to_dict(profile)
-                welcome_prefix = f"Welcome, {profile.name}!"
-                question_to_answer = v_session.pending_question or question_to_answer
+                return _signup_success_response(profile, query.session_id)
             else:
-                # More fields to collect
-                return QueryResponse(
-                    answer=msg,
-                    suggestions=[],
-                    sources=[],
-                    session_id=query.session_id,
-                )
+                return QueryResponse(answer=msg, suggestions=[], sources=[], session_id=query.session_id)
 
         # State: email_requested — waiting for email
         elif v_session.state == "email_requested":
@@ -236,7 +231,6 @@ async def submit_query(
                     session_id=query.session_id,
                 )
             else:
-                # Not an email — re-prompt (this state is for queries needing identity)
                 return QueryResponse(
                     answer=(
                         "I'd love to help with that! To access your personalized information, "
@@ -247,9 +241,9 @@ async def submit_query(
                     session_id=query.session_id,
                 )
 
-        # State: anonymous — classify query as general/personal/lead
+        # State: anonymous — classify query
         elif v_session.state == "anonymous":
-            # If user responds to lead CTA with their email, start verification
+            # If user responds to lead CTA with their email
             if looks_like_email(question_to_answer) and v_session.pending_question:
                 message = await handle_email_submission(db, v_session, question_to_answer.strip(), brand_name)
                 return QueryResponse(
@@ -262,23 +256,18 @@ async def submit_query(
             classification = await classify_query(question_to_answer, lead_intents_config or None)
 
             if classification["type"] == "lead":
-                # Lead intent — answer first via RAG, then prompt signup
                 v_session.pending_question = question_to_answer
                 v_session.detected_intent = classification["intent"]
                 v_session.intent_signup_fields = json.dumps(classification.get("signup_fields", []))
                 await db.commit()
                 lead_signup_cta = True
-                # Fall through to RAG — answer first, CTA appended after
             elif classification["type"] == "personal":
                 is_reg = _is_registration_query(question_to_answer)
                 if is_reg:
-                    # Registration intent — answer first via RAG, then prompt signup
                     v_session.pending_question = question_to_answer
                     await db.commit()
                     lead_signup_cta = True
-                    # Fall through to RAG
                 elif verification_enabled:
-                    # Truly personal query requiring identity (e.g., "show my grades")
                     v_session.pending_question = question_to_answer
                     v_session.state = "email_requested"
                     await db.commit()
@@ -286,21 +275,19 @@ async def submit_query(
                         answer=(
                             "I can help you with that! To access your personalized information, "
                             "I'll need to verify your identity.\n\n"
-                            "Please enter your email address to log in. "
-                            "If you don't have an account yet, we'll get you signed up."
+                            "Please enter your email address to get started."
                         ),
                         suggestions=[],
                         sources=[],
                         session_id=query.session_id,
                     )
-                # else: general personal query without verification — fall through to RAG
 
-            # Expand short follow-up queries with pending lead context
+            # Expand short follow-up queries
             if not lead_signup_cta and v_session.pending_question and len(question_to_answer.split()) <= 4:
                 question_to_answer = f"{v_session.pending_question} - {question_to_answer}"
                 lead_signup_cta = True
 
-        # State: verified — pass email + profile through for personalized results
+        # State: verified — pass through
         elif v_session.state == "verified":
             user_email = v_session.email
             profile = await lookup_user_profile(db, customer.id, v_session.email)
@@ -354,6 +341,29 @@ async def submit_query(
         )
 
 
+def _get_quick_actions(config) -> list[str]:
+    """Extract quick action suggestions from widget config."""
+    if config and config.quick_actions:
+        try:
+            return json.loads(config.quick_actions)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return []
+
+
+def _signup_success_response(profile, session_id: str | None) -> QueryResponse:
+    """Return a signup success message instead of going to RAG."""
+    return QueryResponse(
+        answer=(
+            f"You're all set, {profile.name}! Your sign up is complete.\n\n"
+            f"How can I help you today?"
+        ),
+        suggestions=[],
+        sources=[],
+        session_id=session_id,
+    )
+
+
 def _profile_to_dict(profile) -> dict:
     """Convert a UserProfile ORM object to a dict for the LLM."""
     import json as _json
@@ -366,6 +376,8 @@ def _profile_to_dict(profile) -> dict:
     return {
         "name": profile.name,
         "email": profile.email,
+        "phone": getattr(profile, "phone", None),
+        "location": getattr(profile, "location", None),
         "custom_fields": custom,
         "user_type": getattr(profile, "user_type", None),
         "lead_intent": getattr(profile, "lead_intent", None),

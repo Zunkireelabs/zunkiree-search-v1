@@ -1,12 +1,15 @@
 import uuid
+import csv
+import io
 import secrets
 from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import Integer, select, func, case
+from sqlalchemy import Integer, select, func, case, delete
 
 from app.database import get_db
-from app.models import Customer, Domain, WidgetConfig, IngestionJob, DocumentChunk, QueryLog
+from app.models import Customer, Domain, WidgetConfig, IngestionJob, DocumentChunk, QueryLog, UserProfile
 from app.services.ingestion import get_ingestion_service
 from app.config import get_settings
 
@@ -29,6 +32,7 @@ class CreateCustomerRequest(BaseModel):
     name: str = Field(..., description="Customer display name")
     site_id: str = Field(..., pattern="^[a-z0-9-]+$", description="Unique site identifier (lowercase, alphanumeric, hyphens)")
     allowed_domains: list[str] = Field(..., description="List of allowed domains")
+    contact_email: str | None = Field(None, description="Customer contact email for welcome email")
 
 
 class CreateCustomerResponse(BaseModel):
@@ -100,6 +104,8 @@ class UpdateConfigRequest(BaseModel):
     enable_identity_verification: bool | None = None
     identity_custom_fields: str | None = None  # JSON array of {"key", "label", "required"}
     lead_intents: str | None = None  # JSON array of lead intent configs
+    contact_email: str | None = None
+    contact_phone: str | None = None
 
 
 class JobInfo(BaseModel):
@@ -157,6 +163,45 @@ class RetrievalStatsResponse(BaseModel):
     health_score: float
 
 
+class LeadInfo(BaseModel):
+    id: str
+    email: str
+    name: str
+    phone: str | None
+    location: str | None
+    user_type: str | None
+    lead_intent: str | None
+    custom_fields: str | None
+    created_at: str
+    updated_at: str
+
+
+class LeadsListResponse(BaseModel):
+    leads: list[LeadInfo]
+    total: int
+    page: int
+    page_size: int
+
+
+class QueryLogInfo(BaseModel):
+    id: str
+    question: str
+    answer_preview: str | None
+    top_score: float | None
+    response_time_ms: int | None
+    retrieval_mode: str | None
+    fallback_triggered: bool
+    origin_domain: str | None
+    created_at: str
+
+
+class QueryLogsListResponse(BaseModel):
+    queries: list[QueryLogInfo]
+    total: int
+    page: int
+    page_size: int
+
+
 # Endpoints
 @router.post("/customers", response_model=CreateCustomerResponse)
 async def create_customer(
@@ -204,6 +249,16 @@ async def create_customer(
 
     await db.commit()
 
+    # Send welcome email if contact_email provided
+    if request.contact_email:
+        from app.services.email import send_welcome_email
+        await send_welcome_email(
+            to_email=request.contact_email,
+            customer_name=request.name,
+            site_id=request.site_id,
+            api_key=api_key,
+        )
+
     return CreateCustomerResponse(
         id=str(customer.id),
         site_id=customer.site_id,
@@ -235,6 +290,25 @@ async def list_customers(
             for c in customers
         ]
     )
+
+
+@router.get("/customers/{site_id}/api-key")
+async def get_customer_api_key(
+    site_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """Get API key for a customer (admin only)."""
+    result = await db.execute(
+        select(Customer).where(Customer.site_id == site_id)
+    )
+    customer = result.scalar_one_or_none()
+    if not customer:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "CUSTOMER_NOT_FOUND", "message": "Customer not found"},
+        )
+    return {"api_key": customer.api_key}
 
 
 @router.get("/stats/{site_id}", response_model=TenantStatsResponse)
@@ -789,4 +863,256 @@ async def reindex_customer(
         raise HTTPException(
             status_code=500,
             detail={"code": "REINDEX_FAILED", "message": str(e)},
+        )
+
+
+# --- Tenant Data Visibility Endpoints ---
+
+async def _resolve_customer(site_id: str, db: AsyncSession) -> Customer:
+    result = await db.execute(
+        select(Customer).where(Customer.site_id == site_id)
+    )
+    customer = result.scalar_one_or_none()
+    if not customer:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "CUSTOMER_NOT_FOUND", "message": "Customer not found"},
+        )
+    return customer
+
+
+@router.get("/leads/{site_id}", response_model=LeadsListResponse)
+async def list_leads(
+    site_id: str,
+    page: int = 1,
+    page_size: int = 25,
+    search: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """Paginated list of leads/users for a tenant."""
+    customer = await _resolve_customer(site_id, db)
+
+    base = select(UserProfile).where(UserProfile.customer_id == customer.id)
+    count_base = select(func.count()).select_from(UserProfile).where(
+        UserProfile.customer_id == customer.id
+    )
+
+    if search:
+        like = f"%{search}%"
+        base = base.where(
+            (UserProfile.email.ilike(like)) | (UserProfile.name.ilike(like))
+        )
+        count_base = count_base.where(
+            (UserProfile.email.ilike(like)) | (UserProfile.name.ilike(like))
+        )
+
+    total = (await db.execute(count_base)).scalar() or 0
+
+    offset = (page - 1) * page_size
+    rows = (
+        await db.execute(
+            base.order_by(UserProfile.created_at.desc())
+            .offset(offset)
+            .limit(page_size)
+        )
+    ).scalars().all()
+
+    return LeadsListResponse(
+        leads=[
+            LeadInfo(
+                id=str(u.id),
+                email=u.email,
+                name=u.name,
+                phone=u.phone,
+                location=u.location,
+                user_type=u.user_type,
+                lead_intent=u.lead_intent,
+                custom_fields=u.custom_fields,
+                created_at=u.created_at.isoformat(),
+                updated_at=u.updated_at.isoformat(),
+            )
+            for u in rows
+        ],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/leads/{site_id}/export")
+async def export_leads(
+    site_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """CSV export of all leads for a tenant."""
+    customer = await _resolve_customer(site_id, db)
+
+    rows = (
+        await db.execute(
+            select(UserProfile)
+            .where(UserProfile.customer_id == customer.id)
+            .order_by(UserProfile.created_at.desc())
+        )
+    ).scalars().all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["email", "name", "phone", "location", "user_type", "lead_intent", "custom_fields", "created_at"])
+    for u in rows:
+        writer.writerow([u.email, u.name, u.phone, u.location, u.user_type, u.lead_intent, u.custom_fields, u.created_at.isoformat()])
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={site_id}_leads.csv"},
+    )
+
+
+@router.delete("/leads/{site_id}/{lead_id}")
+async def delete_lead(
+    site_id: str,
+    lead_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """Delete a lead (GDPR compliance)."""
+    customer = await _resolve_customer(site_id, db)
+
+    result = await db.execute(
+        delete(UserProfile).where(
+            UserProfile.id == uuid.UUID(lead_id),
+            UserProfile.customer_id == customer.id,
+        )
+    )
+
+    if result.rowcount == 0:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "LEAD_NOT_FOUND", "message": "Lead not found"},
+        )
+
+    await db.commit()
+    return {"message": "Lead deleted successfully"}
+
+
+@router.get("/queries/{site_id}", response_model=QueryLogsListResponse)
+async def list_queries(
+    site_id: str,
+    page: int = 1,
+    page_size: int = 25,
+    search: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """Paginated query history for a tenant."""
+    customer = await _resolve_customer(site_id, db)
+
+    base = select(QueryLog).where(QueryLog.customer_id == customer.id)
+    count_base = select(func.count()).select_from(QueryLog).where(
+        QueryLog.customer_id == customer.id
+    )
+
+    if search:
+        like = f"%{search}%"
+        base = base.where(QueryLog.question.ilike(like))
+        count_base = count_base.where(QueryLog.question.ilike(like))
+
+    total = (await db.execute(count_base)).scalar() or 0
+
+    offset = (page - 1) * page_size
+    rows = (
+        await db.execute(
+            base.order_by(QueryLog.created_at.desc())
+            .offset(offset)
+            .limit(page_size)
+        )
+    ).scalars().all()
+
+    return QueryLogsListResponse(
+        queries=[
+            QueryLogInfo(
+                id=str(q.id),
+                question=q.question,
+                answer_preview=q.answer[:200] if q.answer else None,
+                top_score=round(q.top_score, 3) if q.top_score is not None else None,
+                response_time_ms=q.response_time_ms,
+                retrieval_mode=q.retrieval_mode,
+                fallback_triggered=q.fallback_triggered,
+                origin_domain=q.origin_domain,
+                created_at=q.created_at.isoformat(),
+            )
+            for q in rows
+        ],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/queries/{site_id}/export")
+async def export_queries(
+    site_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """CSV export of all queries for a tenant."""
+    customer = await _resolve_customer(site_id, db)
+
+    rows = (
+        await db.execute(
+            select(QueryLog)
+            .where(QueryLog.customer_id == customer.id)
+            .order_by(QueryLog.created_at.desc())
+        )
+    ).scalars().all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["question", "answer", "top_score", "response_time_ms", "retrieval_mode", "fallback_triggered", "origin_domain", "created_at"])
+    for q in rows:
+        writer.writerow([
+            q.question, q.answer, q.top_score, q.response_time_ms,
+            q.retrieval_mode, q.fallback_triggered, q.origin_domain,
+            q.created_at.isoformat(),
+        ])
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={site_id}_queries.csv"},
+    )
+
+
+@router.post("/backup/snapshot")
+async def trigger_backup_snapshot(
+    _: str = Depends(verify_admin_key),
+):
+    """Trigger an on-demand backup snapshot via Docker."""
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["docker", "compose", "--profile", "backup", "run", "--rm", "zunkiree-backup"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            cwd="/home/zunkireelabs/devprojects/zunkiree-search-v1",
+        )
+
+        if result.returncode != 0:
+            raise HTTPException(
+                status_code=500,
+                detail={"code": "BACKUP_FAILED", "message": result.stderr[:500]},
+            )
+
+        return {"message": "Backup snapshot completed", "output": result.stdout[-500:]}
+
+    except subprocess.TimeoutExpired:
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "BACKUP_TIMEOUT", "message": "Backup timed out after 120s"},
         )

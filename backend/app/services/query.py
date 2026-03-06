@@ -178,6 +178,17 @@ class QueryService:
         # Determine if suggestions should be generated
         show_suggestions = config.show_suggestions if config else True
 
+        # Build contact info string for LLM
+        contact_info = None
+        if config:
+            parts = []
+            if config.contact_email:
+                parts.append(config.contact_email)
+            if config.contact_phone:
+                parts.append(config.contact_phone)
+            if parts:
+                contact_info = ", ".join(parts)
+
         # Generate answer with token-capped context
         result = await self.llm_service.generate_answer(
             question=question,
@@ -189,6 +200,7 @@ class QueryService:
             show_suggestions=show_suggestions,
             user_email=user_email,
             user_profile=user_profile,
+            contact_info=contact_info,
         )
 
         # Calculate response time

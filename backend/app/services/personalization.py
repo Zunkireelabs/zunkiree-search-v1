@@ -128,12 +128,13 @@ async def _classify_personal_or_general(question: str) -> bool:
                     "role": "system",
                     "content": (
                         "Classify the following user question as either 'personal' or 'general'.\n"
-                        "A 'personal' question requires knowing who the user is OR expresses intent "
-                        "to register, sign up, enroll, apply, or create an account "
-                        "(e.g., 'What's my registration status?', 'Show my grades', 'I want to register', "
-                        "'How do I sign up?', 'I want to enroll').\n"
-                        "A 'general' question can be answered without user identity and does NOT express signup intent "
-                        "(e.g., 'What are the admission requirements?', 'Where is the library?').\n"
+                        "A 'personal' question REQUIRES knowing the specific user's identity to answer "
+                        "(e.g., 'What's my registration status?', 'Show my grades', 'What courses am I enrolled in?').\n"
+                        "A 'general' question can be answered without knowing who the user is "
+                        "(e.g., 'What are the admission requirements?', 'I want to study abroad', "
+                        "'How do I apply?', 'Tell me about your programs', 'Where is the library?').\n"
+                        "IMPORTANT: Questions about wanting to do something, asking for information, "
+                        "or asking how processes work are GENERAL — they do not require user identity.\n"
                         "Reply with ONLY the word 'personal' or 'general'."
                     ),
                 },

@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zunkiree Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #f5f5f5; min-height: 100vh; }
+    .header {
+      background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
+      color: white; padding: 20px 40px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .header h1 { font-size: 1.4rem; }
+    .header-right { display: flex; align-items: center; gap: 16px; font-size: 14px; }
+    .header-right .brand { font-weight: 600; font-size: 15px; }
+    .logout-btn {
+      background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
+      color: white; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 12px;
+    }
+    .logout-btn:hover { background: rgba(255,255,255,0.25); }
+
+    /* Login screen */
+    .login-screen {
+      display: flex; align-items: center; justify-content: center;
+      min-height: calc(100vh - 80px); padding: 40px;
+    }
+    .login-card {
+      background: white; border-radius: 16px; padding: 40px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08); max-width: 400px; width: 100%;
+    }
+    .login-card h2 { font-size: 1.3rem; margin-bottom: 8px; color: #111827; }
+    .login-card p { font-size: 14px; color: #6b7280; margin-bottom: 24px; }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 32px 40px; }
+
+    /* Overview cards */
+    .overview-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px; margin-bottom: 32px;
+    }
+    .stat-card {
+      background: white; border-radius: 12px; padding: 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .stat-label {
+      font-size: 12px; color: #6b7280; text-transform: uppercase;
+      letter-spacing: 0.5px; margin-bottom: 6px;
+    }
+    .stat-value { font-size: 1.8rem; font-weight: 700; color: #111827; }
+    .stat-value.small { font-size: 1.1rem; font-weight: 600; }
+
+    /* Sections */
+    .section {
+      background: white; border-radius: 12px; padding: 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 24px;
+    }
+    .section h2 {
+      font-size: 1.1rem; color: #333; margin-bottom: 16px;
+      padding-bottom: 12px; border-bottom: 1px solid #e5e7eb;
+    }
+
+    /* Forms */
+    input, select {
+      width: 100%; padding: 10px 12px; border: 1px solid #d1d5db;
+      border-radius: 8px; font-size: 14px; transition: border-color 0.2s;
+    }
+    input:focus { outline: none; border-color: #2563eb; }
+    .form-group { margin-bottom: 16px; }
+    label { display: block; font-size: 14px; font-weight: 500; color: #374151; margin-bottom: 6px; }
+
+    button {
+      background: #2563eb; color: white; border: none; padding: 10px 20px;
+      border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;
+    }
+    button:hover { background: #1d4ed8; }
+    button:disabled { background: #9ca3af; cursor: not-allowed; }
+    button.secondary { background: #6b7280; }
+    button.secondary:hover { background: #4b5563; }
+
+    /* Tables */
+    .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .data-table th {
+      text-align: left; padding: 10px 12px; background: #f9fafb;
+      border-bottom: 2px solid #e5e7eb; font-size: 12px;
+      text-transform: uppercase; color: #6b7280;
+    }
+    .data-table td {
+      padding: 10px 12px; border-bottom: 1px solid #f3f4f6;
+      max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .data-table tr:hover td { background: #f9fafb; }
+    .table-controls {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 12px; gap: 12px;
+    }
+    .table-controls input { max-width: 280px; }
+    .pagination {
+      display: flex; align-items: center; gap: 8px;
+      margin-top: 12px; font-size: 13px; color: #6b7280;
+    }
+    .pagination button { padding: 6px 12px; font-size: 13px; }
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 4px;
+      font-size: 11px; font-weight: 500;
+    }
+    .badge.intent { background: #dbeafe; color: #1e40af; }
+    .badge.type { background: #fef3c7; color: #92400e; }
+
+    .alert {
+      padding: 12px 16px; border-radius: 8px; font-size: 14px; margin-bottom: 16px;
+    }
+    .alert.success { background: #dcfce7; color: #166534; }
+    .alert.error { background: #fee2e2; color: #991b1b; }
+    .alert.info { background: #dbeafe; color: #1e40af; }
+
+    .hidden { display: none !important; }
+
+    /* Tabs */
+    .tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+    .tab {
+      padding: 8px 16px; border-radius: 8px; background: #e5e7eb;
+      color: #374151; border: none; cursor: pointer; font-size: 14px;
+    }
+    .tab.active { background: #2563eb; color: white; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Zunkiree Dashboard</h1>
+    <div class="header-right" id="headerRight" style="display:none;">
+      <span class="brand" id="headerBrand"></span>
+      <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+  </div>
+
+  <!-- Login Screen -->
+  <div id="loginScreen" class="login-screen">
+    <div class="login-card">
+      <h2>Welcome</h2>
+      <p>Enter your API key to access your dashboard. You can find this in your onboarding email from Zunkiree.</p>
+      <form id="loginForm">
+        <div class="form-group">
+          <label>API Key</label>
+          <input type="password" id="apiKeyInput" placeholder="zk_live_..." required>
+        </div>
+        <button type="submit" style="width:100%;">Sign In</button>
+      </form>
+      <div id="loginError" class="alert error hidden" style="margin-top:16px;"></div>
+    </div>
+  </div>
+
+  <!-- Dashboard (hidden until authenticated) -->
+  <div class="container" id="dashboardContainer" style="display:none;">
+    <div id="alerts"></div>
+
+    <!-- Overview -->
+    <div class="overview-grid">
+      <div class="stat-card">
+        <div class="stat-label">Site ID</div>
+        <div class="stat-value small" id="ovSiteId">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Leads</div>
+        <div class="stat-value" id="ovLeads">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Queries</div>
+        <div class="stat-value" id="ovQueries">—</div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" onclick="showTab('leads')">Leads & Users</button>
+      <button class="tab" onclick="showTab('queries')">Query History</button>
+    </div>
+
+    <!-- Leads Section -->
+    <div class="section" id="leadsSection">
+      <h2>Leads & Users</h2>
+      <div class="table-controls">
+        <input type="text" id="leadsSearch" placeholder="Search by name or email..." oninput="debounceLeadsSearch()">
+        <button onclick="exportLeads()" class="secondary" style="white-space:nowrap;">Export CSV</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead>
+            <tr><th>Name</th><th>Email</th><th>Phone</th><th>Location</th><th>Type</th><th>Intent</th><th>Custom Fields</th><th>Signed Up</th></tr>
+          </thead>
+          <tbody id="leadsTableBody"></tbody>
+        </table>
+      </div>
+      <div class="pagination" id="leadsPagination"></div>
+    </div>
+
+    <!-- Queries Section -->
+    <div class="section hidden" id="queriesSection">
+      <h2>Query History</h2>
+      <div class="table-controls">
+        <input type="text" id="queriesSearch" placeholder="Search by question..." oninput="debounceQueriesSearch()">
+        <button onclick="exportQueries()" class="secondary" style="white-space:nowrap;">Export CSV</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead>
+            <tr><th>Question</th><th>Answer Preview</th><th>Top Score</th><th>Time (ms)</th><th>Fallback</th><th>Timestamp</th></tr>
+          </thead>
+          <tbody id="queriesTableBody"></tbody>
+        </table>
+      </div>
+      <div class="pagination" id="queriesPagination"></div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = 'https://api.zunkireelabs.com';
+    let API_KEY = sessionStorage.getItem('zunkiree_dashboard_key') || '';
+    let leadsPage = 1, leadsPageSize = 25;
+    let queriesPage = 1, queriesPageSize = 25;
+    let leadsSearchTimer = null;
+    let queriesSearchTimer = null;
+
+    // --- Helpers ---
+    function esc(str) {
+      if (str == null) return '';
+      const el = document.createElement('span');
+      el.textContent = String(str);
+      return el.innerHTML;
+    }
+
+    function showAlert(message, type) {
+      const alerts = document.getElementById('alerts');
+      const alert = document.createElement('div');
+      alert.className = `alert ${type}`;
+      alert.textContent = message;
+      alerts.appendChild(alert);
+      setTimeout(() => alert.remove(), 5000);
+    }
+
+    function apiFetch(path) {
+      return fetch(`${API_URL}/api/v1/dashboard${path}`, {
+        headers: { 'X-Api-Key': API_KEY },
+      });
+    }
+
+    // --- Auth ---
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const key = document.getElementById('apiKeyInput').value.trim();
+      if (!key) return;
+
+      const errEl = document.getElementById('loginError');
+      errEl.classList.add('hidden');
+
+      try {
+        const res = await fetch(`${API_URL}/api/v1/dashboard/overview`, {
+          headers: { 'X-Api-Key': key },
+        });
+
+        if (res.status === 401) {
+          errEl.textContent = 'Invalid API key. Please check and try again.';
+          errEl.classList.remove('hidden');
+          return;
+        }
+
+        if (!res.ok) {
+          errEl.textContent = 'Something went wrong. Please try again.';
+          errEl.classList.remove('hidden');
+          return;
+        }
+
+        API_KEY = key;
+        sessionStorage.setItem('zunkiree_dashboard_key', key);
+        showDashboard();
+      } catch {
+        errEl.textContent = 'Cannot reach API. Please try again later.';
+        errEl.classList.remove('hidden');
+      }
+    });
+
+    function logout() {
+      sessionStorage.removeItem('zunkiree_dashboard_key');
+      API_KEY = '';
+      document.getElementById('dashboardContainer').style.display = 'none';
+      document.getElementById('headerRight').style.display = 'none';
+      document.getElementById('loginScreen').style.display = '';
+      document.getElementById('apiKeyInput').value = '';
+    }
+
+    async function showDashboard() {
+      document.getElementById('loginScreen').style.display = 'none';
+      document.getElementById('dashboardContainer').style.display = '';
+      document.getElementById('headerRight').style.display = '';
+      await loadOverview();
+      loadLeads();
+      loadQueries();
+    }
+
+    // --- Overview ---
+    async function loadOverview() {
+      try {
+        const res = await apiFetch('/overview');
+        if (!res.ok) return;
+        const d = await res.json();
+        document.getElementById('ovSiteId').textContent = d.site_id;
+        document.getElementById('ovLeads').textContent = d.total_leads;
+        document.getElementById('ovQueries').textContent = d.total_queries;
+        document.getElementById('headerBrand').textContent = d.brand_name;
+      } catch { /* silent */ }
+    }
+
+    // --- Tabs ---
+    function showTab(tab) {
+      document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById('leadsSection').classList.toggle('hidden', tab !== 'leads');
+      document.getElementById('queriesSection').classList.toggle('hidden', tab !== 'queries');
+    }
+
+    // --- Pagination ---
+    function renderPagination(containerId, total, page, pageSize, callback) {
+      const container = document.getElementById(containerId);
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      container.innerHTML = `
+        <button ${page <= 1 ? 'disabled' : ''} onclick="${callback}(${page - 1})">Prev</button>
+        <span>Page ${page} of ${totalPages} (${total} total)</span>
+        <button ${page >= totalPages ? 'disabled' : ''} onclick="${callback}(${page + 1})">Next</button>
+      `;
+    }
+
+    // --- Leads ---
+    async function loadLeads(page) {
+      if (page) leadsPage = page;
+      const search = document.getElementById('leadsSearch').value;
+      const params = new URLSearchParams({ page: leadsPage, page_size: leadsPageSize });
+      if (search) params.set('search', search);
+
+      try {
+        const res = await apiFetch(`/leads?${params}`);
+        if (!res.ok) return;
+        const data = await res.json();
+
+        const tbody = document.getElementById('leadsTableBody');
+        if (data.leads.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#6b7280;padding:24px;">No leads yet</td></tr>';
+        } else {
+          tbody.innerHTML = data.leads.map(l => `<tr>
+            <td>${esc(l.name)}</td>
+            <td>${esc(l.email)}</td>
+            <td>${esc(l.phone) || '—'}</td>
+            <td>${esc(l.location) || '—'}</td>
+            <td>${l.user_type ? `<span class="badge type">${esc(l.user_type)}</span>` : '—'}</td>
+            <td>${l.lead_intent ? `<span class="badge intent">${esc(l.lead_intent)}</span>` : '—'}</td>
+            <td title="${esc(l.custom_fields)}">${esc(l.custom_fields) || '—'}</td>
+            <td>${new Date(l.created_at).toLocaleDateString()}</td>
+          </tr>`).join('');
+        }
+
+        renderPagination('leadsPagination', data.total, data.page, data.page_size, 'loadLeads');
+      } catch { /* silent */ }
+    }
+
+    function debounceLeadsSearch() {
+      clearTimeout(leadsSearchTimer);
+      leadsSearchTimer = setTimeout(() => { leadsPage = 1; loadLeads(); }, 400);
+    }
+
+    async function exportLeads() {
+      try {
+        const res = await apiFetch('/leads/export');
+        if (!res.ok) { showAlert('Export failed', 'error'); return; }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'leads.csv'; a.click();
+        URL.revokeObjectURL(url);
+      } catch { showAlert('Export failed', 'error'); }
+    }
+
+    // --- Queries ---
+    async function loadQueries(page) {
+      if (page) queriesPage = page;
+      const search = document.getElementById('queriesSearch').value;
+      const params = new URLSearchParams({ page: queriesPage, page_size: queriesPageSize });
+      if (search) params.set('search', search);
+
+      try {
+        const res = await apiFetch(`/queries?${params}`);
+        if (!res.ok) return;
+        const data = await res.json();
+
+        const tbody = document.getElementById('queriesTableBody');
+        if (data.queries.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#6b7280;padding:24px;">No queries yet</td></tr>';
+        } else {
+          tbody.innerHTML = data.queries.map(q => `<tr>
+            <td title="${esc(q.question)}">${esc(q.question)}</td>
+            <td title="${esc(q.answer_preview)}">${esc(q.answer_preview) || '—'}</td>
+            <td>${q.top_score != null ? q.top_score.toFixed(3) : '—'}</td>
+            <td>${q.response_time_ms != null ? q.response_time_ms : '—'}</td>
+            <td>${q.fallback_triggered ? '<span style="color:#ef4444;">Yes</span>' : 'No'}</td>
+            <td>${new Date(q.created_at).toLocaleString()}</td>
+          </tr>`).join('');
+        }
+
+        renderPagination('queriesPagination', data.total, data.page, data.page_size, 'loadQueries');
+      } catch { /* silent */ }
+    }
+
+    function debounceQueriesSearch() {
+      clearTimeout(queriesSearchTimer);
+      queriesSearchTimer = setTimeout(() => { queriesPage = 1; loadQueries(); }, 400);
+    }
+
+    async function exportQueries() {
+      try {
+        const res = await apiFetch('/queries/export');
+        if (!res.ok) { showAlert('Export failed', 'error'); return; }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'queries.csv'; a.click();
+        URL.revokeObjectURL(url);
+      } catch { showAlert('Export failed', 'error'); }
+    }
+
+    // --- Init ---
+    if (API_KEY) {
+      showDashboard();
+    }
+  </script>
+</body>
+</html>
