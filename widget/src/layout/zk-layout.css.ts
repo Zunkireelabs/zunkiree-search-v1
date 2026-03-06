@@ -4,29 +4,35 @@
  */
 export const ZK_LAYOUT_CSS = `
   #zk-layout-root {
+    display: flex;
     width: 100%;
     min-height: 100vh;
   }
 
   #zk-host-content {
-    transition: width 300ms ease, margin-right 300ms ease;
+    flex: 1;
+    min-width: 0;
   }
 
   #zk-dock-panel {
-    position: fixed;
+    position: sticky;
     top: 0;
-    right: 0;
-    bottom: 0;
+    height: 100vh;
+    align-self: flex-start;
     width: 0;
+    flex-shrink: 0;
     overflow: hidden;
     z-index: 99999;
     transition: width 300ms ease;
   }
 
-  /* When docked: squeeze entire page to 70%, dock panel takes 30% on right */
+  /* When docked: website 70%, Zunkiree 30% */
   #zk-layout-root.zk-dock-active #zk-host-content {
-    width: 70% !important;
-    max-width: 70% !important;
+    flex: none;
+    width: 70%;
+    overflow-x: hidden;
+    /* Contains position:fixed elements (navbar) within 70% */
+    transform: translateX(0);
   }
 
   #zk-layout-root.zk-dock-active #zk-dock-panel {
