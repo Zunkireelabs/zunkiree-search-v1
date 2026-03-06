@@ -32,6 +32,9 @@ export const ZK_LAYOUT_CSS = `
     flex: none;
     width: 70%;
     overflow-x: hidden;
+    /* Creates a containing block so the website's position:fixed elements
+       (navbar, etc.) are confined within the 70% container */
+    transform: translateZ(0);
   }
 
   #zk-layout-root.zk-dock-active #zk-dock-panel {
