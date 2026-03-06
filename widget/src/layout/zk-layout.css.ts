@@ -23,6 +23,7 @@ export const ZK_LAYOUT_CSS = `
     width: 0;
     flex-shrink: 0;
     overflow: hidden;
+    z-index: 99999;
     transition: width 300ms ease;
   }
 
