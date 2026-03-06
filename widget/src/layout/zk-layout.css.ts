@@ -27,19 +27,23 @@ export const ZK_LAYOUT_CSS = `
   }
 
   /* When docked: website takes 70% on left, Zunkiree takes 30% on right */
+  #zk-layout-root.zk-dock-active {
+    height: 100vh;
+    overflow: hidden;
+  }
+
   #zk-layout-root.zk-dock-active #zk-host-content {
     flex: none;
     width: 70%;
+    height: 100vh;
+    overflow-y: auto;
     overflow-x: hidden;
-    /* Stacking context so fixed navbar renders behind dock panel */
-    position: relative;
-    z-index: 1;
   }
 
   #zk-layout-root.zk-dock-active #zk-dock-panel {
     width: 30%;
     border-left: 1px solid rgba(0, 0, 0, 0.08);
     box-shadow: -4px 0 20px rgba(0, 0, 0, 0.06);
-    z-index: 2;
+    z-index: 99999;
   }
 `
