@@ -46,7 +46,7 @@ export function ExpandedPanel({
       container.scrollTop = container.scrollHeight
     }
     if (!isLoading) {
-      inputRef.current?.focus()
+      inputRef.current?.focus({ preventScroll: true })
     }
   }, [messages, isLoading])
 
@@ -91,7 +91,7 @@ export function ExpandedPanel({
 
   const handleLocalSuggestionClick = (suggestion: string) => {
     onSuggestionClick(suggestion)
-    inputRef.current?.focus()
+    inputRef.current?.focus({ preventScroll: true })
   }
 
   const handleBackdropClick = (e: React.MouseEvent) => {

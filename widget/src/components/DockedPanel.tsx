@@ -46,7 +46,7 @@ export function DockedPanel({
       container.scrollTop = container.scrollHeight
     }
     if (!isLoading) {
-      inputRef.current?.focus()
+      inputRef.current?.focus({ preventScroll: true })
     }
   }, [messages, isLoading])
 
@@ -75,7 +75,7 @@ export function DockedPanel({
 
   const handleLocalSuggestionClick = (suggestion: string) => {
     onSuggestionClick(suggestion)
-    inputRef.current?.focus()
+    inputRef.current?.focus({ preventScroll: true })
   }
 
   return (
