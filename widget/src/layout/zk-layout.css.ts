@@ -23,7 +23,6 @@ export const ZK_LAYOUT_CSS = `
     width: 0;
     flex-shrink: 0;
     overflow: hidden;
-    z-index: 99999;
     transition: width 300ms ease;
   }
 
@@ -31,17 +30,16 @@ export const ZK_LAYOUT_CSS = `
   #zk-layout-root.zk-dock-active #zk-host-content {
     flex: none;
     width: 70%;
-    height: 100vh;
     overflow-x: hidden;
-    overflow-y: auto;
-    /* Creates a containing block so the website's position:fixed elements
-       (navbar, etc.) are confined within the 70% container */
-    transform: translateZ(0);
+    /* Stacking context so fixed navbar renders behind dock panel */
+    position: relative;
+    z-index: 1;
   }
 
   #zk-layout-root.zk-dock-active #zk-dock-panel {
     width: 30%;
     border-left: 1px solid rgba(0, 0, 0, 0.08);
     box-shadow: -4px 0 20px rgba(0, 0, 0, 0.06);
+    z-index: 2;
   }
 `
