@@ -77,11 +77,20 @@ export function markdownToHtml(text: string): string {
     const line = lines[i]
     const trimmed = line.trim()
 
-    // Empty line — close any open list
+    // Empty line — only close list if next content isn't a continuation
     if (!trimmed) {
       if (inList) {
-        parts.push(inList === 'ol' ? '</ol>' : '</ul>')
-        inList = null
+        // Peek ahead: does the next non-empty line continue the list?
+        let peek = i + 1
+        while (peek < lines.length && !lines[peek].trim()) peek++
+        const nextLine = peek < lines.length ? lines[peek].trim() : ''
+        const nextIsOl = /^\d+\.\s+/.test(nextLine)
+        const nextIsUl = /^[-*]\s+/.test(nextLine)
+        const continues = (inList === 'ol' && nextIsOl) || (inList === 'ul' && nextIsUl)
+        if (!continues) {
+          parts.push(inList === 'ol' ? '</ol>' : '</ul>')
+          inList = null
+        }
       }
       i++
       continue
