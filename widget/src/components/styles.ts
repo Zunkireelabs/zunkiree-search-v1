@@ -156,7 +156,7 @@ export const styles = (primaryColor: string) => `
     display: flex;
     flex-direction: column;
     animation: zk-panel-slide-up 200ms ease-out both;
-    overflow: hidden;
+    overflow: clip;
   }
 
   @keyframes zk-panel-slide-up {
@@ -245,9 +245,10 @@ export const styles = (primaryColor: string) => `
   /* Conversation Area */
   .zk-expanded-panel__messages {
     flex: 1;
-    overflow-y: auto;
+    overflow-y: scroll;
     -webkit-overflow-scrolling: touch;
-    overscroll-behavior: contain;
+    overscroll-behavior-y: contain;
+    touch-action: pan-y;
     padding: 32px;
     min-height: 0;
   }
@@ -346,9 +347,10 @@ export const styles = (primaryColor: string) => `
   /* Docked Messages */
   .zk-docked__messages {
     flex: 1;
-    overflow-y: auto;
+    overflow-y: scroll;
     -webkit-overflow-scrolling: touch;
-    overscroll-behavior: contain;
+    overscroll-behavior-y: contain;
+    touch-action: pan-y;
     padding: 24px 16px;
     min-height: 0;
   }

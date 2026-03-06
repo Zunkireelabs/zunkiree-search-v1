@@ -37,6 +37,7 @@ export function ExpandedPanel({
   placeholder,
 }: ExpandedPanelProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -46,6 +47,23 @@ export function ExpandedPanel({
       inputRef.current?.focus()
     }
   }, [messages, isLoading])
+
+  // Trap wheel/trackpad scroll inside messages area
+  useEffect(() => {
+    const el = messagesRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      const { scrollTop, scrollHeight, clientHeight } = el
+      const atTop = scrollTop <= 0 && e.deltaY < 0
+      const atBottom = scrollTop + clientHeight >= scrollHeight && e.deltaY > 0
+      // Only prevent propagation when not at boundary, or always trap it
+      if (!atTop && !atBottom) {
+        e.stopPropagation()
+      }
+    }
+    el.addEventListener('wheel', onWheel, { passive: true })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
 
   useEffect(() => {
     if (inputRef.current) {
@@ -143,7 +161,7 @@ export function ExpandedPanel({
         )}
 
         {/* Conversation Area */}
-        <div className="zk-expanded-panel__messages">
+        <div className="zk-expanded-panel__messages" ref={messagesRef}>
           <div className="zk-expanded-panel__messages-inner">
             {messages.map(message => (
               <div key={message.id} className={`zk-message zk-message-${message.role}`}>
