@@ -48,21 +48,20 @@ export function ExpandedPanel({
     }
   }, [messages, isLoading])
 
-  // Trap wheel/trackpad scroll inside messages area
+  // Capture wheel/trackpad scroll on the entire panel and route it to messages area
   useEffect(() => {
-    const el = messagesRef.current
-    if (!el) return
+    const panel = messagesRef.current?.closest('.zk-expanded-panel') as HTMLElement | null
+    const msgs = messagesRef.current
+    if (!panel || !msgs) return
     const onWheel = (e: WheelEvent) => {
-      const { scrollTop, scrollHeight, clientHeight } = el
-      const atTop = scrollTop <= 0 && e.deltaY < 0
-      const atBottom = scrollTop + clientHeight >= scrollHeight && e.deltaY > 0
-      // Only prevent propagation when not at boundary, or always trap it
-      if (!atTop && !atBottom) {
-        e.stopPropagation()
-      }
+      // Prevent the host page from scrolling
+      e.preventDefault()
+      e.stopPropagation()
+      // Manually scroll the messages container
+      msgs.scrollTop += e.deltaY
     }
-    el.addEventListener('wheel', onWheel, { passive: true })
-    return () => el.removeEventListener('wheel', onWheel)
+    panel.addEventListener('wheel', onWheel, { passive: false })
+    return () => panel.removeEventListener('wheel', onWheel)
   }, [])
 
   useEffect(() => {
