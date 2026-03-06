@@ -22,6 +22,9 @@ _REGISTRATION_KEYWORDS = [
     "enroll", "enrollment", "enrolment", "want to join",
     "how to apply", "apply now", "get started",
     "i want to register", "i want to enroll", "i want to sign up",
+    "login", "log in", "sign in", "signin",
+    "my account", "my status", "check status", "check my",
+    "my application", "my profile", "my registration",
 ]
 
 

@@ -26,6 +26,7 @@ class VerificationSession(Base):
     current_field_index: Mapped[int] = mapped_column(Integer, default=0)
     detected_intent: Mapped[str | None] = mapped_column(String(100), nullable=True)
     intent_signup_fields: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array of intent-specific fields
+    question_count: Mapped[int] = mapped_column(Integer, default=0)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(

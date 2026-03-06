@@ -41,11 +41,11 @@ export function ExpandedPanel({
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
-  useEffect(() => {
-    inputRef.current?.focus()
-  }, [])
+    // Refocus input after each new message (response received)
+    if (!isLoading) {
+      inputRef.current?.focus()
+    }
+  }, [messages, isLoading])
 
   useEffect(() => {
     if (inputRef.current) {

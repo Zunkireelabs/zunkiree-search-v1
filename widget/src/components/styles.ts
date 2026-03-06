@@ -246,6 +246,8 @@ export const styles = (primaryColor: string) => `
   .zk-expanded-panel__messages {
     flex: 1;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
     padding: 32px;
     min-height: 0;
   }
@@ -345,6 +347,8 @@ export const styles = (primaryColor: string) => `
   .zk-docked__messages {
     flex: 1;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
     padding: 24px 16px;
     min-height: 0;
   }

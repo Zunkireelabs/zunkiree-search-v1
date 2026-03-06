@@ -241,50 +241,46 @@ async def submit_query(
                     session_id=query.session_id,
                 )
 
-        # State: anonymous — classify query
+        # State: anonymous — answer freely, capture lead after 6 questions or on login/signup intent
         elif v_session.state == "anonymous":
-            # If user responds to lead CTA with their email
-            if looks_like_email(question_to_answer) and v_session.pending_question:
-                message = await handle_email_submission(db, v_session, question_to_answer.strip(), brand_name)
-                return QueryResponse(
-                    answer=message,
-                    suggestions=[],
-                    sources=[],
-                    session_id=query.session_id,
-                )
-
-            classification = await classify_query(question_to_answer, lead_intents_config or None)
-
-            if classification["type"] == "lead":
-                v_session.pending_question = question_to_answer
-                v_session.detected_intent = classification["intent"]
-                v_session.intent_signup_fields = json.dumps(classification.get("signup_fields", []))
-                await db.commit()
-                lead_signup_cta = True
-            elif classification["type"] == "personal":
-                is_reg = _is_registration_query(question_to_answer)
-                if is_reg:
-                    v_session.pending_question = question_to_answer
-                    await db.commit()
-                    lead_signup_cta = True
-                elif verification_enabled:
-                    v_session.pending_question = question_to_answer
-                    v_session.state = "email_requested"
-                    await db.commit()
+            # If user responds with their email (to our lead capture prompt or voluntarily)
+            if looks_like_email(question_to_answer):
+                if v_session.pending_question or v_session.question_count >= 6:
+                    message = await handle_email_submission(db, v_session, question_to_answer.strip(), brand_name)
                     return QueryResponse(
-                        answer=(
-                            "I can help you with that! To access your personalized information, "
-                            "I'll need to verify your identity.\n\n"
-                            "Please enter your email address to get started."
-                        ),
+                        answer=message,
                         suggestions=[],
                         sources=[],
                         session_id=query.session_id,
                     )
 
-            # Expand short follow-up queries
-            if not lead_signup_cta and v_session.pending_question and len(question_to_answer.split()) <= 4:
-                question_to_answer = f"{v_session.pending_question} - {question_to_answer}"
+            # Check if this is a login/signup/status/registration query — ask for email immediately
+            if is_reg_query or _is_registration_query(question_to_answer):
+                v_session.pending_question = question_to_answer
+                v_session.state = "email_requested"
+                # Classify for intent fields
+                if has_lead_intents:
+                    classification = await classify_query(question_to_answer, lead_intents_config or None)
+                    if classification["type"] == "lead":
+                        v_session.detected_intent = classification["intent"]
+                        v_session.intent_signup_fields = json.dumps(classification.get("signup_fields", []))
+                await db.commit()
+                return QueryResponse(
+                    answer=(
+                        "I can help you with that! Please enter your email address "
+                        "so I can check your account or get you started."
+                    ),
+                    suggestions=[],
+                    sources=[],
+                    session_id=query.session_id,
+                )
+
+            # Increment question count
+            v_session.question_count = (v_session.question_count or 0) + 1
+            await db.commit()
+
+            # After 6 questions — ask for email to capture lead
+            if v_session.question_count >= 6 and (has_lead_intents or verification_enabled):
                 lead_signup_cta = True
 
         # State: verified — pass through
