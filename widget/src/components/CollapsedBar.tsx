@@ -4,6 +4,7 @@ interface CollapsedBarProps {
   brandName: string
   suggestions: string[]
   animate: boolean
+  hasMessages: boolean
   onClick: () => void
   onSuggestionClick: (suggestion: string) => void
 }
@@ -12,6 +13,7 @@ export function CollapsedBar({
   brandName,
   suggestions,
   animate,
+  hasMessages,
   onClick,
   onSuggestionClick,
 }: CollapsedBarProps) {
@@ -68,8 +70,8 @@ export function CollapsedBar({
           </div>
         </div>
 
-        {/* Suggestion chips inside card */}
-        {suggestions.length > 0 && (
+        {/* Suggestion chips — only before conversation starts */}
+        {!hasMessages && suggestions.length > 0 && (
           <div className="zk-collapsed-bar__chips">
             {suggestions.slice(0, 3).map((suggestion, idx) => (
               <button

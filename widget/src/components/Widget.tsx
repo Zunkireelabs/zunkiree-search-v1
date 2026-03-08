@@ -234,6 +234,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
           brandName={brandName}
           suggestions={getSuggestions()}
           animate={!hasAnimated.current}
+          hasMessages={messages.length > 0}
           onClick={handleOpen}
           onSuggestionClick={handleSuggestionClick}
         />
