@@ -79,9 +79,9 @@ export function ExpandedPanel({
 
     const onResize = () => {
       if (window.innerWidth <= 480) {
-        // Cap at 70% of the visible viewport
-        const maxHeight = vv.height * 0.7
-        panel.style.height = `${Math.min(maxHeight, vv.height - 8)}px`
+        // When keyboard opens, shrink panel to fit visible area
+        const maxHeight = vv.height * 0.68
+        panel.style.height = `${Math.min(maxHeight, vv.height - 16)}px`
       }
     }
     const onReset = () => {

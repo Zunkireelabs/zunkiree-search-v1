@@ -836,9 +836,10 @@ export const styles = (primaryColor: string) => `
     }
   }
 
-  /* ===== Responsive: Mobile ===== */
+  /* ===== Responsive: Mobile — Glassmorphism ===== */
   @media (max-width: 480px) {
-    /* Collapsed bar — compact, edge-to-edge */
+
+    /* --- Collapsed bar --- */
     .zk-collapsed-bar {
       width: calc(100% - 24px);
       bottom: 12px;
@@ -846,11 +847,11 @@ export const styles = (primaryColor: string) => `
 
     .zk-collapsed-bar__card {
       border-radius: 16px;
-      padding: 14px;
+      padding: 12px;
     }
 
     .zk-collapsed-bar__input-inner {
-      height: 44px;
+      height: 42px;
       padding: 0 6px 0 12px;
     }
 
@@ -868,21 +869,27 @@ export const styles = (primaryColor: string) => `
       padding: 5px 10px;
     }
 
-    /* Expanded panel — bottom sheet (not full-screen) */
+    /* --- Expanded panel — glassmorphism bottom sheet --- */
     .zk-expanded-panel {
       width: calc(100% - 16px);
-      height: 70vh;
+      height: 68vh;
       bottom: 8px;
       left: 8px;
       transform: none;
       border-radius: 20px;
-      box-shadow: 0 -4px 30px rgba(0, 0, 0, 0.15);
-      animation: zk-panel-mobile-up 200ms ease-out both;
+      background: rgba(255, 255, 255, 0.65);
+      backdrop-filter: blur(20px) saturate(1.4);
+      -webkit-backdrop-filter: blur(20px) saturate(1.4);
+      border: 1px solid rgba(255, 255, 255, 0.5);
+      box-shadow:
+        0 8px 32px rgba(0, 0, 0, 0.12),
+        inset 0 1px 0 rgba(255, 255, 255, 0.6);
+      animation: zk-panel-mobile-up 220ms ease-out both;
     }
 
     @keyframes zk-panel-mobile-up {
       from {
-        transform: translateY(100%);
+        transform: translateY(40%);
         opacity: 0;
       }
       to {
@@ -891,23 +898,42 @@ export const styles = (primaryColor: string) => `
       }
     }
 
+    /* Backdrop — dim the website a bit */
+    .zk-backdrop {
+      background: rgba(0, 0, 0, 0.2);
+      backdrop-filter: blur(2px);
+      -webkit-backdrop-filter: blur(2px);
+    }
+
+    /* --- Header — frosted glass --- */
     .zk-expanded-panel__header {
       height: 48px;
-      padding: 0 12px;
+      padding: 0 14px;
+      background: rgba(255, 255, 255, 0.5);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.4);
       border-radius: 20px 20px 0 0;
     }
 
     .zk-expanded-panel__title {
       font-size: 15px;
+      font-weight: 600;
     }
 
+    .zk-header-btn {
+      width: 40px;
+      height: 40px;
+    }
+
+    /* --- Hero --- */
     .zk-expanded-panel__hero {
       padding: 20px 16px;
     }
 
     .zk-expanded-panel__hero-title {
-      font-size: 22px;
-      margin-bottom: 16px;
+      font-size: 20px;
+      margin-bottom: 14px;
     }
 
     .zk-expanded-panel__hero-chips {
@@ -917,24 +943,47 @@ export const styles = (primaryColor: string) => `
     .zk-expanded-panel__hero-chips .zk-chip {
       font-size: 12px;
       padding: 6px 12px;
+      background: rgba(255, 255, 255, 0.7);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border-color: rgba(255, 255, 255, 0.5);
     }
 
+    /* --- Messages --- */
     .zk-expanded-panel__messages {
-      padding: 16px 12px;
+      padding: 14px 12px;
     }
 
     .zk-expanded-panel__messages-inner {
-      gap: 12px;
+      gap: 10px;
     }
 
     .zk-message {
-      max-width: 92%;
+      max-width: 90%;
     }
 
     .zk-message-content {
-      padding: 12px 14px;
+      padding: 11px 14px;
       font-size: 14px;
-      line-height: 1.55;
+      line-height: 1.5;
+      border-radius: 14px;
+    }
+
+    /* Glass message bubbles */
+    .zk-message-assistant .zk-message-content {
+      background: rgba(255, 255, 255, 0.6);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      border-bottom-left-radius: 4px;
+    }
+
+    .zk-message-user .zk-message-content {
+      background: rgba(37, 99, 235, 0.1);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(37, 99, 235, 0.12);
+      border-bottom-right-radius: 4px;
     }
 
     .zk-message__suggestions {
@@ -945,29 +994,38 @@ export const styles = (primaryColor: string) => `
     .zk-message__suggestions .zk-chip {
       font-size: 12px;
       padding: 5px 10px;
+      background: rgba(255, 255, 255, 0.6);
+      border-color: rgba(255, 255, 255, 0.4);
     }
 
+    /* --- Input area — glass footer --- */
     .zk-expanded-panel__input {
       padding: 10px 12px;
       padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+      background: rgba(255, 255, 255, 0.4);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-top: 1px solid rgba(255, 255, 255, 0.4);
     }
 
     .zk-input-container {
-      border-radius: 20px;
+      border-radius: 18px;
+      background: rgba(230, 230, 230, 0.5);
     }
 
     .zk-input-container::before {
-      border-radius: 20px;
+      border-radius: 18px;
     }
 
     .zk-input-container::after {
-      border-radius: 22px;
+      border-radius: 20px;
     }
 
     .zk-input-inner {
-      border-radius: 18px;
+      border-radius: 16px;
       padding: 8px 12px;
-      min-height: 42px;
+      min-height: 40px;
+      background: rgba(255, 255, 255, 0.85);
     }
 
     .zk-input {
@@ -978,7 +1036,7 @@ export const styles = (primaryColor: string) => `
     .zk-send {
       width: 30px;
       height: 30px;
-      bottom: 6px;
+      bottom: 5px;
       right: 8px;
     }
 
@@ -988,29 +1046,41 @@ export const styles = (primaryColor: string) => `
     }
 
     .zk-powered-by {
-      margin-top: 6px;
+      margin-top: 5px;
       font-size: 10px;
     }
 
-    /* Autocomplete */
+    /* --- Autocomplete — glass --- */
     .zk-autocomplete {
-      border-radius: 10px;
+      border-radius: 12px;
       margin-bottom: 4px;
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.5);
+      box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.06);
     }
 
     .zk-autocomplete__item {
       padding: 10px 12px;
       font-size: 13px;
-      min-height: 44px; /* Touch target */
+      min-height: 44px;
+      background: transparent;
     }
 
-    /* Header buttons — 44px tap target */
-    .zk-header-btn {
-      width: 44px;
-      height: 44px;
+    .zk-autocomplete__item:hover,
+    .zk-autocomplete__item--active {
+      background: rgba(255, 255, 255, 0.5);
     }
 
-    /* Markdown content */
+    /* --- Typing indicator glass --- */
+    .zk-message-assistant .zk-typing {
+      background: rgba(255, 255, 255, 0.6);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    /* --- Markdown --- */
     .zk-md .zk-table {
       font-size: 12px;
     }
@@ -1018,6 +1088,15 @@ export const styles = (primaryColor: string) => `
     .zk-md .zk-table th,
     .zk-md .zk-table td {
       padding: 6px 8px;
+    }
+
+    .zk-md .zk-table-wrap {
+      background: rgba(255, 255, 255, 0.5);
+      border-color: rgba(255, 255, 255, 0.4);
+    }
+
+    .zk-md .zk-table th {
+      background: rgba(249, 250, 251, 0.6);
     }
 
     .zk-md .zk-list {
@@ -1029,7 +1108,7 @@ export const styles = (primaryColor: string) => `
   @supports (-webkit-touch-callout: none) {
     @media (max-width: 480px) {
       .zk-expanded-panel {
-        height: 70dvh;
+        height: 68dvh;
       }
     }
   }
