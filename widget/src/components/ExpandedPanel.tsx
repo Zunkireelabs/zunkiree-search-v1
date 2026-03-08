@@ -62,14 +62,28 @@ export function ExpandedPanel({
     const msgs = messagesRef.current
     if (!panel || !msgs) return
     const onWheel = (e: WheelEvent) => {
-      // Prevent the host page from scrolling
       e.preventDefault()
       e.stopPropagation()
-      // Manually scroll the messages container
       msgs.scrollTop += e.deltaY
     }
     panel.addEventListener('wheel', onWheel, { passive: false })
     return () => panel.removeEventListener('wheel', onWheel)
+  }, [])
+
+  // Mobile: resize panel when virtual keyboard opens/closes
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    const panel = messagesRef.current?.closest('.zk-expanded-panel') as HTMLElement | null
+    if (!panel) return
+
+    const onResize = () => {
+      if (window.innerWidth <= 480) {
+        panel.style.height = `${vv.height}px`
+      }
+    }
+    vv.addEventListener('resize', onResize)
+    return () => vv.removeEventListener('resize', onResize)
   }, [])
 
   useEffect(() => {

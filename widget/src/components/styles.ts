@@ -825,46 +825,219 @@ export const styles = (primaryColor: string) => `
   }
 
   /* ===== Responsive: Tablet ===== */
-  @media (max-width: 768px) and (min-width: 641px) {
+  @media (max-width: 768px) and (min-width: 481px) {
     .zk-collapsed-bar {
       width: 90%;
+    }
+
+    .zk-expanded-panel {
+      width: 95%;
+      height: min(85vh, 760px);
     }
   }
 
   /* ===== Responsive: Mobile ===== */
-  @media (max-width: 640px) {
+  @media (max-width: 480px) {
+    /* Collapsed bar — compact, edge-to-edge */
     .zk-collapsed-bar {
-      width: calc(100% - 32px);
-      bottom: 16px;
+      width: calc(100% - 24px);
+      bottom: 12px;
     }
 
-    .zk-expanded-panel {
-      width: calc(100% - 16px);
-      bottom: 8px;
-      height: calc(100vh - 16px);
+    .zk-collapsed-bar__card {
       border-radius: 16px;
+      padding: 14px;
+    }
+
+    .zk-collapsed-bar__input-inner {
+      height: 44px;
+      padding: 0 6px 0 12px;
+    }
+
+    .zk-collapsed-bar__placeholder {
+      font-size: 13px;
+    }
+
+    .zk-collapsed-bar__chips {
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .zk-chip--card {
+      font-size: 12px;
+      padding: 5px 10px;
+    }
+
+    /* Expanded panel — true full-screen */
+    .zk-expanded-panel {
+      width: 100%;
+      height: 100%;
+      bottom: 0;
+      left: 0;
+      transform: none;
+      border-radius: 0;
+      box-shadow: none;
+      animation: zk-panel-mobile-up 200ms ease-out both;
+    }
+
+    @keyframes zk-panel-mobile-up {
+      from {
+        transform: translateY(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    /* No backdrop on mobile (panel is full-screen) */
+    .zk-backdrop {
+      background: transparent;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
     }
 
     .zk-expanded-panel__header {
-      height: 56px;
-      padding: 0 16px;
+      height: 52px;
+      padding: 0 12px;
+      padding-top: env(safe-area-inset-top, 0px);
+    }
+
+    .zk-expanded-panel__title {
+      font-size: 15px;
     }
 
     .zk-expanded-panel__hero {
-      padding: 24px 20px;
-    }
-
-    .zk-expanded-panel__hero-title {
-      font-size: 24px;
-      margin-bottom: 20px;
-    }
-
-    .zk-expanded-panel__messages {
       padding: 20px 16px;
     }
 
+    .zk-expanded-panel__hero-title {
+      font-size: 22px;
+      margin-bottom: 16px;
+    }
+
+    .zk-expanded-panel__hero-chips {
+      gap: 8px;
+    }
+
+    .zk-expanded-panel__hero-chips .zk-chip {
+      font-size: 12px;
+      padding: 6px 12px;
+    }
+
+    .zk-expanded-panel__messages {
+      padding: 16px 12px;
+    }
+
+    .zk-expanded-panel__messages-inner {
+      gap: 12px;
+    }
+
+    .zk-message {
+      max-width: 92%;
+    }
+
+    .zk-message-content {
+      padding: 12px 14px;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .zk-message__suggestions {
+      gap: 5px;
+      margin-top: 6px;
+    }
+
+    .zk-message__suggestions .zk-chip {
+      font-size: 12px;
+      padding: 5px 10px;
+    }
+
     .zk-expanded-panel__input {
-      padding: 12px 16px;
+      padding: 10px 12px;
+      padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    }
+
+    .zk-input-container {
+      border-radius: 20px;
+    }
+
+    .zk-input-container::before {
+      border-radius: 20px;
+    }
+
+    .zk-input-container::after {
+      border-radius: 22px;
+    }
+
+    .zk-input-inner {
+      border-radius: 18px;
+      padding: 8px 12px;
+      min-height: 42px;
+    }
+
+    .zk-input {
+      font-size: 16px; /* Prevents iOS zoom on focus */
+      margin-right: 36px;
+    }
+
+    .zk-send {
+      width: 30px;
+      height: 30px;
+      bottom: 6px;
+      right: 8px;
+    }
+
+    .zk-send svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .zk-powered-by {
+      margin-top: 6px;
+      font-size: 10px;
+    }
+
+    /* Autocomplete */
+    .zk-autocomplete {
+      border-radius: 10px;
+      margin-bottom: 4px;
+    }
+
+    .zk-autocomplete__item {
+      padding: 10px 12px;
+      font-size: 13px;
+      min-height: 44px; /* Touch target */
+    }
+
+    /* Header buttons — 44px tap target */
+    .zk-header-btn {
+      width: 44px;
+      height: 44px;
+    }
+
+    /* Markdown content */
+    .zk-md .zk-table {
+      font-size: 12px;
+    }
+
+    .zk-md .zk-table th,
+    .zk-md .zk-table td {
+      padding: 6px 8px;
+    }
+
+    .zk-md .zk-list {
+      padding-left: 16px;
+    }
+  }
+
+  /* ===== iOS Virtual Keyboard Fix ===== */
+  @supports (-webkit-touch-callout: none) {
+    @media (max-width: 480px) {
+      .zk-expanded-panel {
+        height: 100dvh;
+      }
     }
   }
 
