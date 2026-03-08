@@ -869,27 +869,29 @@ export const styles = (primaryColor: string) => `
       padding: 5px 10px;
     }
 
-    /* --- Expanded panel — glassmorphism bottom sheet --- */
+    /* --- Expanded panel — glass bottom sheet ---
+       PERFORMANCE: Only ONE backdrop-filter on the panel itself.
+       Header, bubbles, input use solid translucent colors (no blur). */
     .zk-expanded-panel {
       width: calc(100% - 16px);
-      height: 68vh;
+      height: 65vh;
       bottom: 8px;
       left: 8px;
       transform: none;
       border-radius: 20px;
-      background: rgba(255, 255, 255, 0.65);
-      backdrop-filter: blur(20px) saturate(1.4);
-      -webkit-backdrop-filter: blur(20px) saturate(1.4);
-      border: 1px solid rgba(255, 255, 255, 0.5);
-      box-shadow:
-        0 8px 32px rgba(0, 0, 0, 0.12),
-        inset 0 1px 0 rgba(255, 255, 255, 0.6);
-      animation: zk-panel-mobile-up 220ms ease-out both;
+      background: rgba(255, 255, 255, 0.72);
+      backdrop-filter: blur(24px) saturate(1.3);
+      -webkit-backdrop-filter: blur(24px) saturate(1.3);
+      border: 1px solid rgba(255, 255, 255, 0.55);
+      box-shadow: 0 8px 40px rgba(0, 0, 0, 0.15);
+      animation: zk-panel-mobile-up 200ms ease-out both;
+      will-change: transform;
+      overflow: hidden; /* not clip — better for touch scroll */
     }
 
     @keyframes zk-panel-mobile-up {
       from {
-        transform: translateY(40%);
+        transform: translateY(30%);
         opacity: 0;
       }
       to {
@@ -898,21 +900,19 @@ export const styles = (primaryColor: string) => `
       }
     }
 
-    /* Backdrop — dim the website a bit */
+    /* Backdrop — simple dim, NO blur (saves GPU) */
     .zk-backdrop {
-      background: rgba(0, 0, 0, 0.2);
-      backdrop-filter: blur(2px);
-      -webkit-backdrop-filter: blur(2px);
+      background: rgba(0, 0, 0, 0.25);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
     }
 
-    /* --- Header — frosted glass --- */
+    /* --- Header — solid translucent (no blur) --- */
     .zk-expanded-panel__header {
       height: 48px;
       padding: 0 14px;
-      background: rgba(255, 255, 255, 0.5);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border-bottom: 1px solid rgba(255, 255, 255, 0.4);
+      background: rgba(255, 255, 255, 0.75);
+      border-bottom: 1px solid rgba(0, 0, 0, 0.06);
       border-radius: 20px 20px 0 0;
     }
 
@@ -943,15 +943,16 @@ export const styles = (primaryColor: string) => `
     .zk-expanded-panel__hero-chips .zk-chip {
       font-size: 12px;
       padding: 6px 12px;
-      background: rgba(255, 255, 255, 0.7);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      border-color: rgba(255, 255, 255, 0.5);
+      background: rgba(255, 255, 255, 0.8);
+      border-color: rgba(0, 0, 0, 0.08);
     }
 
-    /* --- Messages --- */
+    /* --- Messages area — enable smooth touch scroll --- */
     .zk-expanded-panel__messages {
       padding: 14px 12px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: contain;
     }
 
     .zk-expanded-panel__messages-inner {
@@ -969,20 +970,16 @@ export const styles = (primaryColor: string) => `
       border-radius: 14px;
     }
 
-    /* Glass message bubbles */
+    /* Translucent bubbles — NO backdrop-filter */
     .zk-message-assistant .zk-message-content {
-      background: rgba(255, 255, 255, 0.6);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      border: 1px solid rgba(255, 255, 255, 0.4);
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(0, 0, 0, 0.05);
       border-bottom-left-radius: 4px;
     }
 
     .zk-message-user .zk-message-content {
-      background: rgba(37, 99, 235, 0.1);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      border: 1px solid rgba(37, 99, 235, 0.12);
+      background: rgba(37, 99, 235, 0.08);
+      border: 1px solid rgba(37, 99, 235, 0.1);
       border-bottom-right-radius: 4px;
     }
 
@@ -994,23 +991,21 @@ export const styles = (primaryColor: string) => `
     .zk-message__suggestions .zk-chip {
       font-size: 12px;
       padding: 5px 10px;
-      background: rgba(255, 255, 255, 0.6);
-      border-color: rgba(255, 255, 255, 0.4);
+      background: rgba(255, 255, 255, 0.75);
+      border-color: rgba(0, 0, 0, 0.08);
     }
 
-    /* --- Input area — glass footer --- */
+    /* --- Input area — solid translucent (no blur) --- */
     .zk-expanded-panel__input {
       padding: 10px 12px;
       padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
-      background: rgba(255, 255, 255, 0.4);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border-top: 1px solid rgba(255, 255, 255, 0.4);
+      background: rgba(255, 255, 255, 0.7);
+      border-top: 1px solid rgba(0, 0, 0, 0.06);
     }
 
     .zk-input-container {
       border-radius: 18px;
-      background: rgba(230, 230, 230, 0.5);
+      background: rgba(200, 200, 200, 0.35);
     }
 
     .zk-input-container::before {
@@ -1025,7 +1020,7 @@ export const styles = (primaryColor: string) => `
       border-radius: 16px;
       padding: 8px 12px;
       min-height: 40px;
-      background: rgba(255, 255, 255, 0.85);
+      background: rgba(255, 255, 255, 0.92);
     }
 
     .zk-input {
@@ -1050,34 +1045,29 @@ export const styles = (primaryColor: string) => `
       font-size: 10px;
     }
 
-    /* --- Autocomplete — glass --- */
+    /* --- Autocomplete — solid (no blur) --- */
     .zk-autocomplete {
       border-radius: 12px;
       margin-bottom: 4px;
-      background: rgba(255, 255, 255, 0.8);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid rgba(255, 255, 255, 0.5);
-      box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.06);
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
     }
 
     .zk-autocomplete__item {
       padding: 10px 12px;
       font-size: 13px;
       min-height: 44px;
-      background: transparent;
     }
 
     .zk-autocomplete__item:hover,
     .zk-autocomplete__item--active {
-      background: rgba(255, 255, 255, 0.5);
+      background: rgba(0, 0, 0, 0.04);
     }
 
-    /* --- Typing indicator glass --- */
+    /* --- Typing indicator --- */
     .zk-message-assistant .zk-typing {
-      background: rgba(255, 255, 255, 0.6);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
+      background: rgba(255, 255, 255, 0.7);
     }
 
     /* --- Markdown --- */
@@ -1091,12 +1081,12 @@ export const styles = (primaryColor: string) => `
     }
 
     .zk-md .zk-table-wrap {
-      background: rgba(255, 255, 255, 0.5);
-      border-color: rgba(255, 255, 255, 0.4);
+      background: rgba(255, 255, 255, 0.6);
+      border-color: rgba(0, 0, 0, 0.06);
     }
 
     .zk-md .zk-table th {
-      background: rgba(249, 250, 251, 0.6);
+      background: rgba(249, 250, 251, 0.8);
     }
 
     .zk-md .zk-list {
@@ -1104,11 +1094,11 @@ export const styles = (primaryColor: string) => `
     }
   }
 
-  /* ===== iOS Virtual Keyboard Fix ===== */
+  /* ===== iOS height ===== */
   @supports (-webkit-touch-callout: none) {
     @media (max-width: 480px) {
       .zk-expanded-panel {
-        height: 68dvh;
+        height: 65dvh;
       }
     }
   }

@@ -56,8 +56,9 @@ export function ExpandedPanel({
     }
   }, [messages, isLoading])
 
-  // Capture wheel/trackpad scroll on the entire panel and route it to messages area
+  // Desktop: capture wheel/trackpad scroll and route to messages area
   useEffect(() => {
+    if (window.innerWidth <= 480) return // Skip on mobile — native touch scroll works
     const panel = messagesRef.current?.closest('.zk-expanded-panel') as HTMLElement | null
     const msgs = messagesRef.current
     if (!panel || !msgs) return
@@ -70,30 +71,50 @@ export function ExpandedPanel({
     return () => panel.removeEventListener('wheel', onWheel)
   }, [])
 
-  // Mobile: shrink panel when virtual keyboard opens so input stays visible
+  // Mobile: lock body scroll while panel is open + handle virtual keyboard
   useEffect(() => {
-    const vv = window.visualViewport
-    if (!vv) return
-    const panel = messagesRef.current?.closest('.zk-expanded-panel') as HTMLElement | null
-    if (!panel) return
+    const isMobile = window.innerWidth <= 480
+    if (!isMobile) return
 
-    const onResize = () => {
-      if (window.innerWidth <= 480) {
-        // When keyboard opens, shrink panel to fit visible area
-        const maxHeight = vv.height * 0.68
-        panel.style.height = `${Math.min(maxHeight, vv.height - 16)}px`
-      }
-    }
-    const onReset = () => {
-      if (window.innerWidth <= 480) {
+    // Lock body scroll
+    const origOverflow = document.body.style.overflow
+    const origPosition = document.body.style.position
+    const origTop = document.body.style.top
+    const scrollY = window.scrollY
+    document.body.style.overflow = 'hidden'
+    document.body.style.position = 'fixed'
+    document.body.style.top = `-${scrollY}px`
+    document.body.style.width = '100%'
+
+    // Handle virtual keyboard
+    const vv = window.visualViewport
+    const panel = messagesRef.current?.closest('.zk-expanded-panel') as HTMLElement | null
+
+    const onVVResize = () => {
+      if (!vv || !panel) return
+      // When keyboard opens, vv.height shrinks. Keep panel pinned to bottom of visible area.
+      const keyboardHeight = window.innerHeight - vv.height
+      if (keyboardHeight > 100) {
+        // Keyboard is open — move panel up and shrink
+        panel.style.bottom = `${keyboardHeight}px`
+        panel.style.height = `${vv.height - 16}px`
+      } else {
+        // Keyboard closed
+        panel.style.bottom = ''
         panel.style.height = ''
       }
     }
-    vv.addEventListener('resize', onResize)
-    vv.addEventListener('scroll', onReset)
+
+    vv?.addEventListener('resize', onVVResize)
+
     return () => {
-      vv.removeEventListener('resize', onResize)
-      vv.removeEventListener('scroll', onReset)
+      vv?.removeEventListener('resize', onVVResize)
+      // Restore body scroll
+      document.body.style.overflow = origOverflow
+      document.body.style.position = origPosition
+      document.body.style.top = origTop
+      document.body.style.width = ''
+      window.scrollTo(0, scrollY)
     }
   }, [])
 
