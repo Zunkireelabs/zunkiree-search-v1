@@ -38,6 +38,30 @@ GREETING_WORDS = {
 }
 
 
+import re
+
+# Pattern to detect PII in query log entries — these should NEVER appear in autocomplete
+_PII_PATTERNS = [
+    re.compile(r'[\w.+-]+@[\w-]+\.[\w.]+'),           # email
+    re.compile(r'\b\d{6,}\b'),                          # phone numbers / verification codes (6+ digits)
+    re.compile(r'\b\d{3}[-.\s]?\d{3,4}[-.\s]?\d{4}\b'),# formatted phone
+    re.compile(r'^\d+$'),                                # pure numbers
+]
+
+def _looks_like_pii(text: str) -> bool:
+    """Check if a query looks like personal data rather than a real question."""
+    t = text.strip().lower()
+    # Too short to be a real question (likely a name, code, or single word)
+    word_count = len(t.split())
+    if word_count <= 2 and '?' not in t:
+        return True
+    # Contains email, phone, or digit patterns
+    for pat in _PII_PATTERNS:
+        if pat.search(t):
+            return True
+    return False
+
+
 @router.get("/autocomplete")
 async def autocomplete(
     site_id: str = Query(..., description="Customer site identifier"),
@@ -46,6 +70,7 @@ async def autocomplete(
 ):
     """
     Return autocomplete suggestions based on popular past queries and document titles.
+    Only returns genuine questions — never personal data (names, emails, phones, etc.).
     """
     # Resolve customer
     result = await db.execute(
@@ -59,25 +84,33 @@ async def autocomplete(
     suggestions: list[str] = []
     seen = set()
 
-    # 1. Popular past queries matching the prefix (grouped by question, ordered by frequency)
+    # 1. Popular past queries matching the prefix — heavily filtered to exclude PII
+    #    Only include entries that look like real questions (3+ words, no PII patterns)
     query_result = await db.execute(
         text("""
             SELECT LOWER(TRIM(question)) AS q, COUNT(*) AS cnt
             FROM query_logs
             WHERE customer_id = :cid
               AND LOWER(question) LIKE :prefix
-              AND LENGTH(TRIM(question)) > 5
+              AND LENGTH(TRIM(question)) > 15
+              AND question NOT LIKE '%%@%%'
+              AND question !~ '\\d{6,}'
+              AND array_length(string_to_array(TRIM(question), ' '), 1) >= 3
             GROUP BY LOWER(TRIM(question))
+            HAVING COUNT(*) >= 1
             ORDER BY cnt DESC
-            LIMIT 8
+            LIMIT 15
         """),
         {"cid": str(customer.id), "prefix": f"{q_lower}%"},
     )
     for row in query_result.fetchall():
         text_val = row[0].strip()
-        if text_val not in seen and text_val != q_lower:
+        # Double-check with Python-side PII filter
+        if text_val not in seen and text_val != q_lower and not _looks_like_pii(text_val):
             suggestions.append(text_val)
             seen.add(text_val)
+            if len(suggestions) >= 5:
+                break
 
     # 2. Document titles matching the prefix
     if len(suggestions) < 5:
