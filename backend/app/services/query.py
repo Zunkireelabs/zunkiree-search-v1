@@ -260,6 +260,143 @@ class QueryService:
             "sources": sources if config and config.show_sources else [],
         }
 
+    async def process_query_stream(
+        self,
+        db: AsyncSession,
+        site_id: str,
+        question: str,
+        origin: str | None = None,
+        user_agent: str | None = None,
+        ip_address: str | None = None,
+        user_email: str | None = None,
+        user_profile: dict | None = None,
+    ):
+        """
+        Stream a query response. Yields SSE events:
+        - {"type": "token", "data": "..."} for each text token
+        - {"type": "done", "answer": "...", "suggestions": [...], "sources": [...]} at end
+        """
+        import time as _time
+        start_time = _time.time()
+
+        customer = await self._get_customer(db, site_id)
+        if not customer:
+            yield {"type": "error", "message": "Invalid site_id"}
+            return
+
+        if origin and not await self._validate_origin(db, customer.id, origin):
+            yield {"type": "error", "message": "Origin domain not allowed"}
+            return
+
+        config = await self._get_widget_config(db, customer.id)
+
+        # Embed + retrieve (same as process_query)
+        query_embedding = await self.embedding_service.create_embedding(question)
+        initial_fetch_k = 8
+
+        vector_matches = await self.vector_store.query_vectors(
+            query_vector=query_embedding, namespace=site_id,
+            top_k=initial_fetch_k, site_id=site_id,
+        )
+        vector_ids = [m["id"] for m in vector_matches]
+        vector_scores = [m["score"] for m in vector_matches]
+        top_score = max(vector_scores) if vector_scores else None
+
+        threshold = (
+            config.confidence_threshold
+            if config and config.confidence_threshold is not None
+            else settings.confidence_threshold
+        )
+
+        if top_score is not None and top_score > 0.6:
+            adaptive_top_k = 3
+        elif top_score is not None and top_score >= 0.4:
+            adaptive_top_k = 5
+        else:
+            adaptive_top_k = 8
+
+        rerank_needed = (top_score is not None and top_score > threshold and top_score < 0.45)
+        fusion_top_n = 8 if rerank_needed else adaptive_top_k
+
+        keyword_query = f"{question} {user_email}" if user_email else question
+        keyword_ids = await self._keyword_search(db, customer.id, keyword_query, limit=initial_fetch_k)
+
+        fused_ids = _reciprocal_rank_fusion(vector_ids, keyword_ids, k=60, top_n=fusion_top_n)
+        db_chunks = await self._fetch_chunks_by_vector_ids(db, fused_ids, customer.id)
+
+        fused_rank = {vid: idx for idx, vid in enumerate(fused_ids)}
+        chunks_for_llm = []
+        for chunk in db_chunks:
+            chunks_for_llm.append({
+                "content": chunk.content,
+                "source_url": chunk.source_url or "",
+                "source_title": chunk.source_title or "Source",
+                "score": len(fused_ids) - fused_rank.get(chunk.vector_id, len(fused_ids)),
+            })
+        chunks_for_llm.sort(key=lambda c: c["score"], reverse=True)
+
+        if rerank_needed and len(chunks_for_llm) > 1:
+            chunks_for_llm = await self.llm_service.rerank_chunks(question=question, chunks=chunks_for_llm, top_n=5)
+
+        show_suggestions = config.show_suggestions if config else True
+
+        contact_info = None
+        if config:
+            parts = []
+            if config.contact_email:
+                parts.append(config.contact_email)
+            if config.contact_phone:
+                parts.append(config.contact_phone)
+            if parts:
+                contact_info = ", ".join(parts)
+
+        # Stream the LLM response
+        full_answer = ""
+        suggestions = []
+        async for event in self.llm_service.generate_answer_stream(
+            question=question,
+            context_chunks=chunks_for_llm,
+            brand_name=config.brand_name if config else customer.name,
+            tone=config.tone if config else "neutral",
+            fallback_message=config.fallback_message if config else "I don't have that information yet.",
+            max_tokens=config.max_response_length if config else 500,
+            show_suggestions=show_suggestions,
+            user_email=user_email,
+            user_profile=user_profile,
+            contact_info=contact_info,
+        ):
+            if event["type"] == "token":
+                yield event
+            elif event["type"] == "done":
+                full_answer = event["answer"]
+                suggestions = event["suggestions"]
+
+        # Build sources
+        sources = []
+        seen_urls = set()
+        for chunk in chunks_for_llm:
+            url = chunk["source_url"]
+            title = chunk["source_title"]
+            if url and url not in seen_urls:
+                sources.append({"title": title, "url": url})
+                seen_urls.add(url)
+
+        # Log query
+        response_time_ms = int((_time.time() - start_time) * 1000)
+        await self._log_query(
+            db=db, customer_id=customer.id, question=question, answer=full_answer,
+            chunks_used=len(chunks_for_llm), response_time_ms=response_time_ms,
+            origin=origin, user_agent=user_agent, ip_address=ip_address,
+            top_score=top_score,
+        )
+
+        yield {
+            "type": "done",
+            "answer": full_answer,
+            "suggestions": suggestions if show_suggestions else [],
+            "sources": sources if config and config.show_sources else [],
+        }
+
     async def _keyword_search(
         self,
         db: AsyncSession,

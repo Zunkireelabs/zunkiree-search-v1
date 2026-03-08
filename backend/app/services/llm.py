@@ -36,6 +36,9 @@ STYLE:
 - Keep responses concise, clear, and actionable
 - Respond naturally — never mention "context", "provided information", or "based on my data"
 
+RESPONSE FORMAT:
+After your answer, add a line with exactly "---SUGGESTIONS---" followed by 2 short follow-up questions the user might ask, one per line. No numbering or bullets.
+
 CONTEXT:
 {context}
 """
@@ -102,6 +105,29 @@ class OpenAIProvider(BaseLLMProvider):
             temperature=temperature,
         )
         return response.choices[0].message.content.strip()
+
+    async def generate_stream(
+        self,
+        system_prompt: str,
+        user_message: str,
+        max_tokens: int = 500,
+        temperature: float = 0.3,
+    ):
+        """Yield text chunks as they arrive from the LLM."""
+        stream = await self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stream=True,
+        )
+        async for chunk in stream:
+            delta = chunk.choices[0].delta
+            if delta.content:
+                yield delta.content
 
 
 # =============================================================================
@@ -212,24 +238,133 @@ class LLMService:
             )
             system_prompt += "\nIDENTIFIED USER: " + " ".join(identity_parts) + "\n"
 
-        # Generate answer using provider
-        answer = await self.provider.generate(
+        # Generate answer + suggestions in a single LLM call
+        raw = await self.provider.generate(
             system_prompt=system_prompt,
             user_message=question,
-            max_tokens=max_tokens,
+            max_tokens=max_tokens + 80,  # extra tokens for suggestions
             temperature=settings.llm_temperature,
         )
 
-        # Generate follow-up suggestions only if enabled
+        # Parse answer and suggestions from single response
+        answer = raw
         suggestions = []
-        if show_suggestions:
-            suggestions = await self._generate_suggestions(question, answer, brand_name)
+        if "---SUGGESTIONS---" in raw:
+            parts = raw.split("---SUGGESTIONS---", 1)
+            answer = parts[0].strip()
+            if show_suggestions and len(parts) > 1:
+                suggestions = [s.strip() for s in parts[1].strip().split("\n") if s.strip()]
+                suggestions = suggestions[:2]
 
         return {
             "answer": answer,
             "suggestions": suggestions,
             "context_tokens": running_tokens,
         }
+
+    async def generate_answer_stream(
+        self,
+        question: str,
+        context_chunks: list[dict],
+        brand_name: str,
+        tone: str = "neutral",
+        fallback_message: str = "I don't have that information yet.",
+        max_tokens: int = 500,
+        show_suggestions: bool = True,
+        user_email: str | None = None,
+        user_profile: dict | None = None,
+        contact_info: str | None = None,
+    ):
+        """
+        Stream the LLM answer. Yields text chunks.
+        Returns (via the final yield) the full answer and suggestions.
+        """
+        # Build context (same as generate_answer)
+        max_context_tokens = 4000
+        context_parts = []
+        running_tokens = 0
+
+        for chunk in context_chunks:
+            content = chunk.get("content", "")
+            if not content:
+                continue
+            source_title = chunk.get("source_title", "")
+            part = f"[Source: {source_title}]\n{content}" if source_title else content
+            part_tokens = count_tokens(part)
+            if running_tokens + part_tokens > max_context_tokens:
+                break
+            context_parts.append(part)
+            running_tokens += part_tokens
+
+        context = "\n\n---\n\n".join(context_parts)
+        if not context.strip():
+            context = f"No indexed documents matched this query. Use your general knowledge to answer. You are an expert assistant for {brand_name} — give a genuinely helpful, specific answer about their domain."
+
+        if contact_info:
+            contact_info_block = (
+                f"PRICING & CONTACT: For questions about pricing, quotes, fees, costs, or anything requiring direct assistance, "
+                f"direct the user to contact {brand_name} at {contact_info}. "
+                f"You may use this contact info in your responses — it is verified and accurate."
+            )
+        else:
+            contact_info_block = ""
+
+        system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
+            brand_name=brand_name,
+            tone=tone,
+            fallback_message=fallback_message,
+            context=context,
+            contact_info_block=contact_info_block,
+        )
+
+        if user_email:
+            identity_parts = [f"The person asking is verified as {user_email}."]
+            if user_profile:
+                if user_profile.get("name"):
+                    identity_parts.append(f"Their name is {user_profile['name']}.")
+                if user_profile.get("user_type"):
+                    identity_parts.append(f"Their user type is {user_profile['user_type'].replace('_', ' ')}.")
+                if user_profile.get("lead_intent"):
+                    identity_parts.append(f"Their lead intent is {user_profile['lead_intent'].replace('_', ' ')}.")
+                custom = user_profile.get("custom_fields")
+                if custom and isinstance(custom, dict):
+                    for key, val in custom.items():
+                        identity_parts.append(f"Their {key.replace('_', ' ')} is {val}.")
+            identity_parts.append(
+                "IMPORTANT: You know who this user is. "
+                "Filter and personalize all answers using their profile data. "
+                "Match context records to this user's email, name, or custom fields. "
+                "If the question is about their status, eligibility, recommendations, or anything personal, "
+                "search the context for records that relate to this specific user and present those results. "
+                "Address them by name. Never tell them to 'check a portal' or 'log in elsewhere' — "
+                "you ARE their portal. Answer directly with what the data shows about them."
+            )
+            system_prompt += "\nIDENTIFIED USER: " + " ".join(identity_parts) + "\n"
+
+        # Stream from provider
+        full_text = ""
+        async for token in self.provider.generate_stream(
+            system_prompt=system_prompt,
+            user_message=question,
+            max_tokens=max_tokens + 80,
+            temperature=settings.llm_temperature,
+        ):
+            full_text += token
+            # Don't yield tokens that are part of the suggestions section
+            if "---SUGGESTIONS---" not in full_text:
+                yield {"type": "token", "data": token}
+
+        # Parse answer and suggestions
+        answer = full_text
+        suggestions = []
+        if "---SUGGESTIONS---" in full_text:
+            parts = full_text.split("---SUGGESTIONS---", 1)
+            answer = parts[0].strip()
+            if show_suggestions and len(parts) > 1:
+                suggestions = [s.strip() for s in parts[1].strip().split("\n") if s.strip()]
+                suggestions = suggestions[:2]
+
+        yield {"type": "done", "answer": answer, "suggestions": suggestions, "context_tokens": running_tokens}
 
     async def _generate_suggestions(
         self,

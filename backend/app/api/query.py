@@ -2,6 +2,7 @@ import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -335,6 +336,260 @@ async def submit_query(
             status_code=500,
             detail={"code": "INTERNAL_ERROR", "message": "An error occurred processing your request"},
         )
+
+
+@router.post("/stream")
+async def submit_query_stream(
+    request: Request,
+    query: QueryRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Submit a question and receive a streamed AI-generated answer via SSE.
+    """
+    logger.warning("[QUERY-STREAM] site_id=%s question=%r", query.site_id, query.question[:80])
+
+    if not query.question or not query.question.strip():
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "EMPTY_QUESTION", "message": "Question cannot be empty"},
+        )
+
+    query_service = get_query_service()
+
+    try:
+        customer = await query_service._get_customer(db, query.site_id)
+        if not customer:
+            raise ValueError("Invalid site_id")
+        config = await query_service._get_widget_config(db, customer.id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "INVALID_SITE_ID", "message": str(e)},
+        )
+
+    brand_name = config.brand_name if config else customer.name
+
+    # Handle greeting — return immediately (no streaming needed)
+    cleaned = query.question.lower().strip()
+    if cleaned in GREETING_WORDS:
+        suggestions: list[str] = []
+        if config and config.quick_actions:
+            try:
+                suggestions = json.loads(config.quick_actions)
+            except (json.JSONDecodeError, TypeError):
+                suggestions = []
+
+        async def greeting_stream():
+            greeting = f"Hi! I'm {brand_name}. How can I help you today?"
+            yield f"data: {json.dumps({'type': 'token', 'data': greeting})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'answer': greeting, 'suggestions': suggestions, 'sources': [], 'session_id': query.session_id})}\n\n"
+
+        return StreamingResponse(greeting_stream(), media_type="text/event-stream")
+
+    # --- Identity verification + lead capture (same logic as non-stream) ---
+    user_email: str | None = None
+    user_profile_dict: dict | None = None
+    welcome_prefix: str | None = None
+    verification_enabled = config and config.enable_identity_verification
+    lead_intents_config = parse_lead_intents(config.lead_intents) if config else []
+    has_lead_intents = bool(lead_intents_config)
+    question_to_answer = query.question.strip()
+    lead_signup_cta = False
+
+    is_reg_query = _is_registration_query(question_to_answer)
+    if (verification_enabled or has_lead_intents or is_reg_query) and query.session_id:
+        v_session = await get_or_create_session(db, query.session_id, customer.id)
+
+        # For verification states, return immediate SSE (no streaming LLM needed)
+        immediate = await _handle_verification_for_stream(
+            db, v_session, question_to_answer, query.session_id, config,
+            brand_name, has_lead_intents, lead_intents_config, is_reg_query,
+        )
+        if immediate is not None:
+            # immediate is either a QueryResponse or a dict with stream-through data
+            if isinstance(immediate, QueryResponse):
+                async def immediate_stream():
+                    yield f"data: {json.dumps({'type': 'token', 'data': immediate.answer})}\n\n"
+                    yield f"data: {json.dumps({'type': 'done', 'answer': immediate.answer, 'suggestions': immediate.suggestions, 'sources': [], 'session_id': immediate.session_id})}\n\n"
+                return StreamingResponse(immediate_stream(), media_type="text/event-stream")
+            # dict means we should stream-through with enrichments
+            user_email = immediate.get("user_email")
+            user_profile_dict = immediate.get("user_profile")
+            welcome_prefix = immediate.get("welcome_prefix")
+            question_to_answer = immediate.get("question", question_to_answer)
+            lead_signup_cta = immediate.get("lead_signup_cta", False)
+        else:
+            # anonymous state checks
+            if v_session.state == "anonymous":
+                if looks_like_email(question_to_answer):
+                    if v_session.pending_question or v_session.question_count >= 6:
+                        message = await handle_email_submission(db, v_session, question_to_answer.strip(), brand_name)
+                        async def email_stream():
+                            yield f"data: {json.dumps({'type': 'token', 'data': message})}\n\n"
+                            yield f"data: {json.dumps({'type': 'done', 'answer': message, 'suggestions': [], 'sources': [], 'session_id': query.session_id})}\n\n"
+                        return StreamingResponse(email_stream(), media_type="text/event-stream")
+
+                if is_reg_query or _is_registration_query(question_to_answer):
+                    v_session.pending_question = question_to_answer
+                    v_session.state = "email_requested"
+                    if has_lead_intents:
+                        classification = await classify_query(question_to_answer, lead_intents_config or None)
+                        if classification["type"] == "lead":
+                            v_session.detected_intent = classification["intent"]
+                            v_session.intent_signup_fields = json.dumps(classification.get("signup_fields", []))
+                    await db.commit()
+                    msg = "I can help you with that! Please enter your email address so I can check your account or get you started."
+                    async def reg_stream():
+                        yield f"data: {json.dumps({'type': 'token', 'data': msg})}\n\n"
+                        yield f"data: {json.dumps({'type': 'done', 'answer': msg, 'suggestions': [], 'sources': [], 'session_id': query.session_id})}\n\n"
+                    return StreamingResponse(reg_stream(), media_type="text/event-stream")
+
+                v_session.question_count = (v_session.question_count or 0) + 1
+                await db.commit()
+
+                if v_session.question_count >= 6 and (has_lead_intents or verification_enabled):
+                    lead_signup_cta = True
+
+            elif v_session.state == "verified":
+                user_email = v_session.email
+                profile = await lookup_user_profile(db, customer.id, v_session.email)
+                if profile:
+                    user_profile_dict = _profile_to_dict(profile)
+
+    origin = request.headers.get("origin")
+    user_agent = request.headers.get("user-agent")
+    ip_address = request.client.host if request.client else None
+
+    async def event_stream():
+        prefix_sent = False
+        try:
+            if welcome_prefix:
+                yield f"data: {json.dumps({'type': 'token', 'data': welcome_prefix + ' '})}\n\n"
+                prefix_sent = True
+            async for event in query_service.process_query_stream(
+                db=db,
+                site_id=query.site_id,
+                question=question_to_answer,
+                origin=origin,
+                user_agent=user_agent,
+                ip_address=ip_address,
+                user_email=user_email,
+                user_profile=user_profile_dict,
+            ):
+                if event["type"] == "token":
+                    yield f"data: {json.dumps({'type': 'token', 'data': event['data']})}\n\n"
+                elif event["type"] == "done":
+                    answer = event["answer"]
+                    if lead_signup_cta:
+                        answer += "\n\nWant our team to reach out and help you further? Just share your email address!"
+                    yield f"data: {json.dumps({'type': 'done', 'answer': answer, 'suggestions': event.get('suggestions', []), 'sources': event.get('sources', []), 'session_id': query.session_id})}\n\n"
+                elif event["type"] == "error":
+                    yield f"data: {json.dumps({'type': 'error', 'message': event['message']})}\n\n"
+        except Exception as e:
+            logger.exception("[QUERY-STREAM] Error: %s", e)
+            yield f"data: {json.dumps({'type': 'error', 'message': 'An error occurred processing your request'})}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+async def _handle_verification_for_stream(
+    db, v_session, question_to_answer, session_id, config,
+    brand_name, has_lead_intents, lead_intents_config, is_reg_query,
+):
+    """
+    Handle verification states for the streaming endpoint.
+    Returns:
+    - QueryResponse for immediate responses (verification prompts, signup success)
+    - dict for stream-through with enrichments (verified user with pending question)
+    - None to fall through to anonymous/verified state handling
+    """
+    if v_session.state == "code_sent":
+        if looks_like_code(question_to_answer):
+            code_ok, message = await handle_code_verification(db, v_session, question_to_answer)
+            if code_ok:
+                post_msg, profile = await handle_post_verification(db, v_session)
+                if profile:
+                    if v_session.detected_intent and v_session.intent_signup_fields:
+                        intent_fields = json.loads(v_session.intent_signup_fields)
+                        existing_custom = {}
+                        if profile.custom_fields:
+                            try:
+                                existing_custom = json.loads(profile.custom_fields)
+                            except (json.JSONDecodeError, TypeError):
+                                existing_custom = {}
+                        missing_fields = [f for f in intent_fields if f.get("key") not in existing_custom]
+                        if missing_fields:
+                            v_session.state = "fields_requested"
+                            v_session.verified_at = None
+                            v_session.intent_signup_fields = json.dumps(missing_fields)
+                            v_session.pending_custom_fields = json.dumps(existing_custom)
+                            v_session.current_field_index = 0
+                            v_session.user_name = profile.name
+                            await db.commit()
+                            first_field = missing_fields[0]
+                            label = first_field.get("label", first_field.get("key", "field"))
+                            return QueryResponse(
+                                answer=f"Welcome back, {profile.name}! I have a few quick questions to personalize your experience.\n\n{label}",
+                                suggestions=[], sources=[], session_id=session_id,
+                            )
+                    if not v_session.pending_question:
+                        return QueryResponse(
+                            answer=f"Welcome back, {profile.name}! How can I help you today?",
+                            suggestions=_get_quick_actions(config), sources=[], session_id=session_id,
+                        )
+                    return {
+                        "user_email": v_session.email,
+                        "user_profile": _profile_to_dict(profile),
+                        "welcome_prefix": post_msg,
+                        "question": v_session.pending_question,
+                    }
+                else:
+                    return QueryResponse(answer=post_msg, suggestions=[], sources=[], session_id=session_id)
+            else:
+                return QueryResponse(answer=message, suggestions=[], sources=[], session_id=session_id)
+        else:
+            return QueryResponse(
+                answer=f"I've sent a verification code to {v_session.email}. Please enter the 6-digit code to continue.",
+                suggestions=[], sources=[], session_id=session_id,
+            )
+
+    elif v_session.state == "name_requested":
+        msg, profile = await handle_name_submission(db, v_session, question_to_answer)
+        if profile:
+            return _signup_success_response(profile, session_id)
+        return QueryResponse(answer=msg, suggestions=[], sources=[], session_id=session_id)
+
+    elif v_session.state == "phone_requested":
+        msg, profile = await handle_phone_submission(db, v_session, question_to_answer)
+        if profile:
+            return _signup_success_response(profile, session_id)
+        return QueryResponse(answer=msg, suggestions=[], sources=[], session_id=session_id)
+
+    elif v_session.state == "location_requested":
+        msg, profile = await handle_location_submission(db, v_session, question_to_answer)
+        if profile:
+            return _signup_success_response(profile, session_id)
+        return QueryResponse(answer=msg, suggestions=[], sources=[], session_id=session_id)
+
+    elif v_session.state == "fields_requested":
+        msg, profile = await handle_custom_field_submission(db, v_session, question_to_answer)
+        if profile:
+            return _signup_success_response(profile, session_id)
+        return QueryResponse(answer=msg, suggestions=[], sources=[], session_id=session_id)
+
+    elif v_session.state == "email_requested":
+        if looks_like_email(question_to_answer):
+            message = await handle_email_submission(db, v_session, question_to_answer.strip(), brand_name)
+            return QueryResponse(answer=message, suggestions=[], sources=[], session_id=session_id)
+        else:
+            return QueryResponse(
+                answer="I'd love to help with that! To access your personalized information, please enter your email address to verify your identity.",
+                suggestions=[], sources=[], session_id=session_id,
+            )
+
+    # anonymous or verified — fall through
+    return None
 
 
 def _get_quick_actions(config) -> list[str]:

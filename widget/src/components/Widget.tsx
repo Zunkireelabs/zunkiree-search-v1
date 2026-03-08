@@ -76,7 +76,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     }
   }, [mode])
 
-  // Query API
+  // Query API — SSE streaming
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!input.trim() || isLoading) return
@@ -88,6 +88,8 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       role: 'user',
       content: input.trim(),
     }
+
+    const assistantId = (Date.now() + 1).toString()
 
     setMessages(prev => {
       const filtered = prev.filter(m => !m.isError)
@@ -101,41 +103,84 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       question: userMessage.content,
       session_id: sessionId,
     }
-    console.log('[Zunkiree] Request payload:', payload)
 
     try {
-      const response = await fetch(`${apiUrl}/api/v1/query`, {
+      const response = await fetch(`${apiUrl}/api/v1/query/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
 
-      const data = await response.json()
-
       if (!response.ok) {
-        console.error('[Zunkiree] Error response:', response.status, data)
+        const data = await response.json().catch(() => ({}))
         throw new Error(data.detail?.message || 'Failed to get answer')
       }
 
-      if (data.session_id) setSessionId(data.session_id)
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error('No response body')
 
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: data.answer,
-        suggestions: data.suggestions,
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let streamingContent = ''
+      let addedMessage = false
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const jsonStr = line.slice(6).trim()
+          if (!jsonStr) continue
+
+          try {
+            const event = JSON.parse(jsonStr)
+
+            if (event.type === 'token') {
+              streamingContent += event.data
+              if (!addedMessage) {
+                addedMessage = true
+                setMessages(prev => [...prev, {
+                  id: assistantId,
+                  role: 'assistant',
+                  content: streamingContent,
+                }])
+              } else {
+                setMessages(prev =>
+                  prev.map(m => m.id === assistantId ? { ...m, content: streamingContent } : m)
+                )
+              }
+            } else if (event.type === 'done') {
+              if (event.session_id) setSessionId(event.session_id)
+              setMessages(prev =>
+                prev.map(m => m.id === assistantId ? {
+                  ...m,
+                  content: event.answer,
+                  suggestions: event.suggestions,
+                } : m)
+              )
+              setIsLoading(false)
+            } else if (event.type === 'error') {
+              throw new Error(event.message)
+            }
+          } catch (parseErr) {
+            if (parseErr instanceof SyntaxError) continue
+            throw parseErr
+          }
+        }
       }
-
-      setMessages(prev => [...prev, assistantMessage])
     } catch (error) {
-      console.error('[Zunkiree] Fetch error:', error)
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
+      console.error('[Zunkiree] Stream error:', error)
+      setMessages(prev => [...prev, {
+        id: (Date.now() + 2).toString(),
         role: 'assistant',
         content: 'Sorry, I encountered an error. Please try again.',
         isError: true,
-      }
-      setMessages(prev => [...prev, errorMessage])
+      }])
     } finally {
       setIsLoading(false)
     }
