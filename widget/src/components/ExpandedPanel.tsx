@@ -70,7 +70,7 @@ export function ExpandedPanel({
     return () => panel.removeEventListener('wheel', onWheel)
   }, [])
 
-  // Mobile: resize panel when virtual keyboard opens/closes
+  // Mobile: shrink panel when virtual keyboard opens so input stays visible
   useEffect(() => {
     const vv = window.visualViewport
     if (!vv) return
@@ -79,11 +79,22 @@ export function ExpandedPanel({
 
     const onResize = () => {
       if (window.innerWidth <= 480) {
-        panel.style.height = `${vv.height}px`
+        // Cap at 70% of the visible viewport
+        const maxHeight = vv.height * 0.7
+        panel.style.height = `${Math.min(maxHeight, vv.height - 8)}px`
+      }
+    }
+    const onReset = () => {
+      if (window.innerWidth <= 480) {
+        panel.style.height = ''
       }
     }
     vv.addEventListener('resize', onResize)
-    return () => vv.removeEventListener('resize', onResize)
+    vv.addEventListener('scroll', onReset)
+    return () => {
+      vv.removeEventListener('resize', onResize)
+      vv.removeEventListener('scroll', onReset)
+    }
   }, [])
 
   useEffect(() => {

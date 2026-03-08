@@ -868,15 +868,15 @@ export const styles = (primaryColor: string) => `
       padding: 5px 10px;
     }
 
-    /* Expanded panel — true full-screen */
+    /* Expanded panel — bottom sheet (not full-screen) */
     .zk-expanded-panel {
-      width: 100%;
-      height: 100%;
-      bottom: 0;
-      left: 0;
+      width: calc(100% - 16px);
+      height: 70vh;
+      bottom: 8px;
+      left: 8px;
       transform: none;
-      border-radius: 0;
-      box-shadow: none;
+      border-radius: 20px;
+      box-shadow: 0 -4px 30px rgba(0, 0, 0, 0.15);
       animation: zk-panel-mobile-up 200ms ease-out both;
     }
 
@@ -891,17 +891,10 @@ export const styles = (primaryColor: string) => `
       }
     }
 
-    /* No backdrop on mobile (panel is full-screen) */
-    .zk-backdrop {
-      background: transparent;
-      backdrop-filter: none;
-      -webkit-backdrop-filter: none;
-    }
-
     .zk-expanded-panel__header {
-      height: 52px;
+      height: 48px;
       padding: 0 12px;
-      padding-top: env(safe-area-inset-top, 0px);
+      border-radius: 20px 20px 0 0;
     }
 
     .zk-expanded-panel__title {
@@ -1036,7 +1029,7 @@ export const styles = (primaryColor: string) => `
   @supports (-webkit-touch-callout: none) {
     @media (max-width: 480px) {
       .zk-expanded-panel {
-        height: 100dvh;
+        height: 70dvh;
       }
     }
   }
@@ -1065,8 +1058,21 @@ export const styles = (primaryColor: string) => `
 
     .zk-expanded-panel {
       animation: none;
-      transform: translateX(-50%) translateY(0);
       opacity: 1;
+    }
+
+    /* Desktop needs translateX(-50%) since it uses left: 50% */
+    @media (min-width: 481px) {
+      .zk-expanded-panel {
+        transform: translateX(-50%) translateY(0);
+      }
+    }
+
+    /* Mobile uses left: 8px, no horizontal transform needed */
+    @media (max-width: 480px) {
+      .zk-expanded-panel {
+        transform: translateY(0);
+      }
     }
 
     .zk-message {
