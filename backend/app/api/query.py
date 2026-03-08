@@ -1,12 +1,14 @@
 import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models import Customer, QueryLog, DocumentChunk, WidgetConfig
 from app.services.query import get_query_service
 from app.services.verification import (
     get_or_create_session,
@@ -34,6 +36,88 @@ GREETING_WORDS = {
     "good morning", "good afternoon",
     "good evening", "hola",
 }
+
+
+@router.get("/autocomplete")
+async def autocomplete(
+    site_id: str = Query(..., description="Customer site identifier"),
+    q: str = Query(..., min_length=2, max_length=200, description="Search prefix"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Return autocomplete suggestions based on popular past queries and document titles.
+    """
+    # Resolve customer
+    result = await db.execute(
+        select(Customer).where(Customer.site_id == site_id, Customer.is_active == True)
+    )
+    customer = result.scalar_one_or_none()
+    if not customer:
+        return {"suggestions": []}
+
+    q_lower = q.strip().lower()
+    suggestions: list[str] = []
+    seen = set()
+
+    # 1. Popular past queries matching the prefix (grouped by question, ordered by frequency)
+    query_result = await db.execute(
+        text("""
+            SELECT LOWER(TRIM(question)) AS q, COUNT(*) AS cnt
+            FROM query_logs
+            WHERE customer_id = :cid
+              AND LOWER(question) LIKE :prefix
+              AND LENGTH(TRIM(question)) > 5
+            GROUP BY LOWER(TRIM(question))
+            ORDER BY cnt DESC
+            LIMIT 8
+        """),
+        {"cid": str(customer.id), "prefix": f"{q_lower}%"},
+    )
+    for row in query_result.fetchall():
+        text_val = row[0].strip()
+        if text_val not in seen and text_val != q_lower:
+            suggestions.append(text_val)
+            seen.add(text_val)
+
+    # 2. Document titles matching the prefix
+    if len(suggestions) < 5:
+        title_result = await db.execute(
+            text("""
+                SELECT DISTINCT source_title
+                FROM document_chunks
+                WHERE customer_id = :cid
+                  AND LOWER(source_title) LIKE :prefix
+                  AND source_title IS NOT NULL
+                LIMIT :lim
+            """),
+            {"cid": str(customer.id), "prefix": f"%{q_lower}%", "lim": 5 - len(suggestions)},
+        )
+        for row in title_result.fetchall():
+            title = row[0].strip()
+            title_lower = title.lower()
+            if title_lower not in seen:
+                suggestions.append(title)
+                seen.add(title_lower)
+
+    # 3. Quick actions from widget config that match
+    if len(suggestions) < 5:
+        config_result = await db.execute(
+            select(WidgetConfig).where(WidgetConfig.customer_id == customer.id)
+        )
+        config = config_result.scalar_one_or_none()
+        if config and config.quick_actions:
+            try:
+                actions = json.loads(config.quick_actions)
+                for action in actions:
+                    if isinstance(action, str) and q_lower in action.lower() and action.lower() not in seen:
+                        suggestions.append(action)
+                        seen.add(action.lower())
+                        if len(suggestions) >= 5:
+                            break
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+    return {"suggestions": suggestions[:5]}
 
 
 class QueryRequest(BaseModel):

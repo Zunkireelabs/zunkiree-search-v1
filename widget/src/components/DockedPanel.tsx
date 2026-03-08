@@ -1,5 +1,6 @@
-import React, { useRef, useEffect } from 'react'
+import React, { useRef, useEffect, useState } from 'react'
 import { MarkdownContent } from './Markdown'
+import { Autocomplete } from './Autocomplete'
 
 interface Message {
   id: string
@@ -21,6 +22,8 @@ interface DockedPanelProps {
   onMinimize: () => void
   onUndock: () => void
   placeholder: string
+  apiUrl: string
+  siteId: string
 }
 
 export function DockedPanel({
@@ -35,9 +38,12 @@ export function DockedPanel({
   onMinimize,
   onUndock,
   placeholder,
+  apiUrl,
+  siteId,
 }: DockedPanelProps) {
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const [showAutocomplete, setShowAutocomplete] = useState(false)
 
   useEffect(() => {
     // Scroll messages to bottom without affecting parent/window scroll
@@ -59,6 +65,7 @@ export function DockedPanel({
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onInputChange(e.target.value)
+    setShowAutocomplete(e.target.value.trim().length >= 2)
     const textarea = e.target
     textarea.style.height = 'auto'
     textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`
@@ -68,9 +75,16 @@ export function DockedPanel({
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       if (input.trim() && !isLoading) {
+        setShowAutocomplete(false)
         onSubmit(e as unknown as React.FormEvent)
       }
     }
+  }
+
+  const handleAutocompleteSelect = (suggestion: string) => {
+    onInputChange(suggestion)
+    setShowAutocomplete(false)
+    inputRef.current?.focus({ preventScroll: true })
   }
 
   const handleLocalSuggestionClick = (suggestion: string) => {
@@ -175,7 +189,14 @@ export function DockedPanel({
       </div>
 
       {/* Input Area */}
-      <form className="zk-docked__input" onSubmit={onSubmit}>
+      <form className="zk-docked__input" onSubmit={onSubmit} style={{ position: 'relative' }}>
+        <Autocomplete
+          apiUrl={apiUrl}
+          siteId={siteId}
+          query={input}
+          onSelect={handleAutocompleteSelect}
+          visible={showAutocomplete && !isLoading}
+        />
         <div className="zk-input-container">
           <div className="zk-input-inner">
             <textarea

@@ -252,6 +252,8 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
           onClose={handleMinimize}
           onDock={handleDock}
           placeholder={placeholder}
+          apiUrl={apiUrl}
+          siteId={siteId}
         />
       )}
 
@@ -268,6 +270,8 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
           onMinimize={handleMinimize}
           onUndock={handleUndock}
           placeholder={placeholder}
+          apiUrl={apiUrl}
+          siteId={siteId}
         />,
         dockPortalTarget,
       )}
