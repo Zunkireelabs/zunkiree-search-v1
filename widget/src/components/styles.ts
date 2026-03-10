@@ -858,25 +858,13 @@ export const styles = (primaryColor: string) => `
     text-decoration: underline;
   }
 
-  /* ===== Responsive: Tablet ===== */
-  @media (max-width: 768px) and (min-width: 481px) {
-    .zk-collapsed-bar {
-      width: 90%;
-    }
-
-    .zk-expanded-panel {
-      width: 95%;
-      height: min(85vh, 760px);
-    }
-  }
-
   /* ===== Mobile FAB ===== */
   .zk-fab {
     display: none; /* hidden on desktop */
   }
 
-  /* ===== Responsive: Mobile ===== */
-  @media (max-width: 480px) {
+  /* ===== Responsive: Mobile & Tablet (all screens below 768px) ===== */
+  @media (max-width: 768px) {
 
     /* --- FAB: circle button, bottom-right --- */
     .zk-fab {
@@ -1163,7 +1151,7 @@ export const styles = (primaryColor: string) => `
 
   /* ===== iOS height ===== */
   @supports (-webkit-touch-callout: none) {
-    @media (max-width: 480px) {
+    @media (max-width: 768px) {
       .zk-expanded-panel {
         height: 60dvh !important;
       }
@@ -1198,14 +1186,14 @@ export const styles = (primaryColor: string) => `
     }
 
     /* Desktop needs translateX(-50%) since it uses left: 50% */
-    @media (min-width: 481px) {
+    @media (min-width: 769px) {
       .zk-expanded-panel {
         transform: translateX(-50%) translateY(0);
       }
     }
 
     /* Mobile uses left: 8px, no horizontal transform needed */
-    @media (max-width: 480px) {
+    @media (max-width: 768px) {
       .zk-expanded-panel {
         transform: translateY(0);
       }
