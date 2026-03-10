@@ -911,24 +911,25 @@ export const styles = (primaryColor: string) => `
     }
 
     /* --- Expanded panel — glass bottom sheet ---
-       Max 50vh, auto height so it sizes to content.
-       Single backdrop-filter on panel only. */
+       Fixed 60vh height, single backdrop-filter on panel only. */
     .zk-expanded-panel {
-      width: calc(100% - 16px);
-      max-height: 50vh;
-      height: auto;
-      bottom: 8px;
-      left: 8px;
-      transform: none;
-      border-radius: 20px;
+      width: calc(100% - 16px) !important;
+      height: 60vh !important;
+      max-height: none !important;
+      bottom: 8px !important;
+      left: 8px !important;
+      right: auto !important;
+      top: auto !important;
+      transform: none !important;
+      border-radius: 20px !important;
       display: flex;
       flex-direction: column;
-      background: rgba(255, 255, 255, 0.72);
+      background: rgba(255, 255, 255, 0.92) !important;
       backdrop-filter: blur(24px) saturate(1.3);
       -webkit-backdrop-filter: blur(24px) saturate(1.3);
       border: 1px solid rgba(255, 255, 255, 0.55);
       box-shadow: 0 8px 40px rgba(0, 0, 0, 0.15);
-      animation: zk-panel-mobile-up 200ms ease-out both;
+      animation: zk-panel-mobile-up 200ms ease-out both !important;
       will-change: transform;
       overflow: hidden;
     }
@@ -951,29 +952,58 @@ export const styles = (primaryColor: string) => `
       -webkit-backdrop-filter: none;
     }
 
-    /* --- Header — compact 44px, solid (no blur) --- */
+    /* --- Header — compact 48px, solid white, always visible --- */
     .zk-expanded-panel__header {
-      height: 44px;
-      min-height: 44px;
-      padding: 0 12px;
-      background: rgba(255, 255, 255, 0.75);
-      border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+      display: flex !important;
+      align-items: center !important;
+      height: 48px !important;
+      min-height: 48px !important;
+      padding: 0 12px !important;
+      background: white !important;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
       border-radius: 20px 20px 0 0;
+      flex-shrink: 0;
     }
 
     .zk-expanded-panel__title {
-      font-size: 14px;
+      font-size: 15px;
       font-weight: 600;
+      color: #111827 !important;
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .zk-expanded-panel__controls {
+      display: flex !important;
+      align-items: center;
+      gap: 2px;
+      flex-shrink: 0;
     }
 
     .zk-header-btn {
-      width: 36px;
-      height: 36px;
+      width: 32px;
+      height: 32px;
+      color: #6b7280 !important;
     }
 
     /* Hide dock button on mobile */
     .zk-dock-btn {
       display: none !important;
+    }
+
+    /* Language toggle on mobile — compact */
+    .zk-lang-toggle {
+      padding: 1px;
+      gap: 1px;
+      margin-right: 2px;
+    }
+
+    .zk-lang-btn {
+      font-size: 11px;
+      padding: 3px 8px;
     }
 
     /* --- Hero --- */
@@ -999,9 +1029,8 @@ export const styles = (primaryColor: string) => `
 
     /* --- Messages area — flex-grow to fill available space --- */
     .zk-expanded-panel__messages {
-      flex: 1;
-      min-height: 0;
-      max-height: calc(50vh - 44px - 70px);
+      flex: 1 !important;
+      min-height: 0 !important;
       padding: 12px 10px;
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
@@ -1048,12 +1077,13 @@ export const styles = (primaryColor: string) => `
       border-color: rgba(0, 0, 0, 0.08);
     }
 
-    /* --- Input area — solid translucent (no blur) --- */
+    /* --- Input area — solid, flex-shrink: 0 so it never hides --- */
     .zk-expanded-panel__input {
+      flex-shrink: 0 !important;
       padding: 8px 10px;
       padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
-      background: rgba(255, 255, 255, 0.7);
-      border-top: 1px solid rgba(0, 0, 0, 0.06);
+      background: white !important;
+      border-top: 1px solid rgba(0, 0, 0, 0.08);
     }
 
     .zk-input-container {
@@ -1151,7 +1181,7 @@ export const styles = (primaryColor: string) => `
   @supports (-webkit-touch-callout: none) {
     @media (max-width: 480px) {
       .zk-expanded-panel {
-        max-height: 50dvh;
+        height: 60dvh !important;
       }
     }
   }
