@@ -35,6 +35,7 @@ class QueryService:
         ip_address: str | None = None,
         user_email: str | None = None,
         user_profile: dict | None = None,
+        language: str | None = None,
     ) -> dict:
         """
         Process a user query end-to-end.
@@ -201,6 +202,7 @@ class QueryService:
             user_email=user_email,
             user_profile=user_profile,
             contact_info=contact_info,
+            language=language,
         )
 
         # Calculate response time
@@ -270,6 +272,7 @@ class QueryService:
         ip_address: str | None = None,
         user_email: str | None = None,
         user_profile: dict | None = None,
+        language: str | None = None,
     ):
         """
         Stream a query response. Yields SSE events:
@@ -364,6 +367,7 @@ class QueryService:
             user_email=user_email,
             user_profile=user_profile,
             contact_info=contact_info,
+            language=language,
         ):
             if event["type"] == "token":
                 yield event
@@ -485,7 +489,13 @@ class QueryService:
         allowed_domains = result.scalars().all()
 
         for allowed in allowed_domains:
-            allowed_domain = allowed.domain.lower()
+            allowed_domain = allowed.domain.lower().strip().rstrip("/")
+            # If stored value is a full URL, extract just the hostname
+            if allowed_domain.startswith("http://") or allowed_domain.startswith("https://"):
+                try:
+                    allowed_domain = urlparse(allowed_domain).netloc.split(":")[0]
+                except Exception:
+                    pass
             if allowed_domain.startswith("www."):
                 allowed_domain = allowed_domain[4:]
             if domain == allowed_domain or domain == f"www.{allowed_domain}":

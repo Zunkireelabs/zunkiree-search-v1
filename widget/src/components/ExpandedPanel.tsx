@@ -24,6 +24,25 @@ interface ExpandedPanelProps {
   placeholder: string
   apiUrl: string
   siteId: string
+  supportedLanguages: string[]
+  language: string
+  onLanguageChange: (lang: string) => void
+}
+
+const LANGUAGE_LABELS: Record<string, string> = {
+  en: 'En',
+  ne: 'ने',
+  hi: 'हि',
+  es: 'Es',
+  fr: 'Fr',
+  de: 'De',
+  zh: '中',
+  ja: '日',
+  ko: '한',
+  ar: 'عر',
+  pt: 'Pt',
+  ru: 'Ру',
+  bn: 'বা',
 }
 
 export function ExpandedPanel({
@@ -40,6 +59,9 @@ export function ExpandedPanel({
   placeholder,
   apiUrl,
   siteId,
+  supportedLanguages,
+  language,
+  onLanguageChange,
 }: ExpandedPanelProps) {
   const messagesRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -58,7 +80,7 @@ export function ExpandedPanel({
 
   // Desktop: capture wheel/trackpad scroll and route to messages area
   useEffect(() => {
-    if (window.innerWidth <= 480) return // Skip on mobile — native touch scroll works
+    if (window.innerWidth <= 480) return
     const panel = messagesRef.current?.closest('.zk-expanded-panel') as HTMLElement | null
     const msgs = messagesRef.current
     if (!panel || !msgs) return
@@ -69,53 +91,6 @@ export function ExpandedPanel({
     }
     panel.addEventListener('wheel', onWheel, { passive: false })
     return () => panel.removeEventListener('wheel', onWheel)
-  }, [])
-
-  // Mobile: lock body scroll while panel is open + handle virtual keyboard
-  useEffect(() => {
-    const isMobile = window.innerWidth <= 480
-    if (!isMobile) return
-
-    // Lock body scroll
-    const origOverflow = document.body.style.overflow
-    const origPosition = document.body.style.position
-    const origTop = document.body.style.top
-    const scrollY = window.scrollY
-    document.body.style.overflow = 'hidden'
-    document.body.style.position = 'fixed'
-    document.body.style.top = `-${scrollY}px`
-    document.body.style.width = '100%'
-
-    // Handle virtual keyboard
-    const vv = window.visualViewport
-    const panel = messagesRef.current?.closest('.zk-expanded-panel') as HTMLElement | null
-
-    const onVVResize = () => {
-      if (!vv || !panel) return
-      // When keyboard opens, vv.height shrinks. Keep panel pinned to bottom of visible area.
-      const keyboardHeight = window.innerHeight - vv.height
-      if (keyboardHeight > 100) {
-        // Keyboard is open — move panel up and shrink
-        panel.style.bottom = `${keyboardHeight}px`
-        panel.style.height = `${vv.height - 16}px`
-      } else {
-        // Keyboard closed
-        panel.style.bottom = ''
-        panel.style.height = ''
-      }
-    }
-
-    vv?.addEventListener('resize', onVVResize)
-
-    return () => {
-      vv?.removeEventListener('resize', onVVResize)
-      // Restore body scroll
-      document.body.style.overflow = origOverflow
-      document.body.style.position = origPosition
-      document.body.style.top = origTop
-      document.body.style.width = ''
-      window.scrollTo(0, scrollY)
-    }
   }, [])
 
   useEffect(() => {
@@ -171,6 +146,21 @@ export function ExpandedPanel({
         <div className="zk-expanded-panel__header">
           <span className="zk-expanded-panel__title">{brandName}</span>
           <div className="zk-expanded-panel__controls">
+            {supportedLanguages.length >= 2 && (
+              <div className="zk-lang-toggle">
+                {supportedLanguages.map(lang => (
+                  <button
+                    key={lang}
+                    type="button"
+                    className={`zk-lang-btn${language === lang ? ' zk-lang-btn--active' : ''}`}
+                    onClick={() => onLanguageChange(lang)}
+                    aria-label={`Switch to ${lang}`}
+                  >
+                    {LANGUAGE_LABELS[lang] || lang.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            )}
             <button
               className="zk-header-btn zk-dock-btn"
               onClick={onDock}

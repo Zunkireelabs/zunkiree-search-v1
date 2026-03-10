@@ -20,6 +20,7 @@ class WidgetConfigResponse(BaseModel):
     show_sources: bool
     show_suggestions: bool
     quick_actions: list[str] = []
+    supported_languages: list[str] = []
 
 
 @router.get("/config/{site_id}", response_model=WidgetConfigResponse)
@@ -65,6 +66,7 @@ async def get_widget_config(
             show_sources=True,
             show_suggestions=True,
             quick_actions=[],
+            supported_languages=[],
         )
 
     # Parse quick_actions from JSON string
@@ -75,6 +77,14 @@ async def get_widget_config(
         except (json.JSONDecodeError, TypeError):
             quick_actions = []
 
+    # Parse supported_languages from JSON string
+    supported_languages: list[str] = []
+    if config.supported_languages:
+        try:
+            supported_languages = json.loads(config.supported_languages)
+        except (json.JSONDecodeError, TypeError):
+            supported_languages = []
+
     return WidgetConfigResponse(
         brand_name=config.brand_name,
         primary_color=config.primary_color,
@@ -84,4 +94,5 @@ async def get_widget_config(
         show_sources=config.show_sources,
         show_suggestions=config.show_suggestions,
         quick_actions=quick_actions,
+        supported_languages=supported_languages,
     )

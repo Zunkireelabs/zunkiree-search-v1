@@ -106,6 +106,7 @@ class UpdateConfigRequest(BaseModel):
     lead_intents: str | None = None  # JSON array of lead intent configs
     contact_email: str | None = None
     contact_phone: str | None = None
+    supported_languages: str | None = None  # JSON array e.g. '["en", "ne"]'
 
 
 class JobInfo(BaseModel):

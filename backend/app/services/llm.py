@@ -8,6 +8,23 @@ logger = logging.getLogger("zunkiree.llm.service")
 
 settings = get_settings()
 
+# Language code → human-readable name mapping
+LANGUAGE_NAMES = {
+    "en": "English",
+    "ne": "Nepali",
+    "hi": "Hindi",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "zh": "Chinese",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "ar": "Arabic",
+    "pt": "Portuguese",
+    "ru": "Russian",
+    "bn": "Bengali",
+}
+
 
 # =============================================================================
 # SYSTEM PROMPT TEMPLATE
@@ -155,6 +172,7 @@ class LLMService:
         user_email: str | None = None,
         user_profile: dict | None = None,
         contact_info: str | None = None,
+        language: str | None = None,
     ) -> dict:
         """
         Generate an answer using the LLM.
@@ -213,6 +231,14 @@ class LLMService:
             context=context,
             contact_info_block=contact_info_block,
         )
+
+        if language and language != "en":
+            lang_name = LANGUAGE_NAMES.get(language, language)
+            system_prompt += (
+                f"\nLANGUAGE: You MUST respond entirely in {lang_name} ({language}). "
+                f"This includes the answer AND the follow-up suggestions after ---SUGGESTIONS---. "
+                f"The context may be in any language — translate your answer to {lang_name}.\n"
+            )
 
         if user_email:
             identity_parts = [f"The person asking is verified as {user_email}."]
@@ -274,6 +300,7 @@ class LLMService:
         user_email: str | None = None,
         user_profile: dict | None = None,
         contact_info: str | None = None,
+        language: str | None = None,
     ):
         """
         Stream the LLM answer. Yields text chunks.
@@ -316,6 +343,14 @@ class LLMService:
             context=context,
             contact_info_block=contact_info_block,
         )
+
+        if language and language != "en":
+            lang_name = LANGUAGE_NAMES.get(language, language)
+            system_prompt += (
+                f"\nLANGUAGE: You MUST respond entirely in {lang_name} ({language}). "
+                f"This includes the answer AND the follow-up suggestions after ---SUGGESTIONS---. "
+                f"The context may be in any language — translate your answer to {lang_name}.\n"
+            )
 
         if user_email:
             identity_parts = [f"The person asking is verified as {user_email}."]

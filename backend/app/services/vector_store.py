@@ -32,11 +32,15 @@ class VectorStoreService:
         if not vectors:
             return 0
 
-        # Pinecone upsert is synchronous, but we wrap it
-        self.index.upsert(
-            vectors=vectors,
-            namespace=namespace,
-        )
+        # Batch upserts to stay under Pinecone's 4MB request limit.
+        # With 3072-dim embeddings (~12KB per vector), 50 vectors ≈ 600KB.
+        batch_size = 50
+        for i in range(0, len(vectors), batch_size):
+            batch = vectors[i:i + batch_size]
+            self.index.upsert(
+                vectors=batch,
+                namespace=namespace,
+            )
         return len(vectors)
 
     async def query_vectors(

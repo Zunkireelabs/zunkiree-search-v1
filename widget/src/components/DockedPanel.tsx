@@ -24,6 +24,25 @@ interface DockedPanelProps {
   placeholder: string
   apiUrl: string
   siteId: string
+  supportedLanguages: string[]
+  language: string
+  onLanguageChange: (lang: string) => void
+}
+
+const LANGUAGE_LABELS: Record<string, string> = {
+  en: 'En',
+  ne: 'ने',
+  hi: 'हि',
+  es: 'Es',
+  fr: 'Fr',
+  de: 'De',
+  zh: '中',
+  ja: '日',
+  ko: '한',
+  ar: 'عر',
+  pt: 'Pt',
+  ru: 'Ру',
+  bn: 'বা',
 }
 
 export function DockedPanel({
@@ -40,6 +59,9 @@ export function DockedPanel({
   placeholder,
   apiUrl,
   siteId,
+  supportedLanguages,
+  language,
+  onLanguageChange,
 }: DockedPanelProps) {
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -98,6 +120,21 @@ export function DockedPanel({
       <div className="zk-docked__header">
         <span className="zk-docked__title">{brandName}</span>
         <div className="zk-docked__controls">
+          {supportedLanguages.length >= 2 && (
+            <div className="zk-lang-toggle">
+              {supportedLanguages.map(lang => (
+                <button
+                  key={lang}
+                  type="button"
+                  className={`zk-lang-btn${language === lang ? ' zk-lang-btn--active' : ''}`}
+                  onClick={() => onLanguageChange(lang)}
+                  aria-label={`Switch to ${lang}`}
+                >
+                  {LANGUAGE_LABELS[lang] || lang.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          )}
           <button
             className="zk-header-btn"
             onClick={onUndock}

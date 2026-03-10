@@ -157,6 +157,7 @@ class QueryRequest(BaseModel):
     site_id: str = Field(..., description="Customer site identifier")
     question: str = Field(..., max_length=500, description="User question")
     session_id: str | None = Field(None, description="Session identifier for identity verification")
+    language: str | None = Field(None, description="Response language code (e.g. 'en', 'ne')")
 
 
 class SourceInfo(BaseModel):
@@ -423,6 +424,7 @@ async def submit_query(
             ip_address=ip_address,
             user_email=user_email,
             user_profile=user_profile_dict,
+            language=query.language,
         )
 
         answer = result["answer"]
@@ -593,6 +595,7 @@ async def submit_query_stream(
                 ip_address=ip_address,
                 user_email=user_email,
                 user_profile=user_profile_dict,
+                language=query.language,
             ):
                 if event["type"] == "token":
                     yield f"data: {json.dumps({'type': 'token', 'data': event['data']})}\n\n"

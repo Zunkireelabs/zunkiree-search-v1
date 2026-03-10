@@ -216,6 +216,40 @@ export const styles = (primaryColor: string) => `
     color: #374151;
   }
 
+  /* Language Toggle */
+  .zk-lang-toggle {
+    display: flex;
+    align-items: center;
+    background: #f3f4f6;
+    border-radius: 8px;
+    padding: 2px;
+    gap: 2px;
+    margin-right: 4px;
+  }
+
+  .zk-lang-btn {
+    background: none;
+    border: none;
+    color: #6b7280;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 6px;
+    transition: background 150ms, color 150ms;
+    line-height: 1.2;
+  }
+
+  .zk-lang-btn:hover {
+    color: #374151;
+  }
+
+  .zk-lang-btn--active {
+    background: white;
+    color: #111827;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+
   /* Hero Section - only when no messages */
   .zk-expanded-panel__hero {
     flex: 1;
@@ -836,49 +870,59 @@ export const styles = (primaryColor: string) => `
     }
   }
 
+  /* ===== Mobile FAB ===== */
+  .zk-fab {
+    display: none; /* hidden on desktop */
+  }
+
   /* ===== Responsive: Mobile — Glassmorphism ===== */
   @media (max-width: 480px) {
 
-    /* --- Collapsed bar --- */
+    /* --- FAB: small circle button, bottom-right --- */
+    .zk-fab {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      border: none;
+      background: linear-gradient(135deg, #2067fb 0%, #000b22 100%);
+      color: white;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+      z-index: 9999;
+      cursor: pointer;
+      opacity: 0;
+      transform: scale(0.8);
+      transition: opacity 180ms ease-out, transform 180ms ease-out;
+    }
+
+    .zk-fab--visible {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    /* Hide desktop collapsed bar on mobile */
     .zk-collapsed-bar {
-      width: calc(100% - 24px);
-      bottom: 12px;
-    }
-
-    .zk-collapsed-bar__card {
-      border-radius: 16px;
-      padding: 12px;
-    }
-
-    .zk-collapsed-bar__input-inner {
-      height: 42px;
-      padding: 0 6px 0 12px;
-    }
-
-    .zk-collapsed-bar__placeholder {
-      font-size: 13px;
-    }
-
-    .zk-collapsed-bar__chips {
-      gap: 6px;
-      margin-top: 10px;
-    }
-
-    .zk-chip--card {
-      font-size: 12px;
-      padding: 5px 10px;
+      display: none !important;
     }
 
     /* --- Expanded panel — glass bottom sheet ---
-       PERFORMANCE: Only ONE backdrop-filter on the panel itself.
-       Header, bubbles, input use solid translucent colors (no blur). */
+       Max 50vh, auto height so it sizes to content.
+       Single backdrop-filter on panel only. */
     .zk-expanded-panel {
       width: calc(100% - 16px);
-      height: 65vh;
+      max-height: 50vh;
+      height: auto;
       bottom: 8px;
       left: 8px;
       transform: none;
       border-radius: 20px;
+      display: flex;
+      flex-direction: column;
       background: rgba(255, 255, 255, 0.72);
       backdrop-filter: blur(24px) saturate(1.3);
       -webkit-backdrop-filter: blur(24px) saturate(1.3);
@@ -886,7 +930,7 @@ export const styles = (primaryColor: string) => `
       box-shadow: 0 8px 40px rgba(0, 0, 0, 0.15);
       animation: zk-panel-mobile-up 200ms ease-out both;
       will-change: transform;
-      overflow: hidden; /* not clip — better for touch scroll */
+      overflow: hidden;
     }
 
     @keyframes zk-panel-mobile-up {
@@ -907,66 +951,75 @@ export const styles = (primaryColor: string) => `
       -webkit-backdrop-filter: none;
     }
 
-    /* --- Header — solid translucent (no blur) --- */
+    /* --- Header — compact 44px, solid (no blur) --- */
     .zk-expanded-panel__header {
-      height: 48px;
-      padding: 0 14px;
+      height: 44px;
+      min-height: 44px;
+      padding: 0 12px;
       background: rgba(255, 255, 255, 0.75);
       border-bottom: 1px solid rgba(0, 0, 0, 0.06);
       border-radius: 20px 20px 0 0;
     }
 
     .zk-expanded-panel__title {
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 600;
     }
 
     .zk-header-btn {
-      width: 40px;
-      height: 40px;
+      width: 36px;
+      height: 36px;
+    }
+
+    /* Hide dock button on mobile */
+    .zk-dock-btn {
+      display: none !important;
     }
 
     /* --- Hero --- */
     .zk-expanded-panel__hero {
-      padding: 20px 16px;
+      padding: 16px 14px;
     }
 
     .zk-expanded-panel__hero-title {
-      font-size: 20px;
-      margin-bottom: 14px;
+      font-size: 18px;
+      margin-bottom: 12px;
     }
 
     .zk-expanded-panel__hero-chips {
-      gap: 8px;
+      gap: 6px;
     }
 
     .zk-expanded-panel__hero-chips .zk-chip {
       font-size: 12px;
-      padding: 6px 12px;
+      padding: 5px 10px;
       background: rgba(255, 255, 255, 0.8);
       border-color: rgba(0, 0, 0, 0.08);
     }
 
-    /* --- Messages area — enable smooth touch scroll --- */
+    /* --- Messages area — flex-grow to fill available space --- */
     .zk-expanded-panel__messages {
-      padding: 14px 12px;
+      flex: 1;
+      min-height: 0;
+      max-height: calc(50vh - 44px - 70px);
+      padding: 12px 10px;
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
       overscroll-behavior-y: contain;
     }
 
     .zk-expanded-panel__messages-inner {
-      gap: 10px;
+      gap: 8px;
     }
 
     .zk-message {
-      max-width: 90%;
+      max-width: 92%;
     }
 
     .zk-message-content {
-      padding: 11px 14px;
+      padding: 10px 12px;
       font-size: 14px;
-      line-height: 1.5;
+      line-height: 1.45;
       border-radius: 14px;
     }
 
@@ -997,8 +1050,8 @@ export const styles = (primaryColor: string) => `
 
     /* --- Input area — solid translucent (no blur) --- */
     .zk-expanded-panel__input {
-      padding: 10px 12px;
-      padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+      padding: 8px 10px;
+      padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
       background: rgba(255, 255, 255, 0.7);
       border-top: 1px solid rgba(0, 0, 0, 0.06);
     }
@@ -1018,30 +1071,30 @@ export const styles = (primaryColor: string) => `
 
     .zk-input-inner {
       border-radius: 16px;
-      padding: 8px 12px;
-      min-height: 40px;
+      padding: 6px 10px;
+      min-height: 38px;
       background: rgba(255, 255, 255, 0.92);
     }
 
     .zk-input {
       font-size: 16px; /* Prevents iOS zoom on focus */
-      margin-right: 36px;
+      margin-right: 34px;
     }
 
     .zk-send {
-      width: 30px;
-      height: 30px;
+      width: 28px;
+      height: 28px;
       bottom: 5px;
-      right: 8px;
+      right: 6px;
     }
 
     .zk-send svg {
-      width: 16px;
-      height: 16px;
+      width: 14px;
+      height: 14px;
     }
 
     .zk-powered-by {
-      margin-top: 5px;
+      margin-top: 4px;
       font-size: 10px;
     }
 
@@ -1098,7 +1151,7 @@ export const styles = (primaryColor: string) => `
   @supports (-webkit-touch-callout: none) {
     @media (max-width: 480px) {
       .zk-expanded-panel {
-        height: 65dvh;
+        max-height: 50dvh;
       }
     }
   }

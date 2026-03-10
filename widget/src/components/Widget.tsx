@@ -21,6 +21,7 @@ interface WidgetConfig {
   placeholder_text: string
   welcome_message: string | null
   quick_actions?: string[]
+  supported_languages?: string[]
 }
 
 interface WidgetProps {
@@ -37,6 +38,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [config, setConfig] = useState<WidgetConfig | null>(null)
   const [sessionId, setSessionId] = useState(() => crypto.randomUUID())
+  const [language, setLanguage] = useState('en')
   const [dockPortalTarget, setDockPortalTarget] = useState<HTMLElement | null>(null)
   const hasAnimated = useRef(false)
 
@@ -102,6 +104,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       site_id: siteId,
       question: userMessage.content,
       session_id: sessionId,
+      language: language !== 'en' ? language : undefined,
     }
 
     try {
@@ -255,6 +258,9 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
           placeholder={placeholder}
           apiUrl={apiUrl}
           siteId={siteId}
+          supportedLanguages={config?.supported_languages || []}
+          language={language}
+          onLanguageChange={setLanguage}
         />
       )}
 
@@ -273,6 +279,9 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
           placeholder={placeholder}
           apiUrl={apiUrl}
           siteId={siteId}
+          supportedLanguages={config?.supported_languages || []}
+          language={language}
+          onLanguageChange={setLanguage}
         />,
         dockPortalTarget,
       )}
