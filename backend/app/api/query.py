@@ -35,6 +35,12 @@ GREETING_WORDS = {
     "hi", "hello", "hey", "yo",
     "good morning", "good afternoon",
     "good evening", "hola",
+    "namaste", "namaskar", "नमस्ते", "नमस्कार",
+}
+
+GREETING_RESPONSES = {
+    "ne": "नमस्ते! म {brand_name} हुँ। आज तपाईंलाई कसरी मद्दत गर्न सक्छु?",
+    "hi": "नमस्ते! मैं {brand_name} हूँ। आज आपकी कैसे मदद कर सकता हूँ?",
 }
 
 
@@ -214,8 +220,14 @@ async def submit_query(
             except (json.JSONDecodeError, TypeError):
                 suggestions = []
 
+        lang = query.language or "en"
+        if lang in GREETING_RESPONSES:
+            greeting = GREETING_RESPONSES[lang].format(brand_name=brand_name)
+        else:
+            greeting = f"Hi! I'm {brand_name}. How can I help you today?"
+
         return QueryResponse(
-            answer=f"Hi! I'm {brand_name}. How can I help you today?",
+            answer=greeting,
             suggestions=suggestions,
             sources=[],
             session_id=query.session_id,
@@ -500,7 +512,11 @@ async def submit_query_stream(
                 suggestions = []
 
         async def greeting_stream():
-            greeting = f"Hi! I'm {brand_name}. How can I help you today?"
+            lang = query.language or "en"
+            if lang in GREETING_RESPONSES:
+                greeting = GREETING_RESPONSES[lang].format(brand_name=brand_name)
+            else:
+                greeting = f"Hi! I'm {brand_name}. How can I help you today?"
             yield f"data: {json.dumps({'type': 'token', 'data': greeting})}\n\n"
             yield f"data: {json.dumps({'type': 'done', 'answer': greeting, 'suggestions': suggestions, 'sources': [], 'session_id': query.session_id})}\n\n"
 

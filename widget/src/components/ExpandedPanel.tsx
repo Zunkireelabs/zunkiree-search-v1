@@ -30,19 +30,19 @@ interface ExpandedPanelProps {
 }
 
 const LANGUAGE_LABELS: Record<string, string> = {
-  en: 'En',
-  ne: 'ने',
-  hi: 'हि',
-  es: 'Es',
-  fr: 'Fr',
-  de: 'De',
-  zh: '中',
-  ja: '日',
-  ko: '한',
-  ar: 'عر',
-  pt: 'Pt',
-  ru: 'Ру',
-  bn: 'বা',
+  en: 'EN',
+  ne: 'NP',
+  hi: 'HI',
+  es: 'ES',
+  fr: 'FR',
+  de: 'DE',
+  zh: 'ZH',
+  ja: 'JA',
+  ko: 'KO',
+  ar: 'AR',
+  pt: 'PT',
+  ru: 'RU',
+  bn: 'BN',
 }
 
 export function ExpandedPanel({
