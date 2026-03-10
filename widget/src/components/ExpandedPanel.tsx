@@ -90,13 +90,16 @@ export function ExpandedPanel({
     const onResize = () => {
       const panel = panelRef.current
       if (!panel) return
-      const keyboardHeight = window.innerHeight - vv.height
+      const keyboardHeight = window.innerHeight - vv.height - vv.offsetTop
       if (keyboardHeight > 100) {
-        // Keyboard is open: pin panel to top of visual viewport
-        panel.style.bottom = `${keyboardHeight + 8}px`
+        // Keyboard is open: pin panel to the visible viewport area
+        // (between browser chrome at top and keyboard at bottom)
+        panel.style.top = `${vv.offsetTop + 8}px`
+        panel.style.bottom = 'auto'
         panel.style.height = `${vv.height - 16}px`
       } else {
         // Keyboard closed: restore default
+        panel.style.top = ''
         panel.style.bottom = ''
         panel.style.height = ''
       }
