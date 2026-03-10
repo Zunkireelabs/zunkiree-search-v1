@@ -65,6 +65,7 @@ export function ExpandedPanel({
 }: ExpandedPanelProps) {
   const messagesRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   const [showAutocomplete, setShowAutocomplete] = useState(false)
 
   useEffect(() => {
@@ -78,6 +79,32 @@ export function ExpandedPanel({
       inputRef.current?.focus({ preventScroll: true })
     }
   }, [messages, isLoading])
+
+  // Mobile: reposition panel when virtual keyboard opens/closes
+  // so the header always stays visible
+  useEffect(() => {
+    if (window.innerWidth > 768) return
+    const vv = window.visualViewport
+    if (!vv) return
+
+    const onResize = () => {
+      const panel = panelRef.current
+      if (!panel) return
+      const keyboardHeight = window.innerHeight - vv.height
+      if (keyboardHeight > 100) {
+        // Keyboard is open: pin panel to top of visual viewport
+        panel.style.bottom = `${keyboardHeight + 8}px`
+        panel.style.height = `${vv.height - 16}px`
+      } else {
+        // Keyboard closed: restore default
+        panel.style.bottom = ''
+        panel.style.height = ''
+      }
+    }
+
+    vv.addEventListener('resize', onResize)
+    return () => vv.removeEventListener('resize', onResize)
+  }, [])
 
   // Desktop: capture wheel/trackpad scroll and route to messages area
   useEffect(() => {
@@ -142,7 +169,7 @@ export function ExpandedPanel({
       <div className="zk-backdrop" onClick={handleBackdropClick} />
 
       {/* Panel */}
-      <div className="zk-expanded-panel">
+      <div className="zk-expanded-panel" ref={panelRef}>
         {/* Header - 64px */}
         <div className="zk-expanded-panel__header">
           <span className="zk-expanded-panel__title">{brandName}</span>
