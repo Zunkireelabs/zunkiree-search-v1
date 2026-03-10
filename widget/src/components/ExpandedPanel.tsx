@@ -73,7 +73,8 @@ export function ExpandedPanel({
     if (container) {
       container.scrollTop = container.scrollHeight
     }
-    if (!isLoading) {
+    // Don't auto-focus on mobile — it opens the keyboard and squishes the panel
+    if (!isLoading && window.innerWidth > 768) {
       inputRef.current?.focus({ preventScroll: true })
     }
   }, [messages, isLoading])

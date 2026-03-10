@@ -1074,14 +1074,16 @@ export const styles = (primaryColor: string) => `
 
   .zk-mobile .zk-input-container {
     border-radius: 18px !important;
+    background: transparent !important;
+    padding: 0 !important;
   }
 
   .zk-mobile .zk-input-container::before {
-    border-radius: 18px !important;
+    display: none !important;
   }
 
   .zk-mobile .zk-input-container::after {
-    border-radius: 20px !important;
+    display: none !important;
   }
 
   .zk-mobile .zk-input-inner {
@@ -1089,16 +1091,28 @@ export const styles = (primaryColor: string) => `
     padding: 6px 10px !important;
     min-height: 38px !important;
     background: #f9fafb !important;
+    border: 1.5px solid #d1d5db !important;
   }
 
   .zk-mobile .zk-input {
     font-size: 16px !important;
     color: #111827 !important;
+    -webkit-text-fill-color: #111827 !important;
     margin-right: 34px !important;
+    background: transparent !important;
+    opacity: 1 !important;
   }
 
   .zk-mobile .zk-input::placeholder {
-    color: #9ca3af !important;
+    color: #6b7280 !important;
+    -webkit-text-fill-color: #6b7280 !important;
+    opacity: 1 !important;
+  }
+
+  .zk-mobile .zk-input::-webkit-input-placeholder {
+    color: #6b7280 !important;
+    -webkit-text-fill-color: #6b7280 !important;
+    opacity: 1 !important;
   }
 
   .zk-mobile .zk-send {
