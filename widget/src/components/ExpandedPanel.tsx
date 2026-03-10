@@ -81,33 +81,47 @@ export function ExpandedPanel({
   }, [messages, isLoading])
 
   // Mobile: reposition panel when virtual keyboard opens/closes
-  // so the header always stays visible
+  // so the header always stays visible.
+  // Android fires 'resize' on visualViewport; iOS fires both 'resize' and 'scroll'.
   useEffect(() => {
     if (window.innerWidth > 768) return
     const vv = window.visualViewport
     if (!vv) return
 
-    const onResize = () => {
+    // Store the initial viewport height to detect keyboard
+    const fullHeight = window.innerHeight
+
+    const reposition = () => {
       const panel = panelRef.current
       if (!panel) return
-      const keyboardHeight = window.innerHeight - vv.height - vv.offsetTop
-      if (keyboardHeight > 100) {
-        // Keyboard is open: pin panel to the visible viewport area.
-        // Must use setProperty with 'important' to override the
-        // !important rules in the mobile CSS.
-        panel.style.setProperty('top', `${vv.offsetTop + 8}px`, 'important')
+
+      // Keyboard is open if the visual viewport is significantly smaller
+      // than the full layout viewport (works on both Android and iOS)
+      const keyboardOpen = vv.height < fullHeight * 0.75
+
+      if (keyboardOpen) {
+        // Pin panel within the visual viewport (the actually visible area).
+        // vv.offsetTop = distance from layout viewport top to visual viewport top
+        // vv.height = visible area height (excludes keyboard)
+        const top = vv.offsetTop + 8
+        const height = vv.height - 16
+        panel.style.setProperty('top', `${top}px`, 'important')
         panel.style.setProperty('bottom', 'auto', 'important')
-        panel.style.setProperty('height', `${vv.height - 16}px`, 'important')
+        panel.style.setProperty('height', `${height}px`, 'important')
       } else {
-        // Keyboard closed: remove overrides, CSS defaults take over
+        // Keyboard closed: remove overrides
         panel.style.removeProperty('top')
         panel.style.removeProperty('bottom')
         panel.style.removeProperty('height')
       }
     }
 
-    vv.addEventListener('resize', onResize)
-    return () => vv.removeEventListener('resize', onResize)
+    vv.addEventListener('resize', reposition)
+    vv.addEventListener('scroll', reposition)
+    return () => {
+      vv.removeEventListener('resize', reposition)
+      vv.removeEventListener('scroll', reposition)
+    }
   }, [])
 
   // Desktop: capture wheel/trackpad scroll and route to messages area
