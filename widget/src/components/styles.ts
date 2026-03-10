@@ -875,10 +875,10 @@ export const styles = (primaryColor: string) => `
     display: none; /* hidden on desktop */
   }
 
-  /* ===== Responsive: Mobile — Glassmorphism ===== */
+  /* ===== Responsive: Mobile ===== */
   @media (max-width: 480px) {
 
-    /* --- FAB: small circle button, bottom-right --- */
+    /* --- FAB: circle button, bottom-right --- */
     .zk-fab {
       display: flex;
       align-items: center;
@@ -905,110 +905,111 @@ export const styles = (primaryColor: string) => `
       transform: scale(1);
     }
 
-    /* Hide desktop collapsed bar on mobile */
-    .zk-collapsed-bar {
+    /* Kill the desktop collapsed bar — it causes page overflow */
+    .zk-collapsed-bar,
+    .zk-collapsed-bar--visible {
       display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+      overflow: hidden !important;
+      visibility: hidden !important;
+      position: absolute !important;
+      pointer-events: none !important;
     }
 
-    /* --- Expanded panel — glass bottom sheet ---
-       Fixed 60vh height, single backdrop-filter on panel only. */
+    /* --- Backdrop --- */
+    .zk-backdrop {
+      background: rgba(0, 0, 0, 0.3) !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+    }
+
+    /* --- Expanded panel --- */
     .zk-expanded-panel {
-      width: calc(100% - 16px) !important;
-      height: 60vh !important;
-      max-height: none !important;
+      position: fixed !important;
       bottom: 8px !important;
       left: 8px !important;
-      right: auto !important;
+      right: 8px !important;
       top: auto !important;
-      transform: none !important;
+      width: auto !important;
+      height: 60vh !important;
+      max-height: none !important;
+      transform: translateY(0) !important;
       border-radius: 20px !important;
-      display: flex;
-      flex-direction: column;
-      background: rgba(255, 255, 255, 0.92) !important;
-      backdrop-filter: blur(24px) saturate(1.3);
-      -webkit-backdrop-filter: blur(24px) saturate(1.3);
-      border: 1px solid rgba(255, 255, 255, 0.55);
-      box-shadow: 0 8px 40px rgba(0, 0, 0, 0.15);
-      animation: zk-panel-mobile-up 200ms ease-out both !important;
-      will-change: transform;
-      overflow: hidden;
+      background: #fff !important;
+      box-shadow: 0 8px 40px rgba(0, 0, 0, 0.18) !important;
+      display: flex !important;
+      flex-direction: column !important;
+      overflow: hidden !important;
+      animation: zk-mob-up 200ms ease-out both !important;
     }
 
-    @keyframes zk-panel-mobile-up {
-      from {
-        transform: translateY(30%);
-        opacity: 0;
-      }
-      to {
-        transform: translateY(0);
-        opacity: 1;
-      }
+    @keyframes zk-mob-up {
+      from { opacity: 0; transform: translateY(40px); }
+      to   { opacity: 1; transform: translateY(0); }
     }
 
-    /* Backdrop — simple dim, NO blur (saves GPU) */
-    .zk-backdrop {
-      background: rgba(0, 0, 0, 0.25);
-      backdrop-filter: none;
-      -webkit-backdrop-filter: none;
-    }
-
-    /* --- Header — compact 48px, solid white, always visible --- */
+    /* --- Header: 48px, solid white, always visible --- */
     .zk-expanded-panel__header {
       display: flex !important;
       align-items: center !important;
       height: 48px !important;
       min-height: 48px !important;
-      padding: 0 12px !important;
-      background: white !important;
-      border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
-      border-radius: 20px 20px 0 0;
-      flex-shrink: 0;
+      flex-shrink: 0 !important;
+      padding: 0 10px !important;
+      background: #fff !important;
+      border-bottom: 1px solid #e5e7eb !important;
+      border-radius: 20px 20px 0 0 !important;
     }
 
     .zk-expanded-panel__title {
-      font-size: 15px;
-      font-weight: 600;
+      font-size: 15px !important;
+      font-weight: 600 !important;
       color: #111827 !important;
-      flex: 1;
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      flex: 1 !important;
     }
 
     .zk-expanded-panel__controls {
       display: flex !important;
-      align-items: center;
-      gap: 2px;
-      flex-shrink: 0;
+      align-items: center !important;
+      gap: 2px !important;
+      flex-shrink: 0 !important;
     }
 
     .zk-header-btn {
-      width: 32px;
-      height: 32px;
+      width: 32px !important;
+      height: 32px !important;
       color: #6b7280 !important;
     }
 
-    /* Hide dock button on mobile */
     .zk-dock-btn {
       display: none !important;
     }
 
-    /* Language toggle on mobile — compact */
+    /* --- Language toggle --- */
     .zk-lang-toggle {
-      padding: 1px;
-      gap: 1px;
-      margin-right: 2px;
+      padding: 2px !important;
+      gap: 1px !important;
+      margin-right: 4px !important;
+      background: #f3f4f6 !important;
+      border-radius: 6px !important;
     }
 
     .zk-lang-btn {
-      font-size: 11px;
-      padding: 3px 8px;
+      font-size: 11px !important;
+      padding: 3px 8px !important;
+      border-radius: 4px !important;
+    }
+
+    .zk-lang-btn--active {
+      background: #fff !important;
+      color: #111827 !important;
     }
 
     /* --- Hero --- */
     .zk-expanded-panel__hero {
       padding: 16px 14px;
+      flex-shrink: 0;
     }
 
     .zk-expanded-panel__hero-title {
@@ -1023,16 +1024,14 @@ export const styles = (primaryColor: string) => `
     .zk-expanded-panel__hero-chips .zk-chip {
       font-size: 12px;
       padding: 5px 10px;
-      background: rgba(255, 255, 255, 0.8);
-      border-color: rgba(0, 0, 0, 0.08);
     }
 
-    /* --- Messages area — flex-grow to fill available space --- */
+    /* --- Messages area --- */
     .zk-expanded-panel__messages {
-      flex: 1 !important;
+      flex: 1 1 0% !important;
       min-height: 0 !important;
-      padding: 12px 10px;
-      overflow-y: auto;
+      padding: 12px 10px !important;
+      overflow-y: auto !important;
       -webkit-overflow-scrolling: touch;
       overscroll-behavior-y: contain;
     }
@@ -1052,16 +1051,15 @@ export const styles = (primaryColor: string) => `
       border-radius: 14px;
     }
 
-    /* Translucent bubbles — NO backdrop-filter */
     .zk-message-assistant .zk-message-content {
-      background: rgba(255, 255, 255, 0.7);
-      border: 1px solid rgba(0, 0, 0, 0.05);
+      background: #f9fafb !important;
+      border: 1px solid #e5e7eb;
       border-bottom-left-radius: 4px;
     }
 
     .zk-message-user .zk-message-content {
-      background: rgba(37, 99, 235, 0.08);
-      border: 1px solid rgba(37, 99, 235, 0.1);
+      background: #eff6ff !important;
+      border: 1px solid #dbeafe;
       border-bottom-right-radius: 4px;
     }
 
@@ -1073,22 +1071,19 @@ export const styles = (primaryColor: string) => `
     .zk-message__suggestions .zk-chip {
       font-size: 12px;
       padding: 5px 10px;
-      background: rgba(255, 255, 255, 0.75);
-      border-color: rgba(0, 0, 0, 0.08);
     }
 
-    /* --- Input area — solid, flex-shrink: 0 so it never hides --- */
+    /* --- Input area --- */
     .zk-expanded-panel__input {
       flex-shrink: 0 !important;
-      padding: 8px 10px;
-      padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
-      background: white !important;
-      border-top: 1px solid rgba(0, 0, 0, 0.08);
+      padding: 8px 10px !important;
+      padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important;
+      background: #fff !important;
+      border-top: 1px solid #e5e7eb !important;
     }
 
     .zk-input-container {
       border-radius: 18px;
-      background: rgba(200, 200, 200, 0.35);
     }
 
     .zk-input-container::before {
@@ -1100,15 +1095,20 @@ export const styles = (primaryColor: string) => `
     }
 
     .zk-input-inner {
-      border-radius: 16px;
-      padding: 6px 10px;
-      min-height: 38px;
-      background: rgba(255, 255, 255, 0.92);
+      border-radius: 16px !important;
+      padding: 6px 10px !important;
+      min-height: 38px !important;
+      background: #f9fafb !important;
     }
 
     .zk-input {
-      font-size: 16px; /* Prevents iOS zoom on focus */
+      font-size: 16px !important; /* Prevents iOS zoom */
+      color: #111827 !important;
       margin-right: 34px;
+    }
+
+    .zk-input::placeholder {
+      color: #9ca3af !important;
     }
 
     .zk-send {
@@ -1128,12 +1128,12 @@ export const styles = (primaryColor: string) => `
       font-size: 10px;
     }
 
-    /* --- Autocomplete — solid (no blur) --- */
+    /* --- Autocomplete --- */
     .zk-autocomplete {
       border-radius: 12px;
       margin-bottom: 4px;
-      background: rgba(255, 255, 255, 0.92);
-      border: 1px solid rgba(0, 0, 0, 0.08);
+      background: #fff;
+      border: 1px solid #e5e7eb;
       box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
     }
 
@@ -1145,36 +1145,20 @@ export const styles = (primaryColor: string) => `
 
     .zk-autocomplete__item:hover,
     .zk-autocomplete__item--active {
-      background: rgba(0, 0, 0, 0.04);
+      background: #f3f4f6;
     }
 
-    /* --- Typing indicator --- */
     .zk-message-assistant .zk-typing {
-      background: rgba(255, 255, 255, 0.7);
+      background: #f9fafb;
     }
 
     /* --- Markdown --- */
-    .zk-md .zk-table {
-      font-size: 12px;
-    }
-
+    .zk-md .zk-table { font-size: 12px; }
     .zk-md .zk-table th,
-    .zk-md .zk-table td {
-      padding: 6px 8px;
-    }
-
-    .zk-md .zk-table-wrap {
-      background: rgba(255, 255, 255, 0.6);
-      border-color: rgba(0, 0, 0, 0.06);
-    }
-
-    .zk-md .zk-table th {
-      background: rgba(249, 250, 251, 0.8);
-    }
-
-    .zk-md .zk-list {
-      padding-left: 16px;
-    }
+    .zk-md .zk-table td { padding: 6px 8px; }
+    .zk-md .zk-table-wrap { background: #fff; border-color: #e5e7eb; }
+    .zk-md .zk-table th { background: #f9fafb; }
+    .zk-md .zk-list { padding-left: 16px; }
   }
 
   /* ===== iOS height ===== */
