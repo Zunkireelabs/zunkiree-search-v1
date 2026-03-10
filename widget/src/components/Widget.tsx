@@ -40,7 +40,16 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   const [sessionId, setSessionId] = useState(() => crypto.randomUUID())
   const [language, setLanguage] = useState('en')
   const [dockPortalTarget, setDockPortalTarget] = useState<HTMLElement | null>(null)
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
   const hasAnimated = useRef(false)
+
+  // JS-based mobile detection (host site may lack viewport meta tag,
+  // so CSS @media queries can't be trusted)
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth <= 768)
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
 
   // Fetch widget config
   useEffect(() => {
@@ -229,7 +238,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   const placeholder = config?.placeholder_text || `Ask ${brandName} a question\u2026`
 
   return (
-    <>
+    <div className={isMobile ? 'zk-mobile' : ''}>
       <style>{styles(primaryColor)}</style>
 
       {mode === 'bottom-minimized' && (
@@ -285,6 +294,6 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
         />,
         dockPortalTarget,
       )}
-    </>
+    </div>
   )
 }
