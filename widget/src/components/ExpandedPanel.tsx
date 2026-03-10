@@ -92,16 +92,17 @@ export function ExpandedPanel({
       if (!panel) return
       const keyboardHeight = window.innerHeight - vv.height - vv.offsetTop
       if (keyboardHeight > 100) {
-        // Keyboard is open: pin panel to the visible viewport area
-        // (between browser chrome at top and keyboard at bottom)
-        panel.style.top = `${vv.offsetTop + 8}px`
-        panel.style.bottom = 'auto'
-        panel.style.height = `${vv.height - 16}px`
+        // Keyboard is open: pin panel to the visible viewport area.
+        // Must use setProperty with 'important' to override the
+        // !important rules in the mobile CSS.
+        panel.style.setProperty('top', `${vv.offsetTop + 8}px`, 'important')
+        panel.style.setProperty('bottom', 'auto', 'important')
+        panel.style.setProperty('height', `${vv.height - 16}px`, 'important')
       } else {
-        // Keyboard closed: restore default
-        panel.style.top = ''
-        panel.style.bottom = ''
-        panel.style.height = ''
+        // Keyboard closed: remove overrides, CSS defaults take over
+        panel.style.removeProperty('top')
+        panel.style.removeProperty('bottom')
+        panel.style.removeProperty('height')
       }
     }
 
