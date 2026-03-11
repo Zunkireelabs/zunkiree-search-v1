@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zunkiree Widget Test</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #333; }
+
+    /* Control bar */
+    .controls {
+      position: sticky;
+      top: 0;
+      z-index: 99999;
+      background: #1a1a2e;
+      color: #fff;
+      padding: 12px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+    }
+    .controls label { font-weight: 600; white-space: nowrap; }
+    .controls input {
+      padding: 6px 10px;
+      border: 1px solid #444;
+      border-radius: 6px;
+      background: #2a2a4a;
+      color: #fff;
+      font-size: 14px;
+      width: 160px;
+    }
+    .controls input::placeholder { color: #888; }
+    .controls button {
+      padding: 6px 16px;
+      border: none;
+      border-radius: 6px;
+      background: #eb1600;
+      color: #fff;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .controls button:hover { background: #d01400; }
+    .controls .status {
+      flex-basis: 100%;
+      font-size: 12px;
+      color: #aaa;
+      margin-top: 4px;
+      word-break: break-all;
+    }
+    .controls .status span { color: #6cf; }
+
+    /* Fake page content */
+    .page { max-width: 900px; margin: 0 auto; padding: 40px 20px 200px; }
+    .page header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 0;
+      border-bottom: 1px solid #e0e0e0;
+      margin-bottom: 40px;
+    }
+    .page header .logo { font-size: 22px; font-weight: 700; color: #1a1a2e; }
+    .page header nav a { margin-left: 24px; color: #555; text-decoration: none; font-size: 15px; }
+
+    .hero {
+      text-align: center;
+      padding: 60px 0;
+      background: linear-gradient(135deg, #f0f4ff, #e8f0fe);
+      border-radius: 16px;
+      margin-bottom: 48px;
+    }
+    .hero h1 { font-size: 36px; margin-bottom: 12px; color: #1a1a2e; }
+    .hero p { font-size: 18px; color: #666; max-width: 520px; margin: 0 auto; }
+
+    .content-block { margin-bottom: 32px; }
+    .content-block h2 { font-size: 22px; margin-bottom: 12px; color: #1a1a2e; }
+    .content-block p { line-height: 1.7; color: #555; margin-bottom: 12px; }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 20px;
+      margin: 32px 0;
+    }
+    .card {
+      background: #fff;
+      border: 1px solid #e8e8e8;
+      border-radius: 12px;
+      padding: 24px;
+    }
+    .card h3 { font-size: 17px; margin-bottom: 8px; color: #1a1a2e; }
+    .card p { font-size: 14px; color: #777; line-height: 1.6; }
+  </style>
+</head>
+<body>
+
+  <!-- Control Bar -->
+  <div class="controls">
+    <label>Site ID:</label>
+    <input type="text" id="site-input" placeholder="e.g. supremecourt">
+    <label>Branch:</label>
+    <input type="text" id="branch-input" placeholder="empty = production">
+    <button onclick="loadWidget()">Load</button>
+    <div class="status" id="status"></div>
+  </div>
+
+  <!-- Fake Page Content -->
+  <div class="page">
+    <header>
+      <div class="logo">Sample Website</div>
+      <nav>
+        <a href="#">Home</a>
+        <a href="#">About</a>
+        <a href="#">Services</a>
+        <a href="#">Contact</a>
+      </nav>
+    </header>
+
+    <div class="hero">
+      <h1>Welcome to Our Website</h1>
+      <p>This is a test page for the Zunkiree search widget. The content below simulates a real website.</p>
+    </div>
+
+    <div class="content-block">
+      <h2>About Us</h2>
+      <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.</p>
+      <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <h3>Feature One</h3>
+        <p>Explore our comprehensive search capabilities powered by AI technology.</p>
+      </div>
+      <div class="card">
+        <h3>Feature Two</h3>
+        <p>Get instant answers to your questions with natural language understanding.</p>
+      </div>
+      <div class="card">
+        <h3>Feature Three</h3>
+        <p>Seamlessly integrates with any website through a simple script tag.</p>
+      </div>
+    </div>
+
+    <div class="content-block">
+      <h2>More Content</h2>
+      <p>Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas. Vestibulum tortor quam, feugiat vitae, ultricies eget, tempor sit amet, ante.</p>
+      <p>Donec eu libero sit amet quam egestas semper. Aenean ultricies mi vitae est. Mauris placerat eleifend leo. Quisque sit amet est et sapien ullamcorper pharetra.</p>
+    </div>
+
+    <div class="content-block">
+      <h2>Frequently Asked Questions</h2>
+      <p>Cras mattis consectetur purus sit amet fermentum. Donec sed odio dui. Maecenas faucibus mollis interdum. Nullam quis risus eget urna mollis ornare vel eu leo.</p>
+      <p>Integer posuere erat a ante venenatis dapibus posuere velit aliquet. Cras justo odio, dapibus ut facilisis in, egestas eget quam. Aenean lacinia bibendum nulla sed consectetur.</p>
+    </div>
+  </div>
+
+  <script>
+    const PRODUCTION_BASE = 'https://zunkiree-search-v1.vercel.app';
+    const API_URL = 'https://api.zunkireelabs.com';
+    const PROJECT = 'zunkiree-search-v1';
+    const TEAM = 'zunkireelabs';
+
+    const params = new URLSearchParams(window.location.search);
+    const siteInput = document.getElementById('site-input');
+    const branchInput = document.getElementById('branch-input');
+    const statusEl = document.getElementById('status');
+
+    // Pre-fill from URL params
+    siteInput.value = params.get('site') || '';
+    branchInput.value = params.get('branch') || '';
+
+    function getWidgetUrl(branch) {
+      if (!branch) return PRODUCTION_BASE + '/zunkiree-widget.iife.js';
+      const sanitized = branch.replace(/\//g, '-');
+      return `https://${PROJECT}-git-${sanitized}-${TEAM}.vercel.app/zunkiree-widget.iife.js`;
+    }
+
+    function updateUrl(site, branch) {
+      const url = new URL(window.location);
+      if (site) url.searchParams.set('site', site);
+      else url.searchParams.delete('site');
+      if (branch) url.searchParams.set('branch', branch);
+      else url.searchParams.delete('branch');
+      history.replaceState(null, '', url);
+    }
+
+    function loadWidget() {
+      const site = siteInput.value.trim();
+      const branch = branchInput.value.trim();
+
+      if (!site) {
+        statusEl.innerHTML = '<span style="color:#f66">Please enter a site ID</span>';
+        return;
+      }
+
+      // Update URL params
+      updateUrl(site, branch);
+
+      // Remove any existing widget
+      const oldScript = document.getElementById('zk-widget-script');
+      if (oldScript) oldScript.remove();
+      const oldRoot = document.getElementById('zunkiree-widget-root');
+      if (oldRoot) oldRoot.remove();
+
+      // Build widget URL
+      const widgetUrl = getWidgetUrl(branch);
+      const label = branch ? `preview (${branch})` : 'production';
+
+      // Inject script
+      const script = document.createElement('script');
+      script.id = 'zk-widget-script';
+      script.src = widgetUrl;
+      script.setAttribute('data-site-id', site);
+      script.setAttribute('data-api-url', API_URL);
+      document.body.appendChild(script);
+
+      statusEl.innerHTML = `Loaded: <span>${widgetUrl}</span> [${label}]`;
+    }
+
+    // Allow Enter key to trigger load
+    siteInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') loadWidget(); });
+    branchInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') loadWidget(); });
+
+    // Auto-load if site param is present
+    if (siteInput.value) loadWidget();
+  </script>
+</body>
+</html>
