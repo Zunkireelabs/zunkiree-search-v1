@@ -5,6 +5,8 @@ from app.models.ingestion import IngestionJob, DocumentChunk
 from app.models.query_log import QueryLog
 from app.models.verification import VerificationSession
 from app.models.user_profile import UserProfile
+from app.models.product import Product
+from app.models.cart import ShoppingCart
 
 __all__ = [
     "Customer",
@@ -15,4 +17,6 @@ __all__ = [
     "QueryLog",
     "VerificationSession",
     "UserProfile",
+    "Product",
+    "ShoppingCart",
 ]

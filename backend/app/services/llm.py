@@ -30,6 +30,16 @@ LANGUAGE_NAMES = {
 # SYSTEM PROMPT TEMPLATE
 # =============================================================================
 
+# Website-type-specific prompt adjustments
+WEBSITE_TYPE_PROMPTS = {
+    "ecommerce": "You specialize in helping customers find and purchase products. Focus on product features, sizing, availability, and pricing.",
+    "blog": "You specialize in helping readers find relevant articles and content. Focus on topics, authors, and related posts.",
+    "saas": "You specialize in helping users understand the product's features, pricing plans, and integration options.",
+    "service": "You specialize in helping clients understand available services, processes, and how to get started.",
+    "restaurant": "You specialize in helping guests explore the menu, make reservations, and learn about dining options.",
+    "portfolio": "You specialize in helping visitors explore the work and creative projects showcased here.",
+}
+
 SYSTEM_PROMPT_TEMPLATE = """You are a knowledgeable assistant for {brand_name}.
 
 YOUR #1 RULE: Answer helpfully if the question relates to what {brand_name} does. Never refuse a relevant question.
@@ -173,6 +183,7 @@ class LLMService:
         user_profile: dict | None = None,
         contact_info: str | None = None,
         language: str | None = None,
+        website_type: str | None = None,
     ) -> dict:
         """
         Generate an answer using the LLM.
@@ -231,6 +242,10 @@ class LLMService:
             context=context,
             contact_info_block=contact_info_block,
         )
+
+        # Add website-type-specific instructions
+        if website_type and website_type in WEBSITE_TYPE_PROMPTS:
+            system_prompt += f"\nSPECIALIZATION: {WEBSITE_TYPE_PROMPTS[website_type]}\n"
 
         if language and language != "en":
             lang_name = LANGUAGE_NAMES.get(language, language)
@@ -301,6 +316,7 @@ class LLMService:
         user_profile: dict | None = None,
         contact_info: str | None = None,
         language: str | None = None,
+        website_type: str | None = None,
     ):
         """
         Stream the LLM answer. Yields text chunks.
@@ -343,6 +359,10 @@ class LLMService:
             context=context,
             contact_info_block=contact_info_block,
         )
+
+        # Add website-type-specific instructions
+        if website_type and website_type in WEBSITE_TYPE_PROMPTS:
+            system_prompt += f"\nSPECIALIZATION: {WEBSITE_TYPE_PROMPTS[website_type]}\n"
 
         if language and language != "en":
             lang_name = LANGUAGE_NAMES.get(language, language)

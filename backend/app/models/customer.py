@@ -16,6 +16,7 @@ class Customer(Base):
     site_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     api_key: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    website_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -26,6 +27,7 @@ class Customer(Base):
     document_chunks: Mapped[list["DocumentChunk"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
     query_logs: Mapped[list["QueryLog"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
     user_profiles: Mapped[list["UserProfile"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
+    products: Mapped[list["Product"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
 
 
 # Import at bottom to avoid circular imports
@@ -34,3 +36,4 @@ from app.models.widget_config import WidgetConfig
 from app.models.ingestion import IngestionJob, DocumentChunk
 from app.models.query_log import QueryLog
 from app.models.user_profile import UserProfile
+from app.models.product import Product

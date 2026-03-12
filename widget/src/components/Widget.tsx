@@ -7,12 +7,52 @@ import { DockedPanel } from './DockedPanel'
 import { bootstrap, destroy, getDockPanel } from '../layout/LayoutManager'
 import { enterDock, exitDock, DOCK_MIN_WIDTH } from '../layout/DockStateManager'
 
+interface Product {
+  id: string
+  name: string
+  description: string
+  price: number | null
+  currency: string
+  original_price: number | null
+  images: string[]
+  url: string
+  brand: string
+  category: string
+  sizes: string[]
+  colors: string[]
+  in_stock: boolean
+}
+
+interface CartState {
+  items: Array<{
+    product_id: string; name: string; price: number; currency: string
+    quantity: number; size: string; color: string; image: string; url: string
+  }>
+  item_count: number
+  subtotal: number
+  currency: string
+}
+
+interface CheckoutData {
+  items: Array<{
+    name: string; price: number; currency: string; quantity: number
+    size: string; color: string; url: string; image: string
+  }>
+  subtotal: number
+  currency: string
+  item_count: number
+}
+
 interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
   suggestions?: string[]
   isError?: boolean
+  products?: Product[]
+  cartUpdate?: CartState
+  checkout?: CheckoutData
+  toolStatus?: { name: string; status: 'running' | 'done' }
 }
 
 interface WidgetConfig {
@@ -22,6 +62,8 @@ interface WidgetConfig {
   welcome_message: string | null
   quick_actions?: string[]
   supported_languages?: string[]
+  website_type?: string | null
+  enable_shopping?: boolean
 }
 
 interface WidgetProps {
@@ -166,6 +208,39 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
                   prev.map(m => m.id === assistantId ? { ...m, content: streamingContent } : m)
                 )
               }
+            } else if (event.type === 'products') {
+              // Product search results
+              setMessages(prev =>
+                prev.map(m => m.id === assistantId ? { ...m, products: event.data } : m)
+              )
+            } else if (event.type === 'cart_update') {
+              // Cart state update
+              setMessages(prev =>
+                prev.map(m => m.id === assistantId ? { ...m, cartUpdate: event.data } : m)
+              )
+            } else if (event.type === 'checkout') {
+              // Checkout data
+              setMessages(prev =>
+                prev.map(m => m.id === assistantId ? { ...m, checkout: event.data } : m)
+              )
+            } else if (event.type === 'tool_call') {
+              // Tool execution status
+              if (!addedMessage) {
+                addedMessage = true
+                setMessages(prev => [...prev, {
+                  id: assistantId,
+                  role: 'assistant',
+                  content: '',
+                  toolStatus: { name: event.name, status: event.status },
+                }])
+              } else {
+                setMessages(prev =>
+                  prev.map(m => m.id === assistantId ? {
+                    ...m,
+                    toolStatus: { name: event.name, status: event.status },
+                  } : m)
+                )
+              }
             } else if (event.type === 'done') {
               if (event.session_id) setSessionId(event.session_id)
               setMessages(prev =>
@@ -173,6 +248,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
                   ...m,
                   content: event.answer,
                   suggestions: event.suggestions,
+                  toolStatus: undefined,
                 } : m)
               )
               setIsLoading(false)
@@ -187,15 +263,38 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       }
     } catch (error) {
       console.error('[Zunkiree] Stream error:', error)
+      const errorMsg = error instanceof Error ? error.message : 'Sorry, I encountered an error. Please try again.'
       setMessages(prev => [...prev, {
         id: (Date.now() + 2).toString(),
         role: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again.',
+        content: errorMsg,
         isError: true,
       }])
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const handleAddToCart = (productId: string, size?: string, color?: string) => {
+    let msg = `Add product ${productId} to my cart`
+    if (size) msg += `, size ${size}`
+    if (color) msg += `, color ${color}`
+    setInput(msg)
+    // Auto-submit
+    const fakeEvent = { preventDefault: () => {} } as React.FormEvent
+    setTimeout(() => handleSubmit(fakeEvent), 50)
+  }
+
+  const handleRemoveFromCart = (index: number) => {
+    setInput(`Remove item ${index + 1} from my cart`)
+    const fakeEvent = { preventDefault: () => {} } as React.FormEvent
+    setTimeout(() => handleSubmit(fakeEvent), 50)
+  }
+
+  const handleCheckout = () => {
+    setInput('Checkout')
+    const fakeEvent = { preventDefault: () => {} } as React.FormEvent
+    setTimeout(() => handleSubmit(fakeEvent), 50)
   }
 
   const handleSuggestionClick = (suggestion: string) => {
@@ -270,6 +369,9 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
           supportedLanguages={config?.supported_languages || []}
           language={language}
           onLanguageChange={setLanguage}
+          onAddToCart={handleAddToCart}
+          onRemoveFromCart={handleRemoveFromCart}
+          onCheckout={handleCheckout}
         />
       )}
 
@@ -291,6 +393,9 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
           supportedLanguages={config?.supported_languages || []}
           language={language}
           onLanguageChange={setLanguage}
+          onAddToCart={handleAddToCart}
+          onRemoveFromCart={handleRemoveFromCart}
+          onCheckout={handleCheckout}
         />,
         dockPortalTarget,
       )}

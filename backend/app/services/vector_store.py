@@ -49,6 +49,7 @@ class VectorStoreService:
         namespace: str,
         top_k: int = 5,
         site_id: str | None = None,
+        filter_metadata: dict | None = None,
     ) -> list[dict]:
         """
         Query vectors from Pinecone. Returns vector IDs and scores only.
@@ -59,14 +60,23 @@ class VectorStoreService:
             namespace: Customer namespace (site_id)
             top_k: Number of results to return
             site_id: Optional site_id for metadata filter (defense-in-depth)
+            filter_metadata: Optional additional metadata filter (e.g. {"type": "product"})
 
         Returns:
-            List of matches with IDs and scores
+            List of matches with IDs, scores, and metadata
         """
         # Defense-in-depth: metadata filter even though namespace already isolates
-        query_filter = None
+        query_filter = {}
         if site_id:
-            query_filter = {"site_id": {"$eq": site_id}}
+            query_filter["site_id"] = {"$eq": site_id}
+        if filter_metadata:
+            for key, value in filter_metadata.items():
+                query_filter[key] = {"$eq": value} if not isinstance(value, dict) else value
+
+        if not query_filter:
+            query_filter = None
+
+        include_metadata = bool(filter_metadata)
 
         # [TEMP-LOG] Log Pinecone query details
         logger.warning("[QUERY-TRACE] pinecone_query namespace=%s top_k=%d filter=%s index=%s", namespace, top_k, query_filter, settings.pinecone_index_name)
@@ -75,7 +85,7 @@ class VectorStoreService:
             vector=query_vector,
             namespace=namespace,
             top_k=top_k,
-            include_metadata=False,
+            include_metadata=include_metadata,
             filter=query_filter,
         )
 
@@ -86,6 +96,7 @@ class VectorStoreService:
             {
                 "id": match.id,
                 "score": match.score,
+                "metadata": dict(match.metadata) if hasattr(match, 'metadata') and match.metadata else {},
             }
             for match in results.matches
         ]

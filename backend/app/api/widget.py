@@ -21,6 +21,8 @@ class WidgetConfigResponse(BaseModel):
     show_suggestions: bool
     quick_actions: list[str] = []
     supported_languages: list[str] = []
+    website_type: str | None = None
+    enable_shopping: bool = False
 
 
 @router.get("/config/{site_id}", response_model=WidgetConfigResponse)
@@ -95,4 +97,6 @@ async def get_widget_config(
         show_suggestions=config.show_suggestions,
         quick_actions=quick_actions,
         supported_languages=supported_languages,
+        website_type=customer.website_type,
+        enable_shopping=config.enable_shopping,
     )

@@ -4,7 +4,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 
-from app.models import Customer, WidgetConfig, Domain, QueryLog, DocumentChunk
+from app.models import Customer, WidgetConfig, Domain, QueryLog, DocumentChunk, IngestionJob
 from app.services.embeddings import get_embedding_service
 from app.services.vector_store import get_vector_store_service
 from app.services.llm import get_llm_service
@@ -24,6 +24,32 @@ class QueryService:
         self.embedding_service = get_embedding_service()
         self.vector_store = get_vector_store_service()
         self.llm_service = get_llm_service()
+
+    async def _check_ingestion_status(self, db: AsyncSession, customer_id) -> str:
+        """
+        Check ingestion status for a customer.
+        Returns: "ready" | "processing" | "empty"
+        """
+        from sqlalchemy import func, case
+        result = await db.execute(
+            select(
+                func.count().label("total"),
+                func.sum(case((IngestionJob.status == "completed", 1), else_=0)).label("completed"),
+                func.sum(case((IngestionJob.status == "processing", 1), else_=0)).label("processing"),
+            ).where(IngestionJob.customer_id == customer_id)
+        )
+        row = result.one()
+        total = row.total or 0
+        completed = int(row.completed or 0)
+        processing = int(row.processing or 0)
+
+        if total == 0:
+            return "empty"
+        if completed > 0:
+            return "ready"
+        if processing > 0:
+            return "processing"
+        return "empty"
 
     async def process_query(
         self,
@@ -133,8 +159,21 @@ class QueryService:
         fused_ids = _reciprocal_rank_fusion(vector_ids, keyword_ids, k=60, top_n=fusion_top_n)
         logger.warning("[QUERY-TRACE] fused_results_ids=%s", fused_ids[:5])
 
-        # No-data detection: if both searches returned 0 results, LLM will use general knowledge
+        # No-data detection: check ingestion status for helpful messages
         if not fused_ids:
+            status = await self._check_ingestion_status(db, customer.id)
+            if status == "processing":
+                return {
+                    "answer": "I'm still learning about this website. Content is being indexed — please check back in a few minutes!",
+                    "suggestions": [],
+                    "sources": [],
+                }
+            elif status == "empty":
+                return {
+                    "answer": "I'm still setting up and don't have information about this website yet. Please check back soon!",
+                    "suggestions": [],
+                    "sources": [],
+                }
             logger.info("[QUERY-TRACE] No fused matches, LLM will attempt general knowledge answer site_id=%s", site_id)
 
         # Fetch full chunk content from PostgreSQL (defense-in-depth: filter by customer_id)
@@ -203,6 +242,7 @@ class QueryService:
             user_profile=user_profile,
             contact_info=contact_info,
             language=language,
+            website_type=customer.website_type,
         )
 
         # Calculate response time
@@ -325,6 +365,21 @@ class QueryService:
         keyword_ids = await self._keyword_search(db, customer.id, keyword_query, limit=initial_fetch_k)
 
         fused_ids = _reciprocal_rank_fusion(vector_ids, keyword_ids, k=60, top_n=fusion_top_n)
+
+        # No-data detection: check ingestion status for helpful messages
+        if not fused_ids:
+            status = await self._check_ingestion_status(db, customer.id)
+            if status == "processing":
+                msg = "I'm still learning about this website. Content is being indexed — please check back in a few minutes!"
+                yield {"type": "token", "data": msg}
+                yield {"type": "done", "answer": msg, "suggestions": [], "sources": []}
+                return
+            elif status == "empty":
+                msg = "I'm still setting up and don't have information about this website yet. Please check back soon!"
+                yield {"type": "token", "data": msg}
+                yield {"type": "done", "answer": msg, "suggestions": [], "sources": []}
+                return
+
         db_chunks = await self._fetch_chunks_by_vector_ids(db, fused_ids, customer.id)
 
         fused_rank = {vid: idx for idx, vid in enumerate(fused_ids)}
@@ -368,6 +423,7 @@ class QueryService:
             user_profile=user_profile,
             contact_info=contact_info,
             language=language,
+            website_type=customer.website_type,
         ):
             if event["type"] == "token":
                 yield event

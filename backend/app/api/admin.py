@@ -2,14 +2,14 @@ import uuid
 import csv
 import io
 import secrets
-from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import Integer, select, func, case, delete
 
 from app.database import get_db
-from app.models import Customer, Domain, WidgetConfig, IngestionJob, DocumentChunk, QueryLog, UserProfile
+from app.models import Customer, Domain, WidgetConfig, IngestionJob, DocumentChunk, QueryLog, UserProfile, Product
 from app.services.ingestion import get_ingestion_service
 from app.config import get_settings
 
@@ -207,6 +207,7 @@ class QueryLogsListResponse(BaseModel):
 @router.post("/customers", response_model=CreateCustomerResponse)
 async def create_customer(
     request: CreateCustomerRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(verify_admin_key),
 ):
@@ -250,6 +251,16 @@ async def create_customer(
 
     await db.commit()
 
+    # Queue auto-ingestion for allowed domains
+    if request.allowed_domains:
+        from app.services.auto_ingest import run_auto_ingestion
+        background_tasks.add_task(
+            run_auto_ingestion,
+            customer.id,
+            customer.site_id,
+            request.allowed_domains,
+        )
+
     # Send welcome email if contact_email provided
     if request.contact_email:
         from app.services.email import send_welcome_email
@@ -264,7 +275,7 @@ async def create_customer(
         id=str(customer.id),
         site_id=customer.site_id,
         api_key=api_key,
-        message="Customer created successfully",
+        message="Customer created successfully. Auto-ingestion queued for allowed domains.",
     )
 
 
@@ -1117,3 +1128,189 @@ async def trigger_backup_snapshot(
             status_code=500,
             detail={"code": "BACKUP_TIMEOUT", "message": "Backup timed out after 120s"},
         )
+
+
+# --- Product Management Endpoints ---
+
+class ProductInfo(BaseModel):
+    id: str
+    name: str
+    price: float | None
+    currency: str | None
+    brand: str | None
+    category: str | None
+    in_stock: bool
+    url: str | None
+    images: list[str] = []
+
+
+class ProductsListResponse(BaseModel):
+    products: list[ProductInfo]
+    total: int
+    page: int
+    page_size: int
+
+
+class ProductStatsResponse(BaseModel):
+    total_products: int
+    categories: list[str]
+    price_range: dict
+
+
+@router.get("/products/{site_id}", response_model=ProductsListResponse)
+async def list_products(
+    site_id: str,
+    page: int = 1,
+    page_size: int = 25,
+    search: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """Paginated list of products for a tenant."""
+    customer = await _resolve_customer(site_id, db)
+
+    import json as _json
+    base = select(Product).where(Product.customer_id == customer.id)
+    count_base = select(func.count()).select_from(Product).where(
+        Product.customer_id == customer.id
+    )
+
+    if search:
+        like = f"%{search}%"
+        base = base.where(Product.name.ilike(like))
+        count_base = count_base.where(Product.name.ilike(like))
+
+    total = (await db.execute(count_base)).scalar() or 0
+    offset = (page - 1) * page_size
+
+    rows = (
+        await db.execute(
+            base.order_by(Product.created_at.desc())
+            .offset(offset)
+            .limit(page_size)
+        )
+    ).scalars().all()
+
+    return ProductsListResponse(
+        products=[
+            ProductInfo(
+                id=str(p.id),
+                name=p.name,
+                price=p.price,
+                currency=p.currency,
+                brand=p.brand,
+                category=p.category,
+                in_stock=p.in_stock,
+                url=p.url,
+                images=_json.loads(p.images) if p.images else [],
+            )
+            for p in rows
+        ],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.delete("/products/{site_id}/{product_id}")
+async def delete_product(
+    site_id: str,
+    product_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """Delete a product."""
+    customer = await _resolve_customer(site_id, db)
+
+    result = await db.execute(
+        delete(Product).where(
+            Product.id == uuid.UUID(product_id),
+            Product.customer_id == customer.id,
+        )
+    )
+
+    if result.rowcount == 0:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "PRODUCT_NOT_FOUND", "message": "Product not found"},
+        )
+
+    await db.commit()
+    return {"message": "Product deleted successfully"}
+
+
+@router.get("/products/{site_id}/stats", response_model=ProductStatsResponse)
+async def get_product_stats(
+    site_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """Get product statistics for a tenant."""
+    customer = await _resolve_customer(site_id, db)
+
+    # Total products
+    total_result = await db.execute(
+        select(func.count()).select_from(Product).where(
+            Product.customer_id == customer.id,
+        )
+    )
+    total = total_result.scalar() or 0
+
+    # Categories
+    cat_result = await db.execute(
+        select(Product.category).where(
+            Product.customer_id == customer.id,
+            Product.category.isnot(None),
+        ).distinct()
+    )
+    categories = [row[0] for row in cat_result.fetchall() if row[0]]
+
+    # Price range
+    price_result = await db.execute(
+        select(
+            func.min(Product.price),
+            func.max(Product.price),
+        ).where(
+            Product.customer_id == customer.id,
+            Product.price.isnot(None),
+        )
+    )
+    row = price_result.one()
+    price_range = {
+        "min": float(row[0]) if row[0] is not None else None,
+        "max": float(row[1]) if row[1] is not None else None,
+    }
+
+    return ProductStatsResponse(
+        total_products=total,
+        categories=categories,
+        price_range=price_range,
+    )
+
+
+@router.post("/products/{site_id}/rescrape")
+async def rescrape_products(
+    site_id: str,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """Re-scrape all product pages for a tenant."""
+    customer = await _resolve_customer(site_id, db)
+
+    # Get allowed domains
+    domains_result = await db.execute(
+        select(Domain).where(Domain.customer_id == customer.id)
+    )
+    domains = [d.domain for d in domains_result.scalars().all()]
+
+    if not domains:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "NO_DOMAINS", "message": "No domains configured for this customer"},
+        )
+
+    from app.services.auto_ingest import run_auto_ingestion
+    background_tasks.add_task(run_auto_ingestion, customer.id, customer.site_id, domains)
+
+    return {"message": "Re-scrape queued for all domains"}

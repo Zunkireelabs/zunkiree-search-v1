@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 
-from app.models import Customer, IngestionJob, DocumentChunk
+from app.models import Customer, IngestionJob, DocumentChunk, Product
 from app.services.embeddings import get_embedding_service
 from app.services.vector_store import get_vector_store_service
 from app.utils.chunking import chunk_text
@@ -20,6 +20,110 @@ class IngestionService:
     def __init__(self):
         self.embedding_service = get_embedding_service()
         self.vector_store = get_vector_store_service()
+
+    async def _scrape_and_store_products(
+        self,
+        db: AsyncSession,
+        customer_id: uuid.UUID,
+        site_id: str,
+        html: str,
+        page_url: str,
+    ) -> int:
+        """Scrape products from HTML and upsert to database + vector store."""
+        import json
+        import hashlib
+        from app.utils.product_scraper import scrape_products
+
+        products = scrape_products(html, page_url)
+        if not products:
+            return 0
+
+        stored = 0
+        for product_data in products:
+            source_hash = hashlib.sha256(page_url.encode()).hexdigest()
+
+            # Check for existing product (dedup by source_hash + customer_id)
+            from sqlalchemy import select as sa_select
+            existing = await db.execute(
+                sa_select(Product).where(
+                    Product.customer_id == customer_id,
+                    Product.source_hash == source_hash,
+                )
+            )
+            existing_product = existing.scalar_one_or_none()
+
+            if existing_product:
+                # Update existing product
+                existing_product.name = product_data.name
+                existing_product.description = product_data.description
+                existing_product.price = product_data.price
+                existing_product.currency = product_data.currency
+                existing_product.original_price = product_data.original_price
+                existing_product.images = json.dumps(product_data.images)
+                existing_product.url = product_data.url
+                existing_product.sku = product_data.sku
+                existing_product.brand = product_data.brand
+                existing_product.category = product_data.category
+                existing_product.sizes = json.dumps(product_data.sizes)
+                existing_product.colors = json.dumps(product_data.colors)
+                existing_product.in_stock = product_data.in_stock
+                existing_product.tags = json.dumps(product_data.tags)
+                existing_product.scraped_at = datetime.utcnow()
+                product_id = existing_product.id
+            else:
+                # Create new product
+                product = Product(
+                    customer_id=customer_id,
+                    name=product_data.name,
+                    description=product_data.description,
+                    price=product_data.price,
+                    currency=product_data.currency,
+                    original_price=product_data.original_price,
+                    images=json.dumps(product_data.images),
+                    url=product_data.url,
+                    sku=product_data.sku,
+                    brand=product_data.brand,
+                    category=product_data.category,
+                    sizes=json.dumps(product_data.sizes),
+                    colors=json.dumps(product_data.colors),
+                    in_stock=product_data.in_stock,
+                    tags=json.dumps(product_data.tags),
+                    source_hash=source_hash,
+                    scraped_at=datetime.utcnow(),
+                )
+                db.add(product)
+                await db.flush()
+                product_id = product.id
+
+            # Embed product for vector search
+            embedding_text = product_data.embedding_text()
+            embeddings = await self.embedding_service.create_embeddings([embedding_text])
+            if embeddings:
+                vector_id = f"product_{product_id}"
+                await self.vector_store.upsert_vectors(
+                    [{
+                        "id": vector_id,
+                        "values": embeddings[0],
+                        "metadata": {
+                            "type": "product",
+                            "product_id": str(product_id),
+                            "site_id": site_id,
+                        },
+                    }],
+                    namespace=site_id,
+                )
+
+                # Update vector_id on product
+                if existing_product:
+                    existing_product.vector_id = vector_id
+                else:
+                    product.vector_id = vector_id
+
+            stored += 1
+
+        await db.commit()
+        logger.info("[PRODUCT-SCRAPE] Stored %d products from %s", stored, page_url)
+        return stored
 
     async def ingest_url(
         self,
@@ -57,10 +161,18 @@ class IngestionService:
         await db.refresh(job)
 
         try:
+            # Check if customer is ecommerce (for product scraping)
+            customer_result = await db.execute(
+                select(Customer).where(Customer.id == customer_id)
+            )
+            customer = customer_result.scalar_one_or_none()
+            is_ecommerce = customer and customer.website_type == "ecommerce"
+
             # Crawl URLs
             pages_to_process = [url]
             processed_urls = set()
             all_chunks = []
+            crawled_html_pages: list[tuple[str, str]] = []  # (url, html)
 
             while pages_to_process and len(processed_urls) < max_pages:
                 current_url = pages_to_process.pop(0)
@@ -73,6 +185,10 @@ class IngestionService:
                 try:
                     # Crawl the page
                     page_data = await crawl_url(current_url)
+
+                    # Store raw HTML for product scraping
+                    if page_data.get("html"):
+                        crawled_html_pages.append((current_url, page_data["html"]))
 
                     # Chunk the content
                     chunks = chunk_text(page_data["content"])
@@ -100,6 +216,20 @@ class IngestionService:
                     site_id=site_id,
                     chunks=all_chunks,
                 )
+
+            # Scrape products if ecommerce
+            if is_ecommerce and crawled_html_pages:
+                for page_url, html in crawled_html_pages:
+                    try:
+                        await self._scrape_and_store_products(
+                            db=db,
+                            customer_id=customer_id,
+                            site_id=site_id,
+                            html=html,
+                            page_url=page_url,
+                        )
+                    except Exception as e:
+                        logger.warning("[PRODUCT-SCRAPE] Error scraping %s: %s", page_url, e)
 
             # Update job status
             job.status = "completed"

@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.database import init_db
 from app.api import query_router, widget_router, admin_router, dashboard_router
+from app.api.cart import router as cart_router
 
 # --- Logging configuration (before anything else) ---
 logging.basicConfig(
@@ -57,6 +58,7 @@ app.include_router(query_router, prefix="/api/v1")
 app.include_router(widget_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
 app.include_router(dashboard_router, prefix="/api/v1")
+app.include_router(cart_router, prefix="/api/v1")
 
 
 @app.get("/")

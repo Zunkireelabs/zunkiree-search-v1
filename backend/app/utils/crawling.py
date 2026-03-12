@@ -30,6 +30,7 @@ async def crawl_url(url: str, timeout: int = 30) -> dict:
             "content": content,
             "url": url,
             "links": links,
+            "html": html,
         }
 
 

@@ -1,6 +1,9 @@
 import React, { useRef, useEffect, useState } from 'react'
 import { MarkdownContent } from './Markdown'
 import { Autocomplete } from './Autocomplete'
+import { ProductGrid } from './ProductGrid'
+import { CartView } from './CartView'
+import { CheckoutView } from './CheckoutView'
 
 interface Message {
   id: string
@@ -8,6 +11,10 @@ interface Message {
   content: string
   suggestions?: string[]
   isError?: boolean
+  products?: any[]
+  cartUpdate?: any
+  checkout?: any
+  toolStatus?: { name: string; status: 'running' | 'done' }
 }
 
 interface ExpandedPanelProps {
@@ -27,6 +34,9 @@ interface ExpandedPanelProps {
   supportedLanguages: string[]
   language: string
   onLanguageChange: (lang: string) => void
+  onAddToCart?: (productId: string, size?: string, color?: string) => void
+  onRemoveFromCart?: (index: number) => void
+  onCheckout?: () => void
 }
 
 const LANGUAGE_LABELS: Record<string, string> = {
@@ -62,6 +72,9 @@ export function ExpandedPanel({
   supportedLanguages,
   language,
   onLanguageChange,
+  onAddToCart,
+  onRemoveFromCart,
+  onCheckout,
 }: ExpandedPanelProps) {
   const messagesRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -269,6 +282,26 @@ export function ExpandedPanel({
                     message.content
                   )}
                 </div>
+                {message.toolStatus?.status === 'running' && (
+                  <div className="zk-tool-loading">
+                    <span className="zk-tool-loading__dot"></span>
+                    <span className="zk-tool-loading__text">
+                      {message.toolStatus.name === 'product_search' ? 'Searching products...' :
+                       message.toolStatus.name === 'add_to_cart' ? 'Adding to cart...' :
+                       message.toolStatus.name === 'checkout' ? 'Preparing checkout...' :
+                       'Working...'}
+                    </span>
+                  </div>
+                )}
+                {message.products && message.products.length > 0 && onAddToCart && (
+                  <ProductGrid products={message.products} onAddToCart={onAddToCart} />
+                )}
+                {message.cartUpdate && onRemoveFromCart && onCheckout && (
+                  <CartView cart={message.cartUpdate} onRemoveItem={onRemoveFromCart} onCheckout={onCheckout} />
+                )}
+                {message.checkout && (
+                  <CheckoutView checkout={message.checkout} brandName={brandName} />
+                )}
                 {message.suggestions && message.suggestions.length > 0 && (
                   <div className="zk-message__suggestions">
                     {message.suggestions.map((suggestion, idx) => (
