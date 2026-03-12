@@ -210,17 +210,6 @@ export function DockedPanel({
                   message.content
                 )}
               </div>
-              {message.toolStatus?.status === 'running' && (
-                <div className="zk-tool-loading">
-                  <span className="zk-tool-loading__dot"></span>
-                  <span className="zk-tool-loading__text">
-                    {message.toolStatus.name === 'product_search' ? 'Searching products...' :
-                     message.toolStatus.name === 'add_to_cart' ? 'Adding to cart...' :
-                     message.toolStatus.name === 'checkout' ? 'Preparing checkout...' :
-                     'Working...'}
-                  </span>
-                </div>
-              )}
               {message.products && message.products.length > 0 && onAddToCart && (
                 <ProductGrid products={message.products} onAddToCart={onAddToCart} />
               )}

@@ -94,7 +94,7 @@ def scrape_products(html: str, url: str) -> list[ProductData]:
     if not products:
         products.extend(_extract_shopify(html, url))
 
-    # Post-process: extract sizes/colors from WooCommerce form elements if missing
+    # Post-process: extract sizes/colors and gallery images
     if products:
         soup = BeautifulSoup(html, "html.parser")
         for p in products:
@@ -106,17 +106,18 @@ def scrape_products(html: str, url: str) -> list[ProductData]:
                 color_select = soup.find("select", {"id": re.compile(r"pa_color|pa_colours?", re.I)})
                 if color_select:
                     p.colors = [opt.text.strip() for opt in color_select.find_all("option") if opt.get("value")]
-            # Also extract all gallery images if only one image found
-            if len(p.images) <= 1:
-                gallery_imgs = soup.select(".woocommerce-product-gallery__image img, .product-gallery img")
-                if gallery_imgs:
-                    all_imgs = []
-                    for img_tag in gallery_imgs[:5]:
-                        src = img_tag.get("data-large_image") or img_tag.get("data-src") or img_tag.get("src", "")
-                        if src and "placeholder" not in src:
-                            all_imgs.append(urljoin(url, src))
-                    if all_imgs:
-                        p.images = all_imgs
+            # Always try to extract gallery images from actual img src attributes
+            # (static HTML exports use local paths in src, while data-* attrs keep original WP paths that may 404)
+            gallery_imgs = soup.select(".woocommerce-product-gallery__image img, .product-gallery img")
+            if gallery_imgs:
+                all_imgs = []
+                for img_tag in gallery_imgs[:5]:
+                    # Prefer src (works in static exports) over data-* attrs
+                    src = img_tag.get("src") or img_tag.get("data-src") or img_tag.get("data-large_image", "")
+                    if src and "placeholder" not in src:
+                        all_imgs.append(urljoin(url, src))
+                if all_imgs:
+                    p.images = all_imgs
 
     # Deduplicate by name
     unique = []
