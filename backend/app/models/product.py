@@ -19,6 +19,7 @@ class Product(Base):
     )
     name: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    details: Mapped[str | None] = mapped_column(Text, nullable=True)  # Rich details: fabric, fit, construction, care
     price: Mapped[float | None] = mapped_column(Float, nullable=True)
     currency: Mapped[str | None] = mapped_column(String(10), nullable=True)
     original_price: Mapped[float | None] = mapped_column(Float, nullable=True)

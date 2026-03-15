@@ -22,6 +22,7 @@ logger = logging.getLogger("zunkiree.product_scraper")
 class ProductData:
     name: str
     description: str = ""
+    details: str = ""  # Rich product details (fabric, fit, construction, care)
     price: float | None = None
     currency: str = ""
     original_price: float | None = None
@@ -40,6 +41,7 @@ class ProductData:
         return {
             "name": self.name,
             "description": self.description,
+            "details": self.details,
             "price": self.price,
             "currency": self.currency,
             "original_price": self.original_price,
@@ -63,7 +65,9 @@ class ProductData:
         if self.brand:
             parts.append(self.brand)
         if self.description:
-            parts.append(self.description[:500])
+            parts.append(self.description[:300])
+        if self.details:
+            parts.append(self.details[:700])
         if self.colors:
             parts.append(f"Colors: {', '.join(self.colors)}")
         if self.sizes:
@@ -94,7 +98,7 @@ def scrape_products(html: str, url: str) -> list[ProductData]:
     if not products:
         products.extend(_extract_shopify(html, url))
 
-    # Post-process: extract sizes/colors and gallery images
+    # Post-process: extract sizes/colors, gallery images, and rich details
     if products:
         soup = BeautifulSoup(html, "html.parser")
         for p in products:
@@ -106,18 +110,27 @@ def scrape_products(html: str, url: str) -> list[ProductData]:
                 color_select = soup.find("select", {"id": re.compile(r"pa_color|pa_colours?", re.I)})
                 if color_select:
                     p.colors = [opt.text.strip() for opt in color_select.find_all("option") if opt.get("value")]
+
             # Always try to extract gallery images from actual img src attributes
-            # (static HTML exports use local paths in src, while data-* attrs keep original WP paths that may 404)
             gallery_imgs = soup.select(".woocommerce-product-gallery__image img, .product-gallery img")
             if gallery_imgs:
                 all_imgs = []
                 for img_tag in gallery_imgs[:5]:
-                    # Prefer src (works in static exports) over data-* attrs
                     src = img_tag.get("src") or img_tag.get("data-src") or img_tag.get("data-large_image", "")
                     if src and "placeholder" not in src:
                         all_imgs.append(urljoin(url, src))
                 if all_imgs:
                     p.images = all_imgs
+
+            # Extract rich product details from page content
+            if not p.details:
+                p.details = _extract_rich_details(soup)
+
+            # If description is too short, try to get a better one
+            if len(p.description) < 50:
+                short_desc = _extract_short_description(soup)
+                if short_desc and len(short_desc) > len(p.description):
+                    p.description = short_desc
 
     # Deduplicate by name
     unique = []
@@ -131,19 +144,91 @@ def scrape_products(html: str, url: str) -> list[ProductData]:
     return unique
 
 
+def _extract_rich_details(soup: BeautifulSoup) -> str:
+    """
+    Extract rich product details from WooCommerce tab panels,
+    product descriptions, and additional info sections.
+    Returns a combined text with fabric, fit, construction, care details.
+    """
+    parts = []
+
+    # 1. Full description from WooCommerce tab panel
+    tab_panels = soup.select(".woocommerce-Tabs-panel--description, .woocommerce-Tabs-panel")
+    for panel in tab_panels:
+        text = panel.get_text(separator=" ", strip=True)
+        # Clean up WP CSS class artifacts that leak into text
+        text = re.sub(r'\[&[^\]]*\]', '', text)
+        text = re.sub(r'p\]:[\w-]+', '', text)
+        text = re.sub(r'\s+', ' ', text).strip()
+        if len(text) > 30 and text not in [p for p in parts]:
+            parts.append(text)
+
+    # 2. Product content / description div
+    for selector in [
+        ".product-description",
+        ".woocommerce-product-details__short-description",
+        ".product_description",
+        ".entry-content",
+        "[itemprop='description']",
+    ]:
+        el = soup.select_one(selector)
+        if el:
+            text = el.get_text(separator=" ", strip=True)
+            text = re.sub(r'\s+', ' ', text).strip()
+            if len(text) > 30 and text not in parts:
+                parts.append(text)
+
+    # 3. Additional information table (materials, dimensions, etc.)
+    additional = soup.select_one(".woocommerce-Tabs-panel--additional_information, .additional-information")
+    if additional:
+        rows = additional.select("tr")
+        info_parts = []
+        for row in rows:
+            th = row.select_one("th")
+            td = row.select_one("td")
+            if th and td:
+                label = th.get_text(strip=True)
+                value = td.get_text(separator=", ", strip=True)
+                if label and value:
+                    info_parts.append(f"{label}: {value}")
+        if info_parts:
+            parts.append("Additional info: " + "; ".join(info_parts))
+
+    # 4. Key features / bullet points
+    for selector in [".product-features", ".key-features", ".features-list"]:
+        el = soup.select_one(selector)
+        if el:
+            items = el.select("li")
+            if items:
+                features = [li.get_text(strip=True) for li in items if li.get_text(strip=True)]
+                if features:
+                    parts.append("Key features: " + "; ".join(features))
+
+    combined = " | ".join(parts)
+    # Limit to 2000 chars to avoid bloating the DB
+    return combined[:2000] if combined else ""
+
+
+def _extract_short_description(soup: BeautifulSoup) -> str:
+    """Extract the short product description."""
+    el = soup.select_one(".woocommerce-product-details__short-description")
+    if el:
+        text = el.get_text(separator=" ", strip=True)
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text[:500]
+    return ""
+
+
 def _parse_price(price_str: str | None) -> float | None:
     """Parse a price string to float."""
     if not price_str:
         return None
-    # Remove currency symbols and whitespace
     cleaned = re.sub(r'[^\d.,]', '', str(price_str))
     if not cleaned:
         return None
-    # Handle comma as thousands separator (1,299.00) or decimal (12,99)
     if ',' in cleaned and '.' in cleaned:
         cleaned = cleaned.replace(',', '')
     elif ',' in cleaned:
-        # Could be decimal or thousands — if 2 digits after comma, treat as decimal
         parts = cleaned.split(',')
         if len(parts[-1]) == 2:
             cleaned = cleaned.replace(',', '.')
@@ -166,7 +251,6 @@ def _extract_jsonld(html: str, url: str) -> list[ProductData]:
         except (json.JSONDecodeError, TypeError):
             continue
 
-        # Handle @graph arrays
         items = []
         if isinstance(data, list):
             items = data
@@ -190,7 +274,6 @@ def _extract_jsonld(html: str, url: str) -> list[ProductData]:
             if not name:
                 continue
 
-            # Extract price from offers
             price = None
             currency = ""
             original_price = None
@@ -202,7 +285,6 @@ def _extract_jsonld(html: str, url: str) -> list[ProductData]:
             if isinstance(offers, dict):
                 price = _parse_price(offers.get("price"))
                 currency = offers.get("priceCurrency", "")
-                # WooCommerce uses nested priceSpecification
                 if price is None:
                     price_spec = offers.get("priceSpecification", {})
                     if isinstance(price_spec, list):
@@ -215,7 +297,6 @@ def _extract_jsonld(html: str, url: str) -> list[ProductData]:
                 if "OutOfStock" in str(availability):
                     in_stock = False
 
-            # Images — resolve relative URLs to absolute
             images = []
             img = item.get("image", [])
             if isinstance(img, str):
@@ -225,7 +306,6 @@ def _extract_jsonld(html: str, url: str) -> list[ProductData]:
                 images = [i for i in images if i]
             images = [urljoin(url, i) for i in images]
 
-            # Brand
             brand = ""
             brand_data = item.get("brand", {})
             if isinstance(brand_data, dict):
@@ -294,7 +374,6 @@ def _extract_shopify(html: str, url: str) -> list[ProductData]:
     """Extract products from Shopify's embedded product JSON."""
     products = []
 
-    # Look for Shopify product JSON in script tags
     patterns = [
         re.compile(r'var\s+meta\s*=\s*(\{.*?"product".*?\});', re.DOTALL),
         re.compile(r'"product"\s*:\s*(\{[^;]+\})\s*[,;]', re.DOTALL),
@@ -314,7 +393,6 @@ def _extract_shopify(html: str, url: str) -> list[ProductData]:
             if not name:
                 continue
 
-            # Extract variants for sizes/colors
             sizes = set()
             colors = set()
             price = None
@@ -324,7 +402,6 @@ def _extract_shopify(html: str, url: str) -> list[ProductData]:
                         price = _parse_price(variant.get("price"))
                     opt1 = variant.get("option1", "")
                     opt2 = variant.get("option2", "")
-                    # Heuristic: sizes are usually S/M/L/XL or numeric
                     for opt in [opt1, opt2]:
                         if opt and re.match(r'^(XXS|XS|S|M|L|XL|XXL|XXXL|\d+)$', str(opt), re.IGNORECASE):
                             sizes.add(str(opt))

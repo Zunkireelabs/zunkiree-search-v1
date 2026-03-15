@@ -56,6 +56,7 @@ class IngestionService:
                 # Update existing product
                 existing_product.name = product_data.name
                 existing_product.description = product_data.description
+                existing_product.details = product_data.details
                 existing_product.price = product_data.price
                 existing_product.currency = product_data.currency
                 existing_product.original_price = product_data.original_price
@@ -76,6 +77,7 @@ class IngestionService:
                     customer_id=customer_id,
                     name=product_data.name,
                     description=product_data.description,
+                    details=product_data.details,
                     price=product_data.price,
                     currency=product_data.currency,
                     original_price=product_data.original_price,

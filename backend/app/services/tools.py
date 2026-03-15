@@ -364,6 +364,7 @@ def _product_to_dict(p: Product) -> dict:
         "id": str(p.id),
         "name": p.name,
         "description": (p.description or "")[:200],
+        "details": (p.details or "")[:800],
         "price": p.price,
         "currency": p.currency or "",
         "original_price": p.original_price,
