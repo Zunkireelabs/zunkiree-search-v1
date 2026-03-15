@@ -27,6 +27,18 @@ async def get_cart(session_id: str):
     return cart.to_dict()
 
 
+@router.get("/{session_id}/count")
+async def get_cart_count(session_id: str):
+    """Lightweight endpoint for cart badge."""
+    cart_service = get_cart_service()
+    cart = cart_service.get_cart(session_id)
+    return {
+        "item_count": cart.item_count,
+        "subtotal": round(cart.subtotal, 2),
+        "currency": cart.currency,
+    }
+
+
 @router.post("/{session_id}/add")
 async def add_to_cart(
     session_id: str,
@@ -80,3 +92,20 @@ async def remove_from_cart(session_id: str, item_index: int):
     cart_service = get_cart_service()
     cart = cart_service.remove_item(session_id, item_index)
     return cart.to_dict()
+
+
+@router.post("/{session_id}/checkout")
+async def checkout(session_id: str):
+    """Return cart summary for checkout redirect."""
+    cart_service = get_cart_service()
+    cart = cart_service.get_cart(session_id)
+
+    if not cart.items:
+        raise HTTPException(status_code=400, detail="Cart is empty")
+
+    return {
+        "items": [item.to_dict() for item in cart.items],
+        "subtotal": round(cart.subtotal, 2),
+        "currency": cart.currency,
+        "item_count": cart.item_count,
+    }

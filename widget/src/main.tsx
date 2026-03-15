@@ -8,16 +8,24 @@ function initWidget() {
   const siteId = scriptTag?.getAttribute('data-site-id') || 'test'
   const apiUrl = scriptTag?.getAttribute('data-api-url') || 'http://localhost:8000'
 
-  // Create root element for widget (always append to body for floating)
-  let rootElement = document.getElementById('zunkiree-widget-root')
-  if (!rootElement) {
-    rootElement = document.createElement('div')
-    rootElement.id = 'zunkiree-widget-root'
-    document.body.appendChild(rootElement)
+  // Create host element
+  let hostElement = document.getElementById('zunkiree-widget-root')
+  if (!hostElement) {
+    hostElement = document.createElement('div')
+    hostElement.id = 'zunkiree-widget-root'
+    document.body.appendChild(hostElement)
   }
 
-  // Render widget
-  const root = ReactDOM.createRoot(rootElement)
+  // Attach Shadow DOM for complete style isolation
+  const shadow = hostElement.attachShadow({ mode: 'open' })
+
+  // Create React mount point inside shadow
+  const reactRoot = document.createElement('div')
+  reactRoot.id = 'zk-shadow-root'
+  shadow.appendChild(reactRoot)
+
+  // Render widget inside shadow DOM
+  const root = ReactDOM.createRoot(reactRoot)
   root.render(
     <React.StrictMode>
       <Widget siteId={siteId} apiUrl={apiUrl} />

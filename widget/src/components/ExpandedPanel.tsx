@@ -34,7 +34,7 @@ interface ExpandedPanelProps {
   supportedLanguages: string[]
   language: string
   onLanguageChange: (lang: string) => void
-  onAddToCart?: (productId: string, size?: string, color?: string) => void
+  onAddToCart?: (productId: string, size?: string, color?: string) => Promise<void>
   onRemoveFromCart?: (index: number) => void
   onCheckout?: () => void
 }

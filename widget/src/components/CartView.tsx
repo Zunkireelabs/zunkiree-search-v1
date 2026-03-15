@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 export interface CartItem {
   product_id: string
   name: string
@@ -23,6 +25,12 @@ interface CartViewProps {
   onCheckout: () => void
 }
 
+function CartThumb({ src, alt }: { src: string; alt: string }) {
+  const [error, setError] = useState(false)
+  if (!src || error) return null
+  return <img src={src} alt={alt} className="zk-cart-view__thumb" onError={() => setError(true)} />
+}
+
 export function CartView({ cart, onRemoveItem, onCheckout }: CartViewProps) {
   const formatPrice = (price: number, currency: string) => {
     const symbols: Record<string, string> = { USD: '$', EUR: '€', GBP: '£', NPR: 'Rs', INR: '₹' }
@@ -43,9 +51,7 @@ export function CartView({ cart, onRemoveItem, onCheckout }: CartViewProps) {
       <div className="zk-cart-view__items">
         {cart.items.map((item, index) => (
           <div key={`${item.product_id}-${index}`} className="zk-cart-view__item">
-            {item.image && (
-              <img src={item.image} alt={item.name} className="zk-cart-view__thumb" />
-            )}
+            <CartThumb src={item.image} alt={item.name} />
             <div className="zk-cart-view__item-info">
               <div className="zk-cart-view__item-name">{item.name}</div>
               <div className="zk-cart-view__item-details">

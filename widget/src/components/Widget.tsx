@@ -209,22 +209,18 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
                 )
               }
             } else if (event.type === 'products') {
-              // Product search results
               setMessages(prev =>
                 prev.map(m => m.id === assistantId ? { ...m, products: event.data } : m)
               )
             } else if (event.type === 'cart_update') {
-              // Cart state update
               setMessages(prev =>
                 prev.map(m => m.id === assistantId ? { ...m, cartUpdate: event.data } : m)
               )
             } else if (event.type === 'checkout') {
-              // Checkout data
               setMessages(prev =>
                 prev.map(m => m.id === assistantId ? { ...m, checkout: event.data } : m)
               )
             } else if (event.type === 'tool_call') {
-              // Tool execution status
               if (!addedMessage) {
                 addedMessage = true
                 setMessages(prev => [...prev, {
@@ -275,26 +271,59 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     }
   }
 
-  const handleAddToCart = (productId: string, size?: string, color?: string) => {
-    let msg = `Add product ${productId} to my cart`
-    if (size) msg += `, size ${size}`
-    if (color) msg += `, color ${color}`
-    setInput(msg)
-    // Auto-submit
-    const fakeEvent = { preventDefault: () => {} } as React.FormEvent
-    setTimeout(() => handleSubmit(fakeEvent), 50)
+  // ── Direct REST cart operations (no LLM round-trip) ──
+
+  const handleAddToCart = async (productId: string, size?: string, color?: string): Promise<void> => {
+    try {
+      const res = await fetch(`${apiUrl}/api/v1/cart/${sessionId}/add`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ site_id: siteId, product_id: productId, quantity: 1, size: size || '', color: color || '' }),
+      })
+      if (!res.ok) throw new Error('Failed to add to cart')
+      const cart: CartState = await res.json()
+      // Append a cart update as an assistant message so it renders inline
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: `Added to cart (${cart.item_count} item${cart.item_count !== 1 ? 's' : ''})`,
+        cartUpdate: cart,
+      }])
+    } catch (err) {
+      console.error('[Zunkiree] Add to cart error:', err)
+    }
   }
 
-  const handleRemoveFromCart = (index: number) => {
-    setInput(`Remove item ${index + 1} from my cart`)
-    const fakeEvent = { preventDefault: () => {} } as React.FormEvent
-    setTimeout(() => handleSubmit(fakeEvent), 50)
+  const handleRemoveFromCart = async (index: number) => {
+    try {
+      const res = await fetch(`${apiUrl}/api/v1/cart/${sessionId}/${index}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to remove from cart')
+      const cart: CartState = await res.json()
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: cart.item_count > 0 ? `Item removed (${cart.item_count} remaining)` : 'Cart is now empty',
+        cartUpdate: cart,
+      }])
+    } catch (err) {
+      console.error('[Zunkiree] Remove from cart error:', err)
+    }
   }
 
-  const handleCheckout = () => {
-    setInput('Checkout')
-    const fakeEvent = { preventDefault: () => {} } as React.FormEvent
-    setTimeout(() => handleSubmit(fakeEvent), 50)
+  const handleCheckout = async () => {
+    try {
+      const res = await fetch(`${apiUrl}/api/v1/cart/${sessionId}/checkout`, { method: 'POST' })
+      if (!res.ok) throw new Error('Failed to checkout')
+      const checkout: CheckoutData = await res.json()
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: 'Here are your items ready for checkout:',
+        checkout,
+      }])
+    } catch (err) {
+      console.error('[Zunkiree] Checkout error:', err)
+    }
   }
 
   const handleSuggestionClick = (suggestion: string) => {
@@ -376,27 +405,31 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       )}
 
       {mode === 'right-docked' && dockPortalTarget && createPortal(
-        <DockedPanel
-          brandName={brandName}
-          messages={messages}
-          suggestions={getSuggestions()}
-          input={input}
-          isLoading={isLoading}
-          onInputChange={setInput}
-          onSubmit={handleSubmit}
-          onSuggestionClick={handleSuggestionClick}
-          onMinimize={handleMinimize}
-          onUndock={handleUndock}
-          placeholder={placeholder}
-          apiUrl={apiUrl}
-          siteId={siteId}
-          supportedLanguages={config?.supported_languages || []}
-          language={language}
-          onLanguageChange={setLanguage}
-          onAddToCart={handleAddToCart}
-          onRemoveFromCart={handleRemoveFromCart}
-          onCheckout={handleCheckout}
-        />,
+        <>
+          {/* Inject styles into dock portal (outside shadow DOM) */}
+          <style>{styles(primaryColor)}</style>
+          <DockedPanel
+            brandName={brandName}
+            messages={messages}
+            suggestions={getSuggestions()}
+            input={input}
+            isLoading={isLoading}
+            onInputChange={setInput}
+            onSubmit={handleSubmit}
+            onSuggestionClick={handleSuggestionClick}
+            onMinimize={handleMinimize}
+            onUndock={handleUndock}
+            placeholder={placeholder}
+            apiUrl={apiUrl}
+            siteId={siteId}
+            supportedLanguages={config?.supported_languages || []}
+            language={language}
+            onLanguageChange={setLanguage}
+            onAddToCart={handleAddToCart}
+            onRemoveFromCart={handleRemoveFromCart}
+            onCheckout={handleCheckout}
+          />
+        </>,
         dockPortalTarget,
       )}
     </div>

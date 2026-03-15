@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 
 export interface Product {
   id: string
@@ -18,12 +18,24 @@ export interface Product {
 
 interface ProductCardProps {
   product: Product
-  onAddToCart: (productId: string, size?: string, color?: string) => void
+  onAddToCart: (productId: string, size?: string, color?: string) => Promise<void>
 }
 
+const PlaceholderImage = () => (
+  <div className="zk-product-card__image zk-product-card__image--placeholder">
+    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="1.5">
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="8.5" cy="8.5" r="1.5" />
+      <path d="M21 15l-5-5L5 21" />
+    </svg>
+  </div>
+)
+
 export function ProductCard({ product, onAddToCart }: ProductCardProps) {
-  const [selectedSize, setSelectedSize] = React.useState(product.sizes[0] || '')
-  const [selectedColor, setSelectedColor] = React.useState(product.colors[0] || '')
+  const [selectedSize, setSelectedSize] = useState(product.sizes[0] || '')
+  const [selectedColor, setSelectedColor] = useState(product.colors[0] || '')
+  const [imgError, setImgError] = useState(false)
+  const [adding, setAdding] = useState(false)
 
   const formatPrice = (price: number | null, currency: string) => {
     if (price === null) return ''
@@ -34,22 +46,31 @@ export function ProductCard({ product, onAddToCart }: ProductCardProps) {
 
   const imageUrl = product.images[0] || ''
 
+  const handleAdd = async () => {
+    if (adding) return
+    setAdding(true)
+    try {
+      await onAddToCart(product.id, selectedSize, selectedColor)
+    } finally {
+      setAdding(false)
+    }
+  }
+
   return (
     <div className="zk-product-card">
-      {imageUrl ? (
+      {imageUrl && !imgError ? (
         <div className="zk-product-card__image">
-          <img src={imageUrl} alt={product.name} loading="lazy" />
+          <img
+            src={imageUrl}
+            alt={product.name}
+            loading="lazy"
+            onError={() => setImgError(true)}
+          />
           {!product.in_stock && <span className="zk-product-card__badge zk-product-card__badge--out">Out of Stock</span>}
           {product.in_stock && <span className="zk-product-card__badge zk-product-card__badge--in">In Stock</span>}
         </div>
       ) : (
-        <div className="zk-product-card__image zk-product-card__image--placeholder">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="1.5">
-            <rect x="3" y="3" width="18" height="18" rx="2" />
-            <circle cx="8.5" cy="8.5" r="1.5" />
-            <path d="M21 15l-5-5L5 21" />
-          </svg>
-        </div>
+        <PlaceholderImage />
       )}
       <div className="zk-product-card__info">
         <div className="zk-product-card__name">{product.name}</div>
@@ -102,9 +123,10 @@ export function ProductCard({ product, onAddToCart }: ProductCardProps) {
             <button
               type="button"
               className="zk-product-card__add-btn"
-              onClick={() => onAddToCart(product.id, selectedSize, selectedColor)}
+              onClick={handleAdd}
+              disabled={adding}
             >
-              Add to Cart
+              {adding ? 'Adding...' : 'Add to Cart'}
             </button>
           ) : (
             <button type="button" className="zk-product-card__add-btn" disabled>

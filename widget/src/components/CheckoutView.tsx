@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 interface CheckoutItem {
   name: string
   price: number
@@ -21,6 +23,12 @@ interface CheckoutViewProps {
   brandName: string
 }
 
+function CheckoutThumb({ src, alt }: { src: string; alt: string }) {
+  const [error, setError] = useState(false)
+  if (!src || error) return null
+  return <img src={src} alt={alt} className="zk-checkout-view__thumb" onError={() => setError(true)} />
+}
+
 export function CheckoutView({ checkout, brandName }: CheckoutViewProps) {
   const formatPrice = (price: number, currency: string) => {
     const symbols: Record<string, string> = { USD: '$', EUR: '€', GBP: '£', NPR: 'Rs', INR: '₹' }
@@ -39,7 +47,7 @@ export function CheckoutView({ checkout, brandName }: CheckoutViewProps) {
         {checkout.items.map((item, index) => (
           <div key={index} className="zk-checkout-view__item">
             <div className="zk-checkout-view__item-info">
-              {item.image && <img src={item.image} alt={item.name} className="zk-checkout-view__thumb" />}
+              <CheckoutThumb src={item.image} alt={item.name} />
               <div>
                 <div className="zk-checkout-view__item-name">{item.name}</div>
                 <div className="zk-checkout-view__item-details">

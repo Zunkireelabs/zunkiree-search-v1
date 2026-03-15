@@ -3,7 +3,7 @@ import { ProductCard, Product } from './ProductCard'
 
 interface ProductGridProps {
   products: Product[]
-  onAddToCart: (productId: string, size?: string, color?: string) => void
+  onAddToCart: (productId: string, size?: string, color?: string) => Promise<void>
 }
 
 export function ProductGrid({ products, onAddToCart }: ProductGridProps) {
