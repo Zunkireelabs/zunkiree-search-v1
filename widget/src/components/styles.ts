@@ -1,29 +1,11 @@
 export const styles = (primaryColor: string) => `
-  /* ===== Reset: neutralize host-site CSS on widget elements ===== */
-  #zunkiree-widget-root,
-  #zunkiree-widget-root *:not(svg):not(svg *),
-  .zk-collapsed-bar,
-  .zk-collapsed-bar *:not(svg):not(svg *),
-  .zk-expanded-panel,
-  .zk-expanded-panel *:not(svg):not(svg *),
-  .zk-backdrop,
-  .zk-docked,
-  .zk-docked *:not(svg):not(svg *),
-  .zk-fab {
-    all: revert;
-    box-sizing: border-box;
+  /* ===== Reset ===== */
+  .zk-collapsed-bar *,
+  .zk-expanded-panel *,
+  .zk-docked * {
+    box-sizing: border-box !important;
     margin: 0;
     padding: 0;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    line-height: normal;
-    letter-spacing: normal;
-    text-transform: none;
-    text-decoration: none;
-    border: none;
-    outline: none;
-    list-style: none;
-    float: none;
-    clear: none;
   }
 
   /* ===== Collapsed Bar ===== */
@@ -31,32 +13,33 @@ export const styles = (primaryColor: string) => `
     position: fixed !important;
     bottom: 24px !important;
     left: 50% !important;
+    right: auto !important;
     transform: translateX(-50%) translateY(20px) !important;
-    opacity: 0 !important;
+    opacity: 0;
     width: 720px !important;
     max-width: 720px !important;
+    min-width: 0 !important;
     z-index: 9999 !important;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-    transition: transform 180ms ease-out, opacity 180ms ease-out !important;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    transition: transform 180ms ease-out, opacity 180ms ease-out;
+    box-sizing: border-box !important;
+    float: none !important;
     display: block !important;
   }
 
   .zk-collapsed-bar--visible {
     transform: translateX(-50%) translateY(0) !important;
-    opacity: 1 !important;
+    opacity: 1;
   }
 
   /* Card container - glassmorphic */
   .zk-collapsed-bar__card {
-    position: relative !important;
-    display: block !important;
-    background: linear-gradient(180deg, #2067fb 0%, #000b22 140.34%) !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
-    border-radius: 20px !important;
-    padding: 20px !important;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.06) !important;
-    width: auto !important;
-    max-width: none !important;
+    position: relative;
+    background: linear-gradient(180deg, #2067fb 0%, #000b22 140.34%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 20px;
+    padding: 20px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.06);
   }
 
   /* Minimize button - top right */
