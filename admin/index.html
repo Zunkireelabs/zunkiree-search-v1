@@ -778,6 +778,7 @@
         if (res.ok) {
           showAlert(`Customer created! Site ID: ${data.site_id} | API Key: ${data.api_key}`, 'success');
           e.target.reset();
+          loadTenants();
         } else {
           showAlert(data.detail?.message || 'Failed to create customer', 'error');
         }

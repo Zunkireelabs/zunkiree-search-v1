@@ -129,9 +129,7 @@ export const styles = (primaryColor: string) => `
   .zk-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.04);
-    backdrop-filter: blur(2px);
-    -webkit-backdrop-filter: blur(2px);
+    background: transparent;
     z-index: 9998;
     animation: zk-backdrop-fade 200ms ease-out both;
   }
@@ -141,16 +139,17 @@ export const styles = (primaryColor: string) => `
     to { opacity: 1; }
   }
 
-  /* ===== Expanded Panel ===== */
+  /* ===== Expanded Panel (Desktop) ===== */
   .zk-expanded-panel {
     position: fixed;
     bottom: 24px;
     left: 50%;
-    width: min(1000px, 90%);
-    height: min(80vh, 760px);
-    background: linear-gradient(248.35deg, #86cdff -11.3%, #f4f4fe 16.44%, #fff 28.3%, #fff 72.47%, #ebeafe 89.69%, #bec6f7 101.94%);
-    border-radius: 24px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
+    transform: translateX(-50%);
+    width: min(900px, 92%);
+    height: min(82vh, 740px);
+    background: #ffffff;
+    border-radius: 20px;
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.04);
     z-index: 9999;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     display: flex;
@@ -161,7 +160,7 @@ export const styles = (primaryColor: string) => `
 
   @keyframes zk-panel-slide-up {
     from {
-      transform: translateX(-50%) translateY(100%);
+      transform: translateX(-50%) translateY(20px);
       opacity: 0;
     }
     to {
@@ -170,23 +169,24 @@ export const styles = (primaryColor: string) => `
     }
   }
 
-  /* Header - 64px */
+  /* Header */
   .zk-expanded-panel__header {
     display: flex;
     align-items: center;
-    height: 64px;
+    height: 56px;
     padding: 0 24px;
-    background: white;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    background: #fff;
+    border-bottom: 1px solid #f0f0f0;
     flex-shrink: 0;
-    border-radius: 24px 24px 0 0;
+    border-radius: 20px 20px 0 0;
   }
 
   .zk-expanded-panel__title {
     flex: 1;
     font-weight: 600;
-    font-size: 16px;
+    font-size: 15px;
     color: #111827;
+    letter-spacing: 0.01em;
   }
 
   /* ===== Shared Header Controls ===== */
@@ -257,16 +257,16 @@ export const styles = (primaryColor: string) => `
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 40px 32px;
+    padding: 32px 20px;
   }
 
   .zk-expanded-panel__hero-title {
-    font-size: 30px;
+    font-size: 20px;
     font-weight: 600;
     color: #111827;
     text-align: center;
-    margin-bottom: 24px;
-    line-height: 1.2;
+    margin-bottom: 16px;
+    line-height: 1.3;
   }
 
   .zk-expanded-panel__hero-chips {
@@ -283,16 +283,16 @@ export const styles = (primaryColor: string) => `
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: contain;
     touch-action: pan-y;
-    padding: 32px;
+    padding: 24px 32px;
     min-height: 0;
   }
 
   .zk-expanded-panel__messages-inner {
-    max-width: 720px;
+    max-width: 680px;
     margin: 0 auto;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 14px;
   }
 
   .zk-expanded-panel__messages::-webkit-scrollbar {
@@ -319,16 +319,23 @@ export const styles = (primaryColor: string) => `
 
   /* Input Section - sticky bottom */
   .zk-expanded-panel__input {
-    padding: 16px 24px;
-    border-top: 1px solid rgba(0, 0, 0, 0.06);
+    padding: 12px 32px;
+    border-top: 1px solid #f0f0f0;
     flex-shrink: 0;
+    background: #fff;
+  }
+
+  .zk-expanded-panel__input > * {
+    max-width: 680px;
+    margin-left: auto;
+    margin-right: auto;
   }
 
   /* ===== Docked Panel (inside #zk-right-dock) ===== */
   .zk-docked {
     width: 100%;
     height: 100%;
-    background: linear-gradient(248.35deg, #86cdff -11.3%, #f4f4fe 16.44%, #fff 28.3%, #fff 72.47%, #ebeafe 89.69%, #bec6f7 101.94%);
+    background: #ffffff;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     display: flex;
     flex-direction: column;
@@ -471,22 +478,23 @@ export const styles = (primaryColor: string) => `
   }
 
   .zk-message-content {
-    padding: 16px 18px;
-    border-radius: 16px;
-    font-size: 15px;
+    padding: 10px 14px;
+    border-radius: 14px;
+    font-size: 14px;
     line-height: 1.6;
   }
 
   .zk-message-user .zk-message-content {
-    background: ${primaryColor}12;
+    background: #f3f4f6;
     color: #1f2937;
     border-bottom-right-radius: 4px;
   }
 
   .zk-message-assistant .zk-message-content {
-    background: #f8f9fa;
-    color: #1f2937;
-    border-bottom-left-radius: 4px;
+    background: transparent;
+    color: #374151;
+    padding: 4px 0;
+    border-radius: 0;
   }
 
   .zk-message__suggestions {
@@ -632,82 +640,25 @@ export const styles = (primaryColor: string) => `
     40% { transform: scale(1); }
   }
 
-  /* ===== Input Container with Animated Border ===== */
-  @property --border-angle {
-    syntax: '<angle>';
-    initial-value: 0deg;
-    inherits: false;
-  }
-
+  /* ===== Input Container (clean, minimal) ===== */
   .zk-input-container {
     position: relative;
-    background: #e5e7eb;
+    background: #f5f5f5;
     border-radius: 24px;
-    padding: 1.5px;
-    isolation: isolate;
+    border: 1px solid #e5e7eb;
+    transition: border-color 200ms;
   }
 
-  .zk-input-container::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: 24px;
-    padding: 1.5px;
-    background: conic-gradient(
-      from var(--border-angle),
-      transparent 0%,
-      transparent 6%,
-      #3b82f6 8%,
-      #06b6d4 10%,
-      #84cc16 12%,
-      #eab308 14%,
-      transparent 16%,
-      transparent 100%
-    );
-    -webkit-mask:
-      linear-gradient(#fff 0 0) content-box,
-      linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor;
-    mask:
-      linear-gradient(#fff 0 0) content-box,
-      linear-gradient(#fff 0 0);
-    mask-composite: exclude;
-    animation: rotate-border 4s linear infinite;
-  }
-
-  .zk-input-container::after {
-    content: '';
-    position: absolute;
-    inset: -2px;
-    border-radius: 26px;
-    background: conic-gradient(
-      from var(--border-angle),
-      transparent 0%,
-      transparent 6%,
-      #3b82f6 8%,
-      #06b6d4 10%,
-      #84cc16 12%,
-      #eab308 14%,
-      transparent 16%,
-      transparent 100%
-    );
-    filter: blur(6px);
-    opacity: 0.4;
-    z-index: -1;
-    animation: rotate-border 4s linear infinite;
-  }
-
-  @keyframes rotate-border {
-    0% { --border-angle: 0deg; }
-    100% { --border-angle: 360deg; }
+  .zk-input-container:focus-within {
+    border-color: #d1d5db;
   }
 
   .zk-input-inner {
     position: relative;
-    background: white;
+    background: transparent;
     border-radius: 22px;
-    padding: 10px 16px;
-    min-height: 44px;
+    padding: 8px 14px;
+    min-height: 40px;
     display: flex;
     align-items: flex-end;
   }
@@ -913,20 +864,20 @@ export const styles = (primaryColor: string) => `
     -webkit-backdrop-filter: none !important;
   }
 
-  /* --- Expanded panel --- */
+  /* --- Expanded panel (mobile: Swap-style phone widget) --- */
   .zk-mobile .zk-expanded-panel {
     position: fixed !important;
     bottom: 8px !important;
-    left: 8px !important;
     right: 8px !important;
+    left: auto !important;
     top: auto !important;
-    width: auto !important;
-    height: 60vh !important;
-    max-height: none !important;
-    transform: translateY(0) !important;
+    width: min(420px, calc(100vw - 16px)) !important;
+    height: 70vh !important;
+    max-height: 700px !important;
+    transform: none !important;
     border-radius: 20px !important;
     background: #fff !important;
-    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.18) !important;
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.15) !important;
     display: flex !important;
     flex-direction: column !important;
     overflow: hidden !important;
@@ -1020,14 +971,15 @@ export const styles = (primaryColor: string) => `
   .zk-mobile .zk-expanded-panel__messages {
     flex: 1 1 0% !important;
     min-height: 0 !important;
-    padding: 12px 10px !important;
+    padding: 14px 14px !important;
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: contain;
   }
 
   .zk-mobile .zk-expanded-panel__messages-inner {
-    gap: 8px !important;
+    gap: 10px !important;
+    max-width: none !important;
   }
 
   .zk-mobile .zk-message {
@@ -1066,10 +1018,14 @@ export const styles = (primaryColor: string) => `
   /* --- Input area --- */
   .zk-mobile .zk-expanded-panel__input {
     flex-shrink: 0 !important;
-    padding: 8px 10px !important;
-    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important;
+    padding: 10px 14px !important;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)) !important;
     background: #fff !important;
-    border-top: 1px solid #e5e7eb !important;
+    border-top: 1px solid #f0f0f0 !important;
+  }
+
+  .zk-mobile .zk-expanded-panel__input > * {
+    max-width: none !important;
   }
 
   .zk-mobile .zk-input-container {
@@ -1167,7 +1123,7 @@ export const styles = (primaryColor: string) => `
   /* ===== iOS height ===== */
   @supports (-webkit-touch-callout: none) {
     .zk-mobile .zk-expanded-panel {
-      height: 60dvh !important;
+      height: 70dvh !important;
     }
   }
 
@@ -1213,40 +1169,29 @@ export const styles = (primaryColor: string) => `
   }
 
   .zk-product-grid__scroll {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
     gap: 12px;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: 4px;
-    scrollbar-width: none;
-  }
-
-  .zk-product-grid__scroll::-webkit-scrollbar {
-    display: none;
   }
 
   /* ===== Product Card ===== */
   .zk-product-card {
-    flex-shrink: 0;
-    width: 220px;
-    scroll-snap-align: start;
     background: white;
-    border: 1px solid #e5e7eb;
-    border-radius: 12px;
+    border: 1px solid #f0f0f0;
+    border-radius: 10px;
     overflow: hidden;
     transition: box-shadow 150ms;
   }
 
   .zk-product-card:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   }
 
   .zk-product-card__image {
     position: relative;
     width: 100%;
-    height: 160px;
-    background: #f9fafb;
+    height: 200px;
+    background: #f5f5f5;
     overflow: hidden;
   }
 
@@ -1660,12 +1605,13 @@ export const styles = (primaryColor: string) => `
   }
 
   /* ===== Mobile: Product/Cart/Checkout ===== */
-  .zk-mobile .zk-product-card {
-    width: 180px;
+  .zk-mobile .zk-product-grid__scroll {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
   }
 
   .zk-mobile .zk-product-card__image {
-    height: 120px;
+    height: 160px;
   }
 
   .zk-mobile .zk-product-card__name {
@@ -1728,9 +1674,8 @@ export const styles = (primaryColor: string) => `
       transform: translateX(-50%) translateY(0);
     }
 
-    /* Mobile uses left: 8px, no horizontal transform needed */
     .zk-mobile .zk-expanded-panel {
-      transform: translateY(0);
+      transform: none;
     }
 
     .zk-message {
