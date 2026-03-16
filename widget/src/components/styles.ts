@@ -1,11 +1,18 @@
 export const styles = (primaryColor: string) => `
-  /* ===== Reset ===== */
+  /* ===== Reset: nuke all host-site CSS on widget elements ===== */
+  #zunkiree-widget-root,
+  #zunkiree-widget-root *,
+  .zk-collapsed-bar,
   .zk-collapsed-bar *,
+  .zk-expanded-panel,
   .zk-expanded-panel *,
-  .zk-docked * {
+  .zk-backdrop,
+  .zk-docked,
+  .zk-docked *,
+  .zk-fab {
+    all: initial !important;
     box-sizing: border-box !important;
-    margin: 0;
-    padding: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
   }
 
   /* ===== Collapsed Bar ===== */
@@ -13,18 +20,13 @@ export const styles = (primaryColor: string) => `
     position: fixed !important;
     bottom: 24px !important;
     left: 50% !important;
-    right: auto !important;
     transform: translateX(-50%) translateY(20px) !important;
     opacity: 0;
     width: 720px !important;
     max-width: 720px !important;
-    min-width: 0 !important;
     z-index: 9999 !important;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     transition: transform 180ms ease-out, opacity 180ms ease-out;
-    box-sizing: border-box !important;
-    float: none !important;
-    display: block !important;
   }
 
   .zk-collapsed-bar--visible {
