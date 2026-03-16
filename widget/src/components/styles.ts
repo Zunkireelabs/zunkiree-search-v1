@@ -3,26 +3,32 @@ export const styles = (primaryColor: string) => `
   .zk-collapsed-bar *,
   .zk-expanded-panel *,
   .zk-docked * {
-    box-sizing: border-box;
+    box-sizing: border-box !important;
     margin: 0;
     padding: 0;
   }
 
   /* ===== Collapsed Bar ===== */
   .zk-collapsed-bar {
-    position: fixed;
-    bottom: 24px;
-    left: 50%;
-    transform: translateX(-50%) translateY(20px);
+    position: fixed !important;
+    bottom: 24px !important;
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%) translateY(20px) !important;
     opacity: 0;
-    width: 720px;
-    z-index: 9999;
+    width: 720px !important;
+    max-width: 720px !important;
+    min-width: 0 !important;
+    z-index: 9999 !important;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     transition: transform 180ms ease-out, opacity 180ms ease-out;
+    box-sizing: border-box !important;
+    float: none !important;
+    display: block !important;
   }
 
   .zk-collapsed-bar--visible {
-    transform: translateX(-50%) translateY(0);
+    transform: translateX(-50%) translateY(0) !important;
     opacity: 1;
   }
 
