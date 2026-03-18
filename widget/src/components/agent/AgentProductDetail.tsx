@@ -142,8 +142,8 @@ export function AgentProductDetail({ product, onAddToCart, onAddToWishlist, onBa
         )}
 
         {/* Quantity selector */}
-        <div style={{ marginTop: '12px' }}>
-          <div style={{ fontSize: '12px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>QUANTITY</div>
+        <div className="zk-agent-detail__qty-section">
+          <div className="zk-agent-detail__qty-label">QUANTITY</div>
           <div className="zk-qty-control">
             <button type="button" className="zk-qty-control__btn" onClick={() => setQuantity(q => Math.max(1, q - 1))} disabled={quantity <= 1}>-</button>
             <span className="zk-qty-control__count">{quantity}</span>
