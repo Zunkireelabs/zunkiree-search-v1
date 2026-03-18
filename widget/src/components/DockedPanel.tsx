@@ -4,6 +4,17 @@ import { Autocomplete } from './Autocomplete'
 import { ProductGrid } from './ProductGrid'
 import { CartView } from './CartView'
 import { CheckoutView } from './CheckoutView'
+import { AgentProductGrid } from './agent/AgentProductGrid'
+import { AgentProductDetail } from './agent/AgentProductDetail'
+import { AgentCartView } from './agent/AgentCartView'
+import { WishlistView } from './agent/WishlistView'
+import { OrderConfirmation } from './agent/OrderConfirmation'
+import { AgentCheckout } from './agent/AgentCheckout'
+
+interface AgentRenderEvent {
+  component: string
+  props: any
+}
 
 interface Message {
   id: string
@@ -15,6 +26,7 @@ interface Message {
   cartUpdate?: any
   checkout?: any
   toolStatus?: { name: string; status: 'running' | 'done' }
+  renderEvents?: AgentRenderEvent[]
 }
 
 interface DockedPanelProps {
@@ -31,12 +43,18 @@ interface DockedPanelProps {
   placeholder: string
   apiUrl: string
   siteId: string
+  sessionId?: string
   supportedLanguages: string[]
   language: string
   onLanguageChange: (lang: string) => void
   onAddToCart?: (productId: string, size?: string, color?: string) => void
   onRemoveFromCart?: (index: number) => void
   onCheckout?: () => void
+  onViewProduct?: (slug: string) => void
+  onViewCart?: () => void
+  onContinueShopping?: () => void
+  enableShopping?: boolean
+  cartItemCount?: number
 }
 
 const LANGUAGE_LABELS: Record<string, string> = {
@@ -75,6 +93,12 @@ export function DockedPanel({
   onAddToCart,
   onRemoveFromCart,
   onCheckout,
+  onViewProduct,
+  onViewCart,
+  onContinueShopping,
+  enableShopping,
+  cartItemCount,
+  sessionId,
 }: DockedPanelProps) {
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -148,6 +172,22 @@ export function DockedPanel({
               ))}
             </div>
           )}
+          {enableShopping && (cartItemCount || 0) > 0 && (
+            <button
+              className="zk-header-cart"
+              onClick={onViewCart}
+              type="button"
+              aria-label={`Cart (${cartItemCount} items)`}
+              title="View cart"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" />
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <path d="M16 10a4 4 0 01-8 0" />
+              </svg>
+              <span className="zk-header-cart__badge">{cartItemCount}</span>
+            </button>
+          )}
           <button
             className="zk-header-btn"
             onClick={onUndock}
@@ -219,6 +259,37 @@ export function DockedPanel({
               {message.checkout && (
                 <CheckoutView checkout={message.checkout} brandName={brandName} />
               )}
+              {message.renderEvents && message.renderEvents.map((re, idx) => {
+                const isEcommerceComponent = ['product_grid', 'product_detail', 'cart_view', 'wishlist_view', 'checkout', 'order_confirmation'].includes(re.component)
+                if (isEcommerceComponent && !enableShopping) return null
+
+                switch (re.component) {
+                  case 'product_grid':
+                    return <AgentProductGrid key={`r-${idx}`} products={re.props.products || []} title={re.props.title} onViewProduct={(slug) => onViewProduct?.(slug)} onAddToCart={(slug) => onAddToCart?.(slug)} />
+                  case 'product_detail':
+                    return <AgentProductDetail key={`r-${idx}`} product={re.props.product} onAddToCart={(slug, _v, label, qty) => { let msg = label ? `${slug}, ${label}` : slug; if (qty && qty > 1) msg += `, quantity ${qty}`; onAddToCart?.(msg) }} onAddToWishlist={(slug) => onAddToCart?.(`save ${slug} to wishlist`)} />
+                  case 'cart_view':
+                    return <AgentCartView key={`r-${idx}`} items={re.props.items || []} subtotal={re.props.subtotal || 0} onRemoveItem={(id) => onRemoveFromCart?.(id)} onCheckout={() => onCheckout?.()} />
+                  case 'wishlist_view':
+                    return <WishlistView key={`r-${idx}`} items={re.props.items || []} onRemove={(slug) => onAddToCart?.(`remove ${slug} from wishlist`)} onAddToCart={(slug) => onAddToCart?.(slug)} />
+                  case 'categories':
+                    return (
+                      <div key={`r-${idx}`} className="zk-agent-categories">
+                        {(re.props.categories || []).map((cat: string) => (
+                          <button key={cat} type="button" className="zk-chip" onClick={() => handleLocalSuggestionClick(`Show me ${cat.replace(/-/g, ' ')}`)}>
+                            {cat.replace(/-/g, ' ')}
+                          </button>
+                        ))}
+                      </div>
+                    )
+                  case 'checkout':
+                    return <AgentCheckout key={`r-${idx}`} cartId={re.props.cartId} items={re.props.items || []} subtotal={re.props.subtotal || 0} apiUrl={apiUrl} siteId={siteId} sessionId={sessionId || ''} onContinueShopping={onContinueShopping} />
+                  case 'order_confirmation':
+                    return <OrderConfirmation key={`r-${idx}`} orderId={re.props.orderId || ''} total={re.props.total || 0} onContinueShopping={onContinueShopping} />
+                  default:
+                    return null
+                }
+              })}
               {message.suggestions && message.suggestions.length > 0 && (
                 <div className="zk-message__suggestions">
                   {message.suggestions.map((suggestion, idx) => (

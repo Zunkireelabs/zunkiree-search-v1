@@ -1,11 +1,18 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { styles } from './styles'
+import { agentStyles } from './agent/agentStyles'
 import { CollapsedBar } from './CollapsedBar'
 import { ExpandedPanel } from './ExpandedPanel'
 import { DockedPanel } from './DockedPanel'
 import { bootstrap, destroy, getDockPanel } from '../layout/LayoutManager'
 import { enterDock, exitDock, DOCK_MIN_WIDTH } from '../layout/DockStateManager'
+
+// Agent mode render event types
+interface AgentRenderEvent {
+  component: string
+  props: any
+}
 
 interface Product {
   id: string
@@ -53,6 +60,7 @@ interface Message {
   cartUpdate?: CartState
   checkout?: CheckoutData
   toolStatus?: { name: string; status: 'running' | 'done' }
+  renderEvents?: AgentRenderEvent[]
 }
 
 interface WidgetConfig {
@@ -69,20 +77,29 @@ interface WidgetConfig {
 interface WidgetProps {
   siteId: string
   apiUrl: string
+  widgetMode?: 'search' | 'agent'
 }
 
 type WidgetMode = 'bottom-minimized' | 'bottom-expanded' | 'right-docked'
 
-export function Widget({ siteId, apiUrl }: WidgetProps) {
+export function Widget({ siteId, apiUrl, widgetMode = 'search' }: WidgetProps) {
   const [mode, setMode] = useState<WidgetMode>('bottom-minimized')
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [config, setConfig] = useState<WidgetConfig | null>(null)
-  const [sessionId, setSessionId] = useState(() => crypto.randomUUID())
+  const [sessionId, setSessionId] = useState(() => {
+    const key = `zk-session-${siteId}`
+    const stored = localStorage.getItem(key)
+    if (stored) return stored
+    const id = crypto.randomUUID()
+    localStorage.setItem(key, id)
+    return id
+  })
   const [language, setLanguage] = useState('en')
   const [dockPortalTarget, setDockPortalTarget] = useState<HTMLElement | null>(null)
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
+  const [cartItemCount, setCartItemCount] = useState(0)
   const hasAnimated = useRef(false)
 
   // JS-based mobile detection (host site may lack viewport meta tag,
@@ -95,8 +112,11 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
 
   // Fetch widget config
   useEffect(() => {
-    fetch(`${apiUrl}/api/v1/widget/config/${siteId}`)
-      .then(res => res.json())
+    fetch(`${apiUrl}/v1/sites/${siteId}/config`)
+      .then(res => {
+        if (!res.ok) throw new Error(`Config fetch failed: ${res.status}`)
+        return res.json()
+      })
       .then(data => {
         setConfig(data)
       })
@@ -130,16 +150,17 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   }, [mode])
 
   // Query API — SSE streaming
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent, directMessage?: string) => {
     e.preventDefault()
-    if (!input.trim() || isLoading) return
+    const messageText = (directMessage || input).trim()
+    if (!messageText || isLoading) return
 
     if (mode === 'bottom-minimized') setMode('bottom-expanded')
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input.trim(),
+      content: messageText,
     }
 
     const assistantId = (Date.now() + 1).toString()
@@ -242,7 +263,10 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
                 )
               }
             } else if (event.type === 'done') {
-              if (event.session_id) setSessionId(event.session_id)
+              if (event.session_id) {
+                setSessionId(event.session_id)
+                localStorage.setItem(`zk-session-${siteId}`, event.session_id)
+              }
               setMessages(prev =>
                 prev.map(m => m.id === assistantId ? {
                   ...m,
@@ -275,26 +299,211 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     }
   }
 
+  // Agent mode SSE handler — calls /v1/sites/{siteId}/agent/chat
+  // SSE format from Hono: "event: <type>\ndata: <json>\nid: <n>\n\n"
+  const handleAgentSubmit = async (e: React.FormEvent, directMessage?: string) => {
+    e.preventDefault()
+    const messageText = (directMessage || input).trim()
+    if (!messageText || isLoading) return
+
+    if (mode === 'bottom-minimized') setMode('bottom-expanded')
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: messageText,
+    }
+    const assistantId = (Date.now() + 1).toString()
+
+    setMessages(prev => [...prev.filter(m => !m.isError), userMessage])
+    setInput('')
+    setIsLoading(true)
+
+    try {
+      const response = await fetch(`${apiUrl}/v1/sites/${siteId}/agent/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Session-Id': sessionId },
+        body: JSON.stringify({
+          sessionId,
+          message: userMessage.content,
+        }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to get response')
+      }
+
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error('No response body')
+
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let streamingContent = ''
+      let addedMessage = false
+      let renderEvents: AgentRenderEvent[] = []
+      let currentEventType = ''
+
+      const ensureMessage = () => {
+        if (!addedMessage) {
+          addedMessage = true
+          setMessages(prev => [...prev, {
+            id: assistantId,
+            role: 'assistant',
+            content: streamingContent,
+            renderEvents: [...renderEvents],
+          }])
+        }
+      }
+
+      const updateMessage = (updates: Partial<Message>) => {
+        setMessages(prev =>
+          prev.map(m => m.id === assistantId ? { ...m, ...updates } : m)
+        )
+      }
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (line.startsWith('event:')) {
+            currentEventType = line.slice(6).trim()
+            continue
+          }
+          if (line.startsWith('id:') || line.trim() === '') continue
+          if (!line.startsWith('data:')) continue
+
+          const jsonStr = line.slice(5).trim()
+          if (!jsonStr) continue
+
+          try {
+            const eventData = JSON.parse(jsonStr)
+
+            switch (currentEventType) {
+              case 'message': {
+                // Streaming text content
+                streamingContent += eventData.content || ''
+                ensureMessage()
+                updateMessage({ content: streamingContent })
+                break
+              }
+
+              case 'tool_call': {
+                // Show tool execution status
+                const toolName = (eventData.name || '').replace(/_/g, ' ')
+                ensureMessage()
+                updateMessage({
+                  toolStatus: { name: toolName, status: 'running' },
+                })
+                break
+              }
+
+              case 'tool_result': {
+                // Tool finished
+                ensureMessage()
+                updateMessage({ toolStatus: undefined })
+                break
+              }
+
+              case 'render': {
+                // Rich UI component to render
+                const re = eventData as AgentRenderEvent
+                renderEvents = [...renderEvents, re]
+                ensureMessage()
+                updateMessage({ renderEvents: [...renderEvents] })
+                // Track cart item count from cart_view events
+                if (re.component === 'cart_view' && Array.isArray(re.props?.items)) {
+                  setCartItemCount(re.props.items.length)
+                }
+                break
+              }
+
+              case 'done': {
+                ensureMessage()
+                updateMessage({ toolStatus: undefined })
+                setIsLoading(false)
+                break
+              }
+
+              case 'error': {
+                throw new Error(eventData.error || 'Agent error')
+              }
+
+              default: {
+                // Unknown event type — try to use as message content
+                if (eventData.content) {
+                  streamingContent += eventData.content
+                  ensureMessage()
+                  updateMessage({ content: streamingContent })
+                }
+              }
+            }
+          } catch (parseErr) {
+            if (parseErr instanceof SyntaxError) continue
+            throw parseErr
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[Zunkiree Agent] Stream error:', error)
+      setMessages(prev => [...prev, {
+        id: (Date.now() + 2).toString(),
+        role: 'assistant',
+        content: error instanceof Error ? error.message : 'Sorry, something went wrong.',
+        isError: true,
+      }])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Unified submit handler — routes to search or agent mode
+  const handleUnifiedSubmit = widgetMode === 'agent' ? handleAgentSubmit : handleSubmit
+
   const handleAddToCart = (productId: string, size?: string, color?: string) => {
     let msg = `Add product ${productId} to my cart`
     if (size) msg += `, size ${size}`
     if (color) msg += `, color ${color}`
     setInput(msg)
-    // Auto-submit
     const fakeEvent = { preventDefault: () => {} } as React.FormEvent
-    setTimeout(() => handleSubmit(fakeEvent), 50)
+    handleUnifiedSubmit(fakeEvent, msg)
   }
 
   const handleRemoveFromCart = (index: number) => {
-    setInput(`Remove item ${index + 1} from my cart`)
+    const msg = `Remove item ${index + 1} from my cart`
+    setInput(msg)
     const fakeEvent = { preventDefault: () => {} } as React.FormEvent
-    setTimeout(() => handleSubmit(fakeEvent), 50)
+    handleUnifiedSubmit(fakeEvent, msg)
   }
 
   const handleCheckout = () => {
-    setInput('Checkout')
+    const msg = 'I want to checkout'
+    setInput(msg)
     const fakeEvent = { preventDefault: () => {} } as React.FormEvent
-    setTimeout(() => handleSubmit(fakeEvent), 50)
+    handleUnifiedSubmit(fakeEvent, msg)
+  }
+
+  const handleViewProduct = (slug: string) => {
+    const msg = `Show me details for ${slug}`
+    const fakeEvent = { preventDefault: () => {} } as React.FormEvent
+    handleUnifiedSubmit(fakeEvent, msg)
+  }
+
+  const handleViewCart = () => {
+    const msg = 'Show my cart'
+    const fakeEvent = { preventDefault: () => {} } as React.FormEvent
+    handleUnifiedSubmit(fakeEvent, msg)
+  }
+
+  const handleContinueShopping = () => {
+    const msg = 'Show me more products'
+    const fakeEvent = { preventDefault: () => {} } as React.FormEvent
+    handleUnifiedSubmit(fakeEvent, msg)
   }
 
   const handleSuggestionClick = (suggestion: string) => {
@@ -323,6 +532,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
 
   const brandName = config?.brand_name || siteId
   const primaryColor = config?.primary_color || '#2563eb'
+  const enableShopping = config?.enable_shopping === true
 
   // Get current suggestions: last assistant message's, or config quick_actions
   const getSuggestions = (): string[] => {
@@ -339,6 +549,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   return (
     <div className={isMobile ? 'zk-mobile' : ''}>
       <style>{styles(primaryColor)}</style>
+      {widgetMode === 'agent' && <style>{agentStyles(primaryColor)}</style>}
 
       {mode === 'bottom-minimized' && (
         <CollapsedBar
@@ -359,19 +570,25 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
           input={input}
           isLoading={isLoading}
           onInputChange={setInput}
-          onSubmit={handleSubmit}
+          onSubmit={handleUnifiedSubmit}
           onSuggestionClick={handleSuggestionClick}
           onClose={handleMinimize}
           onDock={handleDock}
           placeholder={placeholder}
           apiUrl={apiUrl}
           siteId={siteId}
+          sessionId={sessionId}
           supportedLanguages={config?.supported_languages || []}
           language={language}
           onLanguageChange={setLanguage}
           onAddToCart={handleAddToCart}
           onRemoveFromCart={handleRemoveFromCart}
           onCheckout={handleCheckout}
+          onViewProduct={handleViewProduct}
+          onViewCart={handleViewCart}
+          onContinueShopping={handleContinueShopping}
+          enableShopping={enableShopping}
+          cartItemCount={cartItemCount}
         />
       )}
 
@@ -383,19 +600,25 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
           input={input}
           isLoading={isLoading}
           onInputChange={setInput}
-          onSubmit={handleSubmit}
+          onSubmit={handleUnifiedSubmit}
           onSuggestionClick={handleSuggestionClick}
           onMinimize={handleMinimize}
           onUndock={handleUndock}
           placeholder={placeholder}
           apiUrl={apiUrl}
           siteId={siteId}
+          sessionId={sessionId}
           supportedLanguages={config?.supported_languages || []}
           language={language}
           onLanguageChange={setLanguage}
           onAddToCart={handleAddToCart}
           onRemoveFromCart={handleRemoveFromCart}
           onCheckout={handleCheckout}
+          onViewProduct={handleViewProduct}
+          onViewCart={handleViewCart}
+          onContinueShopping={handleContinueShopping}
+          enableShopping={enableShopping}
+          cartItemCount={cartItemCount}
         />,
         dockPortalTarget,
       )}
