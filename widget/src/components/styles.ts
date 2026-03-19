@@ -326,7 +326,7 @@ export const styles = (primaryColor: string) => `
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: contain;
     touch-action: pan-y;
-    padding: 32px;
+    padding: 20px 24px;
     min-height: 0;
   }
 
@@ -335,7 +335,7 @@ export const styles = (primaryColor: string) => `
     margin: 0 auto;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 10px;
   }
 
   .zk-expanded-panel__messages::-webkit-scrollbar {
@@ -490,14 +490,14 @@ export const styles = (primaryColor: string) => `
 
   /* ===== Messages ===== */
   .zk-message {
-    max-width: 85%;
-    animation: zk-fade-in 200ms ease;
+    max-width: 88%;
+    animation: zk-fade-in 150ms ease;
   }
 
   @keyframes zk-fade-in {
     from {
       opacity: 0;
-      transform: translateY(8px);
+      transform: translateY(4px);
     }
     to {
       opacity: 1;
@@ -514,22 +514,23 @@ export const styles = (primaryColor: string) => `
   }
 
   .zk-message-content {
-    padding: 16px 18px;
-    border-radius: 16px;
-    font-size: 15px;
-    line-height: 1.6;
+    padding: 10px 14px;
+    border-radius: 18px;
+    font-size: 14px;
+    line-height: 1.45;
   }
 
   .zk-message-user .zk-message-content {
-    background: ${primaryColor}12;
+    background: #f0f0f0;
     color: #1f2937;
     border-bottom-right-radius: 4px;
   }
 
   .zk-message-assistant .zk-message-content {
-    background: #f8f9fa;
+    background: transparent;
     color: #1f2937;
-    border-bottom-left-radius: 4px;
+    padding-left: 0;
+    padding-right: 0;
   }
 
   .zk-message__suggestions {
@@ -749,10 +750,39 @@ export const styles = (primaryColor: string) => `
     position: relative;
     background: white;
     border-radius: 22px;
-    padding: 10px 16px;
-    min-height: 44px;
+    padding: 8px 8px 8px 8px;
+    min-height: 42px;
     display: flex;
-    align-items: flex-end;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .zk-input-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9ca3af;
+    flex-shrink: 0;
+    transition: color 150ms, background 150ms;
+  }
+
+  .zk-input-icon:hover {
+    color: #6b7280;
+    background: #f3f4f6;
+  }
+
+  .zk-input-icon--left {
+    margin-left: 2px;
+  }
+
+  .zk-input-icon--right {
+    margin-right: 2px;
   }
 
   .zk-input {
@@ -770,9 +800,7 @@ export const styles = (primaryColor: string) => `
     overflow-y: auto;
     font-family: inherit;
     padding: 0;
-    padding-right: 8px;
     margin: 0;
-    margin-right: 40px;
   }
 
   .zk-input::-webkit-scrollbar {
@@ -803,26 +831,23 @@ export const styles = (primaryColor: string) => `
   }
 
   .zk-send {
-    position: absolute;
-    bottom: 6px;
-    right: 10px;
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    background: #f3f4f6;
-    color: #374151;
+    background: #111827;
+    color: white;
     border: none;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background 150ms, transform 150ms, color 150ms;
+    transition: background 150ms, transform 150ms;
     flex-shrink: 0;
+    margin-right: 2px;
   }
 
   .zk-send:hover:not(:disabled) {
-    background: #e5e7eb;
-    transform: scale(1.05);
+    background: #374151;
   }
 
   .zk-send:disabled {
@@ -1257,7 +1282,7 @@ export const styles = (primaryColor: string) => `
 
   .zk-product-grid__scroll {
     display: flex;
-    gap: 12px;
+    gap: 8px;
     overflow-x: auto;
     scroll-snap-type: x mandatory;
     -webkit-overflow-scrolling: touch;
@@ -1272,24 +1297,25 @@ export const styles = (primaryColor: string) => `
   /* ===== Product Card ===== */
   .zk-product-card {
     flex-shrink: 0;
-    width: 220px;
+    width: 160px;
     scroll-snap-align: start;
     background: white;
-    border: 1px solid #e5e7eb;
-    border-radius: 12px;
+    border-radius: 10px;
     overflow: hidden;
-    transition: box-shadow 150ms;
+    cursor: pointer;
+    transition: transform 150ms, box-shadow 150ms;
   }
 
   .zk-product-card:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
   }
 
   .zk-product-card__image {
     position: relative;
     width: 100%;
-    height: 160px;
-    background: #f9fafb;
+    height: 200px;
+    background: #f5f5f5;
     overflow: hidden;
   }
 
@@ -1307,35 +1333,37 @@ export const styles = (primaryColor: string) => `
 
   .zk-product-card__badge {
     position: absolute;
-    top: 8px;
-    right: 8px;
-    padding: 2px 8px;
+    bottom: 6px;
+    left: 6px;
+    padding: 2px 6px;
     border-radius: 4px;
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 600;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    backdrop-filter: blur(4px);
   }
 
   .zk-product-card__badge--in {
-    background: #dcfce7;
-    color: #166534;
+    display: none;
   }
 
   .zk-product-card__badge--out {
-    background: #f3f4f6;
-    color: #6b7280;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
   }
 
   .zk-product-card__info {
-    padding: 10px 12px;
+    padding: 8px 8px 10px;
   }
 
   .zk-product-card__name {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
     color: #111827;
     line-height: 1.3;
     display: -webkit-box;
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: 1;
     -webkit-box-orient: vertical;
     overflow: hidden;
     margin-bottom: 4px;
@@ -1344,84 +1372,34 @@ export const styles = (primaryColor: string) => `
   .zk-product-card__price-row {
     display: flex;
     align-items: baseline;
-    gap: 6px;
-    margin-bottom: 6px;
+    gap: 4px;
+    margin-bottom: 0;
   }
 
   .zk-product-card__price {
-    font-size: 15px;
+    font-size: 13px;
     font-weight: 600;
     color: #111827;
   }
 
   .zk-product-card__original-price {
-    font-size: 12px;
+    font-size: 10px;
     color: #9ca3af;
     text-decoration: line-through;
   }
 
-  .zk-product-card__sizes {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    margin-bottom: 6px;
-  }
-
-  .zk-size-pill {
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 11px;
-    background: #f3f4f6;
-    border: 1px solid #e5e7eb;
-    color: #374151;
-    cursor: pointer;
-    transition: all 100ms;
-  }
-
-  .zk-size-pill--active {
-    background: ${primaryColor}15;
-    border-color: ${primaryColor};
-    color: ${primaryColor};
-  }
-
-  .zk-product-card__colors {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    margin-bottom: 6px;
-  }
-
-  .zk-color-swatch {
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 10px;
-    background: #f3f4f6;
-    border: 1px solid #e5e7eb;
-    color: #6b7280;
-    cursor: pointer;
-    transition: all 100ms;
-  }
-
-  .zk-color-swatch--active {
-    background: ${primaryColor}15;
-    border-color: ${primaryColor};
-    color: ${primaryColor};
-  }
-
   .zk-product-card__actions {
-    display: flex;
-    gap: 6px;
-    margin-top: 8px;
+    margin-top: 6px;
   }
 
   .zk-product-card__add-btn {
-    flex: 1;
-    padding: 6px 0;
-    background: ${primaryColor};
+    width: 100%;
+    padding: 5px 0;
+    background: #111827;
     color: white;
     border: none;
     border-radius: 6px;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 500;
     cursor: pointer;
     transition: opacity 150ms;
@@ -1429,28 +1407,12 @@ export const styles = (primaryColor: string) => `
   }
 
   .zk-product-card__add-btn:hover:not(:disabled) {
-    opacity: 0.9;
+    opacity: 0.85;
   }
 
   .zk-product-card__add-btn:disabled {
     background: #d1d5db;
     cursor: not-allowed;
-  }
-
-  .zk-product-card__view-link {
-    padding: 6px 12px;
-    background: #f3f4f6;
-    color: #374151;
-    border-radius: 6px;
-    font-size: 12px;
-    text-decoration: none;
-    display: flex;
-    align-items: center;
-    transition: background 150ms;
-  }
-
-  .zk-product-card__view-link:hover {
-    background: #e5e7eb;
   }
 
   /* ===== Cart View ===== */
@@ -1675,30 +1637,29 @@ export const styles = (primaryColor: string) => `
     color: #111827;
   }
 
-  /* ===== Wishlist Heart Button (on product card) ===== */
+  /* ===== Wishlist Bookmark Button (on product card) ===== */
   .zk-product-card__wishlist-btn {
     position: absolute;
-    top: 8px;
-    left: 8px;
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.9);
+    top: 6px;
+    right: 6px;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(4px);
     border: none;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #9ca3af;
-    transition: color 150ms, background 150ms, transform 150ms;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+    color: #6b7280;
+    transition: color 150ms, background 150ms;
     z-index: 1;
   }
 
   .zk-product-card__wishlist-btn:hover {
-    color: #ef4444;
+    color: #111827;
     background: white;
-    transform: scale(1.1);
   }
 
   /* ===== Wishlist View ===== */
