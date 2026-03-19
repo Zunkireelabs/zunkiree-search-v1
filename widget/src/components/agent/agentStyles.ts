@@ -304,6 +304,49 @@ export const agentStyles = (primaryColor: string) => `
   }
   .zk-order-confirm__continue:hover { background: ${primaryColor}; color: white; }
 
+  /* ===== Cart Confirmation (Add to Cart) ===== */
+  .zk-cart-confirm {
+    margin: 8px 0; border: 1px solid #bbf7d0; border-radius: 12px; background: #f0fdf4;
+    overflow: hidden; animation: zk-slide-in 250ms ease-out;
+  }
+  .zk-cart-confirm__body {
+    display: flex; gap: 12px; padding: 14px; align-items: center;
+  }
+  .zk-cart-confirm__thumb {
+    width: 52px; height: 52px; border-radius: 8px; object-fit: cover; flex-shrink: 0;
+  }
+  .zk-cart-confirm__info { flex: 1; min-width: 0; }
+  .zk-cart-confirm__badge {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 12px; font-weight: 700; color: #16a34a; margin-bottom: 2px;
+  }
+  .zk-cart-confirm__name {
+    font-size: 14px; font-weight: 600; color: #111827;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .zk-cart-confirm__variation { font-size: 12px; color: #6b7280; margin-top: 1px; }
+  .zk-cart-confirm__price { font-size: 13px; font-weight: 500; color: #374151; margin-top: 2px; }
+  .zk-cart-confirm__footer {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; border-top: 1px solid #bbf7d0; background: #ecfdf5;
+  }
+  .zk-cart-confirm__summary { font-size: 12px; color: #374151; font-weight: 500; }
+  .zk-cart-confirm__actions { display: flex; gap: 8px; }
+  .zk-cart-confirm__view-btn {
+    padding: 6px 14px; font-size: 12px; font-weight: 600;
+    border: 1px solid ${primaryColor}; border-radius: 8px;
+    background: ${primaryColor}; color: white; cursor: pointer;
+    transition: opacity 150ms ease;
+  }
+  .zk-cart-confirm__view-btn:hover { opacity: 0.9; }
+  .zk-cart-confirm__continue-btn {
+    padding: 6px 14px; font-size: 12px; font-weight: 500;
+    border: 1px solid #d1d5db; border-radius: 8px;
+    background: white; color: #374151; cursor: pointer;
+    transition: all 150ms ease;
+  }
+  .zk-cart-confirm__continue-btn:hover { background: #f9fafb; border-color: #9ca3af; }
+
   /* ===== Agent Categories ===== */
   .zk-agent-categories { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 

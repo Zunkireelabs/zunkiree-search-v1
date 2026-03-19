@@ -10,6 +10,7 @@ import { AgentCartView } from './agent/AgentCartView'
 import { WishlistView } from './agent/WishlistView'
 import { OrderConfirmation } from './agent/OrderConfirmation'
 import { AgentCheckout } from './agent/AgentCheckout'
+import { AgentCartConfirmation } from './agent/AgentCartConfirmation'
 
 interface AgentRenderEvent {
   component: string
@@ -333,7 +334,7 @@ export function ExpandedPanel({
                 )}
                 {message.renderEvents && message.renderEvents.map((re, idx) => {
                   // Gate ecommerce components behind enableShopping
-                  const isEcommerceComponent = ['product_grid', 'product_detail', 'cart_view', 'wishlist_view', 'checkout', 'order_confirmation'].includes(re.component)
+                  const isEcommerceComponent = ['product_grid', 'product_detail', 'cart_view', 'wishlist_view', 'checkout', 'order_confirmation', 'cart_confirmation'].includes(re.component)
                   if (isEcommerceComponent && !enableShopping) return null
 
                   switch (re.component) {
@@ -430,6 +431,15 @@ export function ExpandedPanel({
                           orderId={re.props.orderId || ''}
                           total={re.props.total || 0}
                           onContinueShopping={onContinueShopping}
+                        />
+                      )
+                    case 'cart_confirmation':
+                      return (
+                        <AgentCartConfirmation
+                          key={`render-${idx}`}
+                          {...re.props}
+                          onViewCart={() => { handleLocalSuggestionClick('Show my cart') }}
+                          onContinueShopping={() => { /* dismiss — no-op */ }}
                         />
                       )
                     default:
