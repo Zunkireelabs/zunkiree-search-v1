@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { styles } from './styles'
 import { CollapsedBar } from './CollapsedBar'
@@ -196,6 +196,25 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       let buffer = ''
       let streamingContent = ''
       let addedMessage = false
+      let rafPending = false
+
+      // Batch token updates — only flush to React once per animation frame
+      const flushTokens = () => {
+        rafPending = false
+        const content = streamingContent
+        if (!addedMessage) {
+          addedMessage = true
+          setMessages(prev => [...prev, {
+            id: assistantId,
+            role: 'assistant',
+            content,
+          }])
+        } else {
+          setMessages(prev =>
+            prev.map(m => m.id === assistantId ? { ...m, content } : m)
+          )
+        }
+      }
 
       while (true) {
         const { done, value } = await reader.read()
@@ -215,17 +234,10 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
 
             if (event.type === 'token') {
               streamingContent += event.data
-              if (!addedMessage) {
-                addedMessage = true
-                setMessages(prev => [...prev, {
-                  id: assistantId,
-                  role: 'assistant',
-                  content: streamingContent,
-                }])
-              } else {
-                setMessages(prev =>
-                  prev.map(m => m.id === assistantId ? { ...m, content: streamingContent } : m)
-                )
+              // Batch: schedule one React update per frame instead of per token
+              if (!rafPending) {
+                rafPending = true
+                requestAnimationFrame(flushTokens)
               }
             } else if (event.type === 'products') {
               // Product search results

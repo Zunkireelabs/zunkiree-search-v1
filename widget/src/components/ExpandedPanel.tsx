@@ -96,12 +96,28 @@ export function ExpandedPanel({
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const [showAutocomplete, setShowAutocomplete] = useState(false)
+  const userScrolledUp = useRef(false)
+
+  // Track if user has scrolled away from bottom
+  useEffect(() => {
+    const container = messagesRef.current
+    if (!container) return
+    const onScroll = () => {
+      const threshold = 80
+      const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold
+      userScrolledUp.current = !atBottom
+    }
+    container.addEventListener('scroll', onScroll, { passive: true })
+    return () => container.removeEventListener('scroll', onScroll)
+  }, [])
 
   useEffect(() => {
-    // Scroll messages to bottom without affecting parent/window scroll
-    const container = messagesRef.current
-    if (container) {
-      container.scrollTop = container.scrollHeight
+    // Only auto-scroll if user hasn't scrolled up to read history
+    if (!userScrolledUp.current) {
+      const container = messagesRef.current
+      if (container) {
+        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
+      }
     }
     // Don't auto-focus on mobile — it opens the keyboard and squishes the panel
     if (!isLoading && window.innerWidth > 768) {

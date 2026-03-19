@@ -95,12 +95,25 @@ export function DockedPanel({
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const [showAutocomplete, setShowAutocomplete] = useState(false)
+  const userScrolledUp = useRef(false)
 
   useEffect(() => {
-    // Scroll messages to bottom without affecting parent/window scroll
     const container = messagesContainerRef.current
-    if (container) {
-      container.scrollTop = container.scrollHeight
+    if (!container) return
+    const onScroll = () => {
+      const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 80
+      userScrolledUp.current = !atBottom
+    }
+    container.addEventListener('scroll', onScroll, { passive: true })
+    return () => container.removeEventListener('scroll', onScroll)
+  }, [])
+
+  useEffect(() => {
+    if (!userScrolledUp.current) {
+      const container = messagesContainerRef.current
+      if (container) {
+        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
+      }
     }
     if (!isLoading) {
       inputRef.current?.focus({ preventScroll: true })

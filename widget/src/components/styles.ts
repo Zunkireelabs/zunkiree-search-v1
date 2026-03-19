@@ -327,6 +327,8 @@ export const styles = (primaryColor: string) => `
     overscroll-behavior-y: contain;
     touch-action: pan-y;
     padding: 20px 24px;
+    will-change: scroll-position;
+    contain: layout style;
     min-height: 0;
   }
 
@@ -492,6 +494,7 @@ export const styles = (primaryColor: string) => `
   .zk-message {
     max-width: 88%;
     animation: zk-fade-in 150ms ease;
+    contain: content;
   }
 
   @keyframes zk-fade-in {
