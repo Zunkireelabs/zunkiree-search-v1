@@ -239,6 +239,43 @@ export const styles = (primaryColor: string) => `
     color: #374151;
   }
 
+  /* Cart Badge in Header */
+  .zk-header-cart {
+    position: relative;
+    background: none;
+    border: none;
+    color: #6b7280;
+    cursor: pointer;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    transition: background 150ms, color 150ms;
+  }
+  .zk-header-cart:hover {
+    background: #f3f4f6;
+    color: #374151;
+  }
+  .zk-header-cart__badge {
+    position: absolute;
+    top: 4px;
+    right: 2px;
+    min-width: 16px;
+    height: 16px;
+    background: #ef4444;
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+    line-height: 1;
+  }
+
   /* Language Toggle */
   .zk-lang-toggle {
     display: flex;

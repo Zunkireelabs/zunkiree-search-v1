@@ -7,6 +7,7 @@ function initWidget() {
   const scriptTag = document.querySelector('script[data-site-id]')
   const siteId = scriptTag?.getAttribute('data-site-id') || 'test'
   const apiUrl = scriptTag?.getAttribute('data-api-url') || 'http://localhost:8000'
+  const mode = scriptTag?.getAttribute('data-mode') as 'search' | 'agent' | null
 
   // Create root element for widget (always append to body for floating)
   let rootElement = document.getElementById('zunkiree-widget-root')
@@ -20,7 +21,7 @@ function initWidget() {
   const root = ReactDOM.createRoot(rootElement)
   root.render(
     <React.StrictMode>
-      <Widget siteId={siteId} apiUrl={apiUrl} />
+      <Widget siteId={siteId} apiUrl={apiUrl} widgetMode={mode || 'search'} />
     </React.StrictMode>
   )
 }

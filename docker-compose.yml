@@ -24,6 +24,25 @@ services:
     networks:
       - hosting
 
+  zunkiree-ecommerce-dashboard:
+    build:
+      context: ./ecommerce-dashboard
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=https://api.zunkireelabs.com
+    container_name: zunkiree-ecommerce-dashboard
+    restart: unless-stopped
+    networks:
+      - hosting
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=hosting"
+      - "traefik.http.routers.zunkiree-ecommerce-dashboard.rule=Host(`ecommerce.zunkireelabs.com`)"
+      - "traefik.http.routers.zunkiree-ecommerce-dashboard.entrypoints=websecure"
+      - "traefik.http.routers.zunkiree-ecommerce-dashboard.tls=true"
+      - "traefik.http.routers.zunkiree-ecommerce-dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.services.zunkiree-ecommerce-dashboard.loadbalancer.server.port=80"
+
   zunkiree-backup:
     image: postgres:16-alpine
     container_name: zunkiree-backup
