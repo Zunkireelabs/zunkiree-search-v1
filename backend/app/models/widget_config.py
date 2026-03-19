@@ -40,6 +40,9 @@ class WidgetConfig(Base):
     supported_languages: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array e.g. '["en", "ne"]'
     enable_shopping: Mapped[bool] = mapped_column(Boolean, default=False)
     checkout_mode: Mapped[str] = mapped_column(String(20), default="redirect")  # redirect, in-app
+    stripe_account_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    payment_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    shipping_countries: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array of country codes
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

@@ -7,6 +7,8 @@ from app.models.verification import VerificationSession
 from app.models.user_profile import UserProfile
 from app.models.product import Product
 from app.models.cart import ShoppingCart
+from app.models.wishlist import Wishlist
+from app.models.order import Order
 
 __all__ = [
     "Customer",
@@ -19,4 +21,6 @@ __all__ = [
     "UserProfile",
     "Product",
     "ShoppingCart",
+    "Wishlist",
+    "Order",
 ]

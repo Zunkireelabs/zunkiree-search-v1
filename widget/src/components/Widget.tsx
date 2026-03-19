@@ -41,6 +41,20 @@ interface CheckoutData {
   subtotal: number
   currency: string
   item_count: number
+  checkout_mode?: string
+}
+
+interface WishlistItem {
+  product_id: string
+  name: string
+  price: number | null
+  currency: string
+  original_price: number | null
+  image: string
+  url: string
+  in_stock: boolean
+  sizes: string[]
+  colors: string[]
 }
 
 interface Message {
@@ -52,6 +66,9 @@ interface Message {
   products?: Product[]
   cartUpdate?: CartState
   checkout?: CheckoutData
+  wishlistUpdate?: WishlistItem[]
+  addressForm?: CheckoutData
+  paymentPending?: { checkoutUrl?: string }
   toolStatus?: { name: string; status: 'running' | 'done' }
 }
 
@@ -83,6 +100,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   const [language, setLanguage] = useState('en')
   const [dockPortalTarget, setDockPortalTarget] = useState<HTMLElement | null>(null)
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
+  const [isOrderSubmitting, setIsOrderSubmitting] = useState(false)
   const hasAnimated = useRef(false)
 
   // JS-based mobile detection (host site may lack viewport meta tag,
@@ -219,10 +237,40 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
                 prev.map(m => m.id === assistantId ? { ...m, cartUpdate: event.data } : m)
               )
             } else if (event.type === 'checkout') {
-              // Checkout data
+              // Checkout data (redirect mode)
               setMessages(prev =>
                 prev.map(m => m.id === assistantId ? { ...m, checkout: event.data } : m)
               )
+            } else if (event.type === 'address_form') {
+              // In-app checkout: render address form inline
+              if (!addedMessage) {
+                addedMessage = true
+                setMessages(prev => [...prev, {
+                  id: assistantId,
+                  role: 'assistant',
+                  content: '',
+                  addressForm: event.data,
+                }])
+              } else {
+                setMessages(prev =>
+                  prev.map(m => m.id === assistantId ? { ...m, addressForm: event.data } : m)
+                )
+              }
+            } else if (event.type === 'wishlist_update') {
+              // Wishlist state update
+              if (!addedMessage) {
+                addedMessage = true
+                setMessages(prev => [...prev, {
+                  id: assistantId,
+                  role: 'assistant',
+                  content: '',
+                  wishlistUpdate: event.data,
+                }])
+              } else {
+                setMessages(prev =>
+                  prev.map(m => m.id === assistantId ? { ...m, wishlistUpdate: event.data } : m)
+                )
+              }
             } else if (event.type === 'tool_call') {
               // Tool execution status
               if (!addedMessage) {
@@ -297,6 +345,99 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     setTimeout(() => handleSubmit(fakeEvent), 50)
   }
 
+  const handleAddToWishlist = (productId: string) => {
+    setInput(`Save product ${productId} to my wishlist`)
+    const fakeEvent = { preventDefault: () => {} } as React.FormEvent
+    setTimeout(() => handleSubmit(fakeEvent), 50)
+  }
+
+  const handleRemoveFromWishlist = (productId: string) => {
+    setInput(`Remove product ${productId} from my wishlist`)
+    const fakeEvent = { preventDefault: () => {} } as React.FormEvent
+    setTimeout(() => handleSubmit(fakeEvent), 50)
+  }
+
+  const handleMoveToCart = (productId: string, size?: string, color?: string) => {
+    // Remove from wishlist and add to cart
+    handleAddToCart(productId, size, color)
+  }
+
+  const handleAddressSubmit = async (
+    billing: { full_name: string; line1: string; line2: string; city: string; state: string; postal_code: string; country: string; phone: string },
+    shipping: { full_name: string; line1: string; line2: string; city: string; state: string; postal_code: string; country: string; phone: string } | null,
+    email: string,
+    sameAsBilling: boolean,
+  ) => {
+    setIsOrderSubmitting(true)
+    try {
+      // Create order
+      const orderRes = await fetch(`${apiUrl}/api/v1/orders/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          site_id: siteId,
+          session_id: sessionId,
+          billing_address: billing,
+          shipping_address: shipping,
+          shopper_email: email,
+          same_as_billing: sameAsBilling,
+        }),
+      })
+
+      if (!orderRes.ok) {
+        const data = await orderRes.json().catch(() => ({}))
+        throw new Error(data.detail || 'Failed to create order')
+      }
+
+      const orderData = await orderRes.json()
+      const orderId = orderData.order?.id
+
+      // Initiate payment
+      const payRes = await fetch(`${apiUrl}/api/v1/orders/${orderId}/pay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          success_url: window.location.href,
+          cancel_url: window.location.href,
+        }),
+      })
+
+      if (!payRes.ok) {
+        const data = await payRes.json().catch(() => ({}))
+        throw new Error(data.detail || 'Failed to initiate payment')
+      }
+
+      const payData = await payRes.json()
+
+      // Show payment pending and redirect
+      const paymentMsgId = (Date.now() + 3).toString()
+      setMessages(prev => [...prev, {
+        id: paymentMsgId,
+        role: 'assistant',
+        content: `Order ${orderData.order?.order_number} created! Redirecting to secure payment...`,
+        paymentPending: { checkoutUrl: payData.checkout_url },
+      }])
+
+      // Redirect to Stripe
+      if (payData.checkout_url) {
+        setTimeout(() => {
+          window.location.href = payData.checkout_url
+        }, 1500)
+      }
+    } catch (error) {
+      console.error('[Zunkiree] Order/payment error:', error)
+      const errorMsg = error instanceof Error ? error.message : 'Failed to process order'
+      setMessages(prev => [...prev, {
+        id: (Date.now() + 4).toString(),
+        role: 'assistant',
+        content: errorMsg,
+        isError: true,
+      }])
+    } finally {
+      setIsOrderSubmitting(false)
+    }
+  }
+
   const handleSuggestionClick = (suggestion: string) => {
     setInput(suggestion)
     if (mode === 'bottom-minimized') setMode('bottom-expanded')
@@ -336,6 +477,31 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
 
   const placeholder = config?.placeholder_text || `Ask ${brandName} a question\u2026`
 
+  const sharedProps = {
+    brandName,
+    messages,
+    suggestions: getSuggestions(),
+    input,
+    isLoading,
+    onInputChange: setInput,
+    onSubmit: handleSubmit,
+    onSuggestionClick: handleSuggestionClick,
+    placeholder,
+    apiUrl,
+    siteId,
+    supportedLanguages: config?.supported_languages || [],
+    language,
+    onLanguageChange: setLanguage,
+    onAddToCart: handleAddToCart,
+    onRemoveFromCart: handleRemoveFromCart,
+    onCheckout: handleCheckout,
+    onAddToWishlist: handleAddToWishlist,
+    onRemoveFromWishlist: handleRemoveFromWishlist,
+    onMoveToCart: handleMoveToCart,
+    onAddressSubmit: handleAddressSubmit,
+    isOrderSubmitting,
+  }
+
   return (
     <div className={isMobile ? 'zk-mobile' : ''}>
       <style>{styles(primaryColor)}</style>
@@ -353,49 +519,17 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
 
       {mode === 'bottom-expanded' && (
         <ExpandedPanel
-          brandName={brandName}
-          messages={messages}
-          suggestions={getSuggestions()}
-          input={input}
-          isLoading={isLoading}
-          onInputChange={setInput}
-          onSubmit={handleSubmit}
-          onSuggestionClick={handleSuggestionClick}
+          {...sharedProps}
           onClose={handleMinimize}
           onDock={handleDock}
-          placeholder={placeholder}
-          apiUrl={apiUrl}
-          siteId={siteId}
-          supportedLanguages={config?.supported_languages || []}
-          language={language}
-          onLanguageChange={setLanguage}
-          onAddToCart={handleAddToCart}
-          onRemoveFromCart={handleRemoveFromCart}
-          onCheckout={handleCheckout}
         />
       )}
 
       {mode === 'right-docked' && dockPortalTarget && createPortal(
         <DockedPanel
-          brandName={brandName}
-          messages={messages}
-          suggestions={getSuggestions()}
-          input={input}
-          isLoading={isLoading}
-          onInputChange={setInput}
-          onSubmit={handleSubmit}
-          onSuggestionClick={handleSuggestionClick}
+          {...sharedProps}
           onMinimize={handleMinimize}
           onUndock={handleUndock}
-          placeholder={placeholder}
-          apiUrl={apiUrl}
-          siteId={siteId}
-          supportedLanguages={config?.supported_languages || []}
-          language={language}
-          onLanguageChange={setLanguage}
-          onAddToCart={handleAddToCart}
-          onRemoveFromCart={handleRemoveFromCart}
-          onCheckout={handleCheckout}
         />,
         dockPortalTarget,
       )}

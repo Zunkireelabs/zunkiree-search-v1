@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from_email: str = ""
 
+    # Stripe
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+
     # Embeddings
     embedding_model: str = "text-embedding-3-large"
     embedding_dimensions: int = 3072

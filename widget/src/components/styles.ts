@@ -1655,6 +1655,338 @@ export const styles = (primaryColor: string) => `
     color: #111827;
   }
 
+  /* ===== Wishlist Heart Button (on product card) ===== */
+  .zk-product-card__wishlist-btn {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.9);
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9ca3af;
+    transition: color 150ms, background 150ms, transform 150ms;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+    z-index: 1;
+  }
+
+  .zk-product-card__wishlist-btn:hover {
+    color: #ef4444;
+    background: white;
+    transform: scale(1.1);
+  }
+
+  /* ===== Wishlist View ===== */
+  .zk-wishlist-view {
+    margin-top: 8px;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .zk-wishlist-view--empty {
+    padding: 16px;
+    text-align: center;
+    color: #6b7280;
+    font-size: 13px;
+  }
+
+  .zk-wishlist-view__header {
+    padding: 10px 12px;
+    background: #fef3c7;
+    border-bottom: 1px solid #fde68a;
+  }
+
+  .zk-wishlist-view__title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #92400e;
+  }
+
+  .zk-wishlist-view__items {
+    max-height: 240px;
+    overflow-y: auto;
+  }
+
+  .zk-wishlist-view__item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-bottom: 1px solid #f3f4f6;
+  }
+
+  .zk-wishlist-view__item:last-child {
+    border-bottom: none;
+  }
+
+  .zk-wishlist-view__thumb {
+    width: 40px;
+    height: 40px;
+    border-radius: 6px;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+
+  .zk-wishlist-view__item-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .zk-wishlist-view__item-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: #111827;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .zk-wishlist-view__item-price {
+    font-size: 13px;
+    font-weight: 600;
+    color: #111827;
+    margin-top: 2px;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+
+  .zk-wishlist-view__original-price {
+    font-size: 11px;
+    color: #9ca3af;
+    text-decoration: line-through;
+    font-weight: 400;
+  }
+
+  .zk-wishlist-view__actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .zk-wishlist-view__cart-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: ${primaryColor}15;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: ${primaryColor};
+    transition: background 150ms;
+  }
+
+  .zk-wishlist-view__cart-btn:hover {
+    background: ${primaryColor}25;
+  }
+
+  .zk-wishlist-view__remove-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #f3f4f6;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9ca3af;
+    transition: background 150ms, color 150ms;
+  }
+
+  .zk-wishlist-view__remove-btn:hover {
+    background: #fee2e2;
+    color: #ef4444;
+  }
+
+  /* ===== Address Form ===== */
+  .zk-address-form {
+    margin-top: 8px;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .zk-address-form__header {
+    padding: 10px 12px;
+    background: #eff6ff;
+    border-bottom: 1px solid #dbeafe;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .zk-address-form__title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1e40af;
+  }
+
+  .zk-address-form__summary {
+    font-size: 12px;
+    color: #3b82f6;
+    font-weight: 500;
+  }
+
+  .zk-address-form__section {
+    padding: 10px 12px;
+  }
+
+  .zk-address-form__section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+  }
+
+  .zk-address-form__field {
+    margin-bottom: 8px;
+  }
+
+  .zk-address-form__field--half {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .zk-address-form__row {
+    display: flex;
+    gap: 8px;
+  }
+
+  .zk-address-form__label {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    color: #374151;
+    margin-bottom: 3px;
+  }
+
+  .zk-address-form__required {
+    color: #ef4444;
+    margin-left: 2px;
+  }
+
+  .zk-address-form__input {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #111827;
+    background: white;
+    font-family: inherit;
+    transition: border-color 150ms;
+    box-sizing: border-box;
+  }
+
+  .zk-address-form__input:focus {
+    border-color: ${primaryColor};
+    outline: none;
+    box-shadow: 0 0 0 2px ${primaryColor}20;
+  }
+
+  .zk-address-form__input--error {
+    border-color: #ef4444;
+  }
+
+  .zk-address-form__error {
+    font-size: 11px;
+    color: #ef4444;
+    margin-top: 2px;
+    display: block;
+  }
+
+  .zk-address-form__checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #374151;
+    cursor: pointer;
+  }
+
+  .zk-address-form__checkbox input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: ${primaryColor};
+  }
+
+  .zk-address-form__submit {
+    width: calc(100% - 24px);
+    margin: 4px 12px 12px;
+    padding: 10px;
+    background: ${primaryColor};
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 150ms;
+    font-family: inherit;
+  }
+
+  .zk-address-form__submit:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .zk-address-form__submit:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* ===== Payment Pending ===== */
+  .zk-payment-pending {
+    margin-top: 8px;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+  }
+
+  .zk-payment-pending__spinner {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 12px;
+    color: ${primaryColor};
+    animation: zk-spin 1.5s linear infinite;
+  }
+
+  @keyframes zk-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  .zk-payment-pending__text {
+    font-size: 14px;
+    font-weight: 500;
+    color: #374151;
+    margin-bottom: 8px;
+  }
+
+  .zk-payment-pending__link {
+    font-size: 12px;
+    color: ${primaryColor};
+    text-decoration: none;
+  }
+
+  .zk-payment-pending__link:hover {
+    text-decoration: underline;
+  }
+
   /* ===== Tool Loading ===== */
   .zk-tool-loading {
     display: flex;

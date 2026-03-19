@@ -4,9 +4,10 @@ import { ProductCard, Product } from './ProductCard'
 interface ProductGridProps {
   products: Product[]
   onAddToCart: (productId: string, size?: string, color?: string) => void
+  onAddToWishlist?: (productId: string) => void
 }
 
-export function ProductGrid({ products, onAddToCart }: ProductGridProps) {
+export function ProductGrid({ products, onAddToCart, onAddToWishlist }: ProductGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const scroll = (direction: 'left' | 'right') => {
@@ -47,6 +48,7 @@ export function ProductGrid({ products, onAddToCart }: ProductGridProps) {
             key={product.id}
             product={product}
             onAddToCart={onAddToCart}
+            onAddToWishlist={onAddToWishlist}
           />
         ))}
       </div>
