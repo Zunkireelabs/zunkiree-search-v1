@@ -10,6 +10,7 @@ import { AgentCartView } from './agent/AgentCartView'
 import { WishlistView } from './agent/WishlistView'
 import { OrderConfirmation } from './agent/OrderConfirmation'
 import { AgentCheckout } from './agent/AgentCheckout'
+import { AgentCartConfirmation } from './agent/AgentCartConfirmation'
 
 interface AgentRenderEvent {
   component: string
@@ -260,7 +261,7 @@ export function DockedPanel({
                 <CheckoutView checkout={message.checkout} brandName={brandName} />
               )}
               {message.renderEvents && message.renderEvents.map((re, idx) => {
-                const isEcommerceComponent = ['product_grid', 'product_detail', 'cart_view', 'wishlist_view', 'checkout', 'order_confirmation'].includes(re.component)
+                const isEcommerceComponent = ['product_grid', 'product_detail', 'cart_view', 'wishlist_view', 'checkout', 'order_confirmation', 'cart_confirmation'].includes(re.component)
                 if (isEcommerceComponent && !enableShopping) return null
 
                 switch (re.component) {
@@ -286,6 +287,8 @@ export function DockedPanel({
                     return <AgentCheckout key={`r-${idx}`} cartId={re.props.cartId} items={re.props.items || []} subtotal={re.props.subtotal || 0} apiUrl={apiUrl} siteId={siteId} sessionId={sessionId || ''} onContinueShopping={onContinueShopping} />
                   case 'order_confirmation':
                     return <OrderConfirmation key={`r-${idx}`} orderId={re.props.orderId || ''} total={re.props.total || 0} onContinueShopping={onContinueShopping} />
+                  case 'cart_confirmation':
+                    return <AgentCartConfirmation key={`r-${idx}`} {...re.props} onViewCart={() => handleLocalSuggestionClick('Show my cart')} onContinueShopping={() => {}} />
                   default:
                     return null
                 }
