@@ -368,6 +368,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     shipping: { full_name: string; line1: string; line2: string; city: string; state: string; postal_code: string; country: string; phone: string } | null,
     email: string,
     sameAsBilling: boolean,
+    paymentMethod: 'cod' | 'online' = 'cod',
   ) => {
     setIsOrderSubmitting(true)
     try {
@@ -393,14 +394,45 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       const orderData = await orderRes.json()
       const order = orderData.order
 
-      // Show order confirmation
-      const confirmMsgId = (Date.now() + 3).toString()
-      setMessages(prev => [...prev, {
-        id: confirmMsgId,
-        role: 'assistant',
-        content: `Order **${order?.order_number}** placed successfully! Total: ${order?.currency} ${order?.total?.toLocaleString()}\n\nWe'll process your order shortly. Thank you for shopping with us!`,
-        suggestions: ['What\'s popular?', 'Show my wishlist'],
-      }])
+      if (paymentMethod === 'online') {
+        // Online payment: call Stripe
+        const payRes = await fetch(`${apiUrl}/api/v1/orders/${order?.id}/pay`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            success_url: window.location.href,
+            cancel_url: window.location.href,
+          }),
+        })
+
+        if (!payRes.ok) {
+          const data = await payRes.json().catch(() => ({}))
+          throw new Error(data.detail || 'Failed to initiate payment')
+        }
+
+        const payData = await payRes.json()
+
+        const paymentMsgId = (Date.now() + 3).toString()
+        setMessages(prev => [...prev, {
+          id: paymentMsgId,
+          role: 'assistant',
+          content: `Order **${order?.order_number}** created! Redirecting to secure payment...`,
+          paymentPending: { checkoutUrl: payData.checkout_url },
+        }])
+
+        if (payData.checkout_url) {
+          setTimeout(() => { window.location.href = payData.checkout_url }, 1500)
+        }
+      } else {
+        // Cash on Delivery: confirm order immediately
+        const confirmMsgId = (Date.now() + 3).toString()
+        setMessages(prev => [...prev, {
+          id: confirmMsgId,
+          role: 'assistant',
+          content: `Order **${order?.order_number}** placed successfully!\n\nTotal: ${order?.currency} ${order?.total?.toLocaleString()}\nPayment: Cash on Delivery\n\nWe'll process your order shortly. Thank you for shopping with us!`,
+          suggestions: ['What\'s popular?', 'Show my wishlist'],
+        }])
+      }
     } catch (error) {
       console.error('[Zunkiree] Order/payment error:', error)
       const errorMsg = error instanceof Error ? error.message : 'Failed to process order'

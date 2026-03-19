@@ -11,6 +11,8 @@ interface AddressData {
   phone: string
 }
 
+export type PaymentMethod = 'cod' | 'online'
+
 interface AddressFormProps {
   checkout: {
     items: Array<{ name: string; price: number; currency: string; quantity: number }>
@@ -18,7 +20,7 @@ interface AddressFormProps {
     currency: string
     item_count: number
   }
-  onSubmit: (billing: AddressData, shipping: AddressData | null, email: string, sameAsBilling: boolean) => void
+  onSubmit: (billing: AddressData, shipping: AddressData | null, email: string, sameAsBilling: boolean, paymentMethod: PaymentMethod) => void
   isSubmitting: boolean
 }
 
@@ -44,6 +46,7 @@ export function AddressForm({ checkout, onSubmit, isSubmitting }: AddressFormPro
   const [billing, setBilling] = useState<AddressData>({ ...emptyAddress })
   const [sameAsBilling, setSameAsBilling] = useState(true)
   const [shipping, setShipping] = useState<AddressData>({ ...emptyAddress })
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cod')
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const formatPrice = (price: number, currency: string) => {
@@ -74,7 +77,7 @@ export function AddressForm({ checkout, onSubmit, isSubmitting }: AddressFormPro
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!validate()) return
-    onSubmit(billing, sameAsBilling ? null : shipping, email, sameAsBilling)
+    onSubmit(billing, sameAsBilling ? null : shipping, email, sameAsBilling, paymentMethod)
   }
 
   const updateBilling = (field: keyof AddressData, value: string) => {
@@ -181,12 +184,62 @@ export function AddressForm({ checkout, onSubmit, isSubmitting }: AddressFormPro
           </div>
         )}
 
+        {/* Payment Method */}
+        <div className="zk-address-form__section">
+          <div className="zk-address-form__section-title">Payment Method</div>
+          <div className="zk-address-form__payment-options">
+            <label
+              className={`zk-address-form__payment-option${paymentMethod === 'cod' ? ' zk-address-form__payment-option--active' : ''}`}
+            >
+              <input
+                type="radio"
+                name="payment_method"
+                value="cod"
+                checked={paymentMethod === 'cod'}
+                onChange={() => setPaymentMethod('cod')}
+              />
+              <div className="zk-address-form__payment-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <rect x="1" y="4" width="22" height="16" rx="2" />
+                  <path d="M1 10h22" />
+                </svg>
+              </div>
+              <div>
+                <div className="zk-address-form__payment-label">Cash on Delivery</div>
+                <div className="zk-address-form__payment-desc">Pay when you receive your order</div>
+              </div>
+            </label>
+            <label
+              className={`zk-address-form__payment-option${paymentMethod === 'online' ? ' zk-address-form__payment-option--active' : ''}`}
+            >
+              <input
+                type="radio"
+                name="payment_method"
+                value="online"
+                checked={paymentMethod === 'online'}
+                onChange={() => setPaymentMethod('online')}
+              />
+              <div className="zk-address-form__payment-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <rect x="1" y="4" width="22" height="16" rx="2" />
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M1 10h3M20 10h3" />
+                </svg>
+              </div>
+              <div>
+                <div className="zk-address-form__payment-label">Online Payment</div>
+                <div className="zk-address-form__payment-desc">Pay securely with card via Stripe</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
         <button
           type="submit"
           className="zk-address-form__submit"
           disabled={isSubmitting}
         >
-          {isSubmitting ? 'Processing...' : 'Continue to Payment'}
+          {isSubmitting ? 'Processing...' : paymentMethod === 'cod' ? 'Place Order (COD)' : 'Continue to Payment'}
         </button>
       </form>
     </div>

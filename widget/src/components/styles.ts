@@ -1943,6 +1943,67 @@ export const styles = (primaryColor: string) => `
     accent-color: ${primaryColor};
   }
 
+  /* Payment method options */
+  .zk-address-form__payment-options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .zk-address-form__payment-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: border-color 150ms, background 150ms;
+  }
+
+  .zk-address-form__payment-option:hover {
+    border-color: #d1d5db;
+    background: #f9fafb;
+  }
+
+  .zk-address-form__payment-option--active {
+    border-color: ${primaryColor};
+    background: ${primaryColor}08;
+  }
+
+  .zk-address-form__payment-option input[type="radio"] {
+    display: none;
+  }
+
+  .zk-address-form__payment-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background: #f3f4f6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #6b7280;
+    flex-shrink: 0;
+  }
+
+  .zk-address-form__payment-option--active .zk-address-form__payment-icon {
+    background: ${primaryColor}15;
+    color: ${primaryColor};
+  }
+
+  .zk-address-form__payment-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #111827;
+  }
+
+  .zk-address-form__payment-desc {
+    font-size: 11px;
+    color: #6b7280;
+    margin-top: 1px;
+  }
+
   .zk-address-form__submit {
     width: calc(100% - 24px);
     margin: 4px 12px 12px;

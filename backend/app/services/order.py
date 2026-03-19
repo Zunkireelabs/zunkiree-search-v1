@@ -32,6 +32,7 @@ class OrderService:
         shipping_address: dict | None = None,
         shopper_email: str | None = None,
         notes: str | None = None,
+        payment_method: str | None = None,
     ) -> dict:
         """Snapshot cart into an order."""
         cart_service = get_cart_service()
@@ -43,6 +44,7 @@ class OrderService:
         # Snapshot cart items
         items_snapshot = [item.to_dict() for item in cart.items]
 
+        is_cod = payment_method == "cod"
         order = Order(
             order_number=generate_order_number(),
             customer_id=customer_id,
@@ -52,8 +54,9 @@ class OrderService:
             subtotal=round(cart.subtotal, 2),
             total=round(cart.subtotal, 2),  # Tax/shipping added later
             currency=cart.currency,
-            status="pending",
-            payment_status="unpaid",
+            status="processing" if is_cod else "pending",
+            payment_status="cod" if is_cod else "unpaid",
+            payment_method=payment_method or "online",
             billing_address=json.dumps(billing_address) if billing_address else None,
             shipping_address=json.dumps(shipping_address) if shipping_address else None,
             notes=notes,

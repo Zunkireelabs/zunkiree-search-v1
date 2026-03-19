@@ -37,6 +37,7 @@ class CreateOrderRequest(BaseModel):
     shopper_email: str | None = None
     notes: str | None = None
     same_as_billing: bool = True
+    payment_method: str | None = None  # "cod" or "online"
 
 
 class PayOrderRequest(BaseModel):
@@ -70,6 +71,7 @@ async def create_order(
         shipping_address=shipping.model_dump() if shipping else None,
         shopper_email=request.shopper_email,
         notes=request.notes,
+        payment_method=request.payment_method,
     )
 
     if "error" in result:
