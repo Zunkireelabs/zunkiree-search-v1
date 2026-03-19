@@ -86,6 +86,7 @@ interface WidgetConfig {
 interface WidgetProps {
   siteId: string
   apiUrl: string
+  widgetMode?: 'search' | 'agent'
 }
 
 type WidgetMode = 'bottom-minimized' | 'bottom-expanded' | 'right-docked'
