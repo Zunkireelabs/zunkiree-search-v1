@@ -284,10 +284,15 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   }
 
   const handleAddToCart = (productId: string, size?: string, color?: string) => {
-    let msg = `Add product ${productId} to my cart`
-    if (size) msg += `, size ${size}`
-    if (color) msg += `, color ${color}`
-    setInput(msg)
+    // If size is provided, add directly. Otherwise ask the agent for sizing help.
+    if (size) {
+      let msg = `Add product ${productId} to my cart, size ${size}`
+      if (color) msg += `, color ${color}`
+      setInput(msg)
+    } else {
+      // Trigger conversational sizing flow — agent will ask for measurements
+      setInput(`I want to add product ${productId} to my cart. What size should I get?`)
+    }
     const fakeEvent = { preventDefault: () => {} } as React.FormEvent
     setTimeout(() => handleSubmit(fakeEvent), 50)
   }

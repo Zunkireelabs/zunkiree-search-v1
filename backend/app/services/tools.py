@@ -65,7 +65,7 @@ ECOMMERCE_TOOLS = [
         "type": "function",
         "function": {
             "name": "add_to_cart",
-            "description": "Add a product to the shopping cart. Use when the user wants to buy or add something to cart.",
+            "description": "Add a product to the shopping cart. IMPORTANT: You MUST confirm the size with the customer before calling this tool if the product has sizes available. Ask for their size or body measurements first, then call with the confirmed size.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -80,7 +80,7 @@ ECOMMERCE_TOOLS = [
                     },
                     "size": {
                         "type": "string",
-                        "description": "Selected size",
+                        "description": "The confirmed size (e.g. S, M, L, XL). Must be confirmed with the customer before adding.",
                     },
                     "color": {
                         "type": "string",
