@@ -57,7 +57,7 @@ interface WishlistItem {
   colors: string[]
 }
 
-interface Message {
+export interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
@@ -102,53 +102,43 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   const [dockPortalTarget, setDockPortalTarget] = useState<HTMLElement | null>(null)
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
   const [isOrderSubmitting, setIsOrderSubmitting] = useState(false)
+  // Ref for streaming content — updates DOM directly, no React re-render
+  const streamingRef = useRef<{ id: string; content: string } | null>(null)
   const hasAnimated = useRef(false)
 
-  // JS-based mobile detection (host site may lack viewport meta tag,
-  // so CSS @media queries can't be trusted)
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth <= 768)
     window.addEventListener('resize', check)
     return () => window.removeEventListener('resize', check)
   }, [])
 
-  // Fetch widget config
   useEffect(() => {
     fetch(`${apiUrl}/api/v1/widget/config/${siteId}`)
       .then(res => res.json())
-      .then(data => {
-        setConfig(data)
-      })
-      .catch(err => {
-        console.error('Failed to load widget config:', err)
-        setConfig({
-          brand_name: 'Assistant',
-          primary_color: '#2563eb',
-          placeholder_text: 'Ask a question...',
-          welcome_message: null,
-        })
-      })
+      .then(data => setConfig(data))
+      .catch(() => setConfig({
+        brand_name: 'Assistant', primary_color: '#2563eb',
+        placeholder_text: 'Ask a question...', welcome_message: null,
+      }))
   }, [apiUrl, siteId])
 
-  // Bootstrap layout wrapper once (synchronous, before paint)
   useLayoutEffect(() => {
     bootstrap()
     setDockPortalTarget(getDockPanel())
-    return () => {
-      destroy()
-    }
+    return () => { destroy() }
   }, [])
 
-  // Dock state: enter/exit via CSS class toggle only (no DOM mutation)
   useEffect(() => {
-    if (mode === 'right-docked') {
-      enterDock(() => setMode('bottom-expanded'))
-    } else {
-      exitDock()
-    }
+    if (mode === 'right-docked') enterDock(() => setMode('bottom-expanded'))
+    else exitDock()
   }, [mode])
 
-  // Query API — SSE streaming
+  // Direct DOM update for streaming — bypasses React entirely
+  const updateStreamingDOM = useCallback((content: string) => {
+    const el = document.getElementById('zk-streaming-msg')
+    if (el) el.textContent = content
+  }, [])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!input.trim() || isLoading) return
@@ -160,13 +150,9 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       role: 'user',
       content: input.trim(),
     }
-
     const assistantId = (Date.now() + 1).toString()
 
-    setMessages(prev => {
-      const filtered = prev.filter(m => !m.isError)
-      return [...filtered, userMessage]
-    })
+    setMessages(prev => [...prev.filter(m => !m.isError), userMessage])
     setInput('')
     setIsLoading(true)
 
@@ -196,23 +182,17 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       let buffer = ''
       let streamingContent = ''
       let addedMessage = false
-      let rafPending = false
 
-      // Batch token updates — only flush to React once per animation frame
-      const flushTokens = () => {
-        rafPending = false
-        const content = streamingContent
+      // Add empty assistant message once — then update DOM directly
+      const ensureMessage = () => {
         if (!addedMessage) {
           addedMessage = true
+          streamingRef.current = { id: assistantId, content: '' }
           setMessages(prev => [...prev, {
             id: assistantId,
             role: 'assistant',
-            content,
+            content: '',
           }])
-        } else {
-          setMessages(prev =>
-            prev.map(m => m.id === assistantId ? { ...m, content } : m)
-          )
         }
       }
 
@@ -233,77 +213,46 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
             const event = JSON.parse(jsonStr)
 
             if (event.type === 'token') {
+              ensureMessage()
               streamingContent += event.data
-              // Batch: schedule one React update per frame instead of per token
-              if (!rafPending) {
-                rafPending = true
-                requestAnimationFrame(flushTokens)
-              }
+              // Direct DOM update — zero React overhead
+              updateStreamingDOM(streamingContent)
             } else if (event.type === 'products') {
-              // Product search results
+              ensureMessage()
               setMessages(prev =>
                 prev.map(m => m.id === assistantId ? { ...m, products: event.data } : m)
               )
             } else if (event.type === 'cart_update') {
-              // Cart state update
+              ensureMessage()
               setMessages(prev =>
                 prev.map(m => m.id === assistantId ? { ...m, cartUpdate: event.data } : m)
               )
             } else if (event.type === 'checkout') {
-              // Checkout data (redirect mode)
+              ensureMessage()
               setMessages(prev =>
                 prev.map(m => m.id === assistantId ? { ...m, checkout: event.data } : m)
               )
             } else if (event.type === 'address_form') {
-              // In-app checkout: render address form inline
-              if (!addedMessage) {
-                addedMessage = true
-                setMessages(prev => [...prev, {
-                  id: assistantId,
-                  role: 'assistant',
-                  content: '',
-                  addressForm: event.data,
-                }])
-              } else {
-                setMessages(prev =>
-                  prev.map(m => m.id === assistantId ? { ...m, addressForm: event.data } : m)
-                )
-              }
+              ensureMessage()
+              setMessages(prev =>
+                prev.map(m => m.id === assistantId ? { ...m, addressForm: event.data } : m)
+              )
             } else if (event.type === 'wishlist_update') {
-              // Wishlist state update
-              if (!addedMessage) {
-                addedMessage = true
-                setMessages(prev => [...prev, {
-                  id: assistantId,
-                  role: 'assistant',
-                  content: '',
-                  wishlistUpdate: event.data,
-                }])
-              } else {
-                setMessages(prev =>
-                  prev.map(m => m.id === assistantId ? { ...m, wishlistUpdate: event.data } : m)
-                )
-              }
+              ensureMessage()
+              setMessages(prev =>
+                prev.map(m => m.id === assistantId ? { ...m, wishlistUpdate: event.data } : m)
+              )
             } else if (event.type === 'tool_call') {
-              // Tool execution status
-              if (!addedMessage) {
-                addedMessage = true
-                setMessages(prev => [...prev, {
-                  id: assistantId,
-                  role: 'assistant',
-                  content: '',
-                  toolStatus: { name: event.name, status: event.status },
-                }])
-              } else {
-                setMessages(prev =>
-                  prev.map(m => m.id === assistantId ? {
-                    ...m,
-                    toolStatus: { name: event.name, status: event.status },
-                  } : m)
-                )
-              }
+              ensureMessage()
+              setMessages(prev =>
+                prev.map(m => m.id === assistantId ? {
+                  ...m, toolStatus: { name: event.name, status: event.status },
+                } : m)
+              )
             } else if (event.type === 'done') {
               if (event.session_id) setSessionId(event.session_id)
+              streamingRef.current = null
+              // Final commit — one React update with the complete content
               setMessages(prev =>
                 prev.map(m => m.id === assistantId ? {
                   ...m,
@@ -323,13 +272,11 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
         }
       }
     } catch (error) {
-      console.error('[Zunkiree] Stream error:', error)
+      streamingRef.current = null
       const errorMsg = error instanceof Error ? error.message : 'Sorry, I encountered an error. Please try again.'
       setMessages(prev => [...prev, {
-        id: (Date.now() + 2).toString(),
-        role: 'assistant',
-        content: errorMsg,
-        isError: true,
+        id: (Date.now() + 2).toString(), role: 'assistant',
+        content: errorMsg, isError: true,
       }])
     } finally {
       setIsLoading(false)
@@ -341,7 +288,6 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     if (size) msg += `, size ${size}`
     if (color) msg += `, color ${color}`
     setInput(msg)
-    // Auto-submit
     const fakeEvent = { preventDefault: () => {} } as React.FormEvent
     setTimeout(() => handleSubmit(fakeEvent), 50)
   }
@@ -371,7 +317,6 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   }
 
   const handleMoveToCart = (productId: string, size?: string, color?: string) => {
-    // Remove from wishlist and add to cart
     handleAddToCart(productId, size, color)
   }
 
@@ -384,17 +329,13 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   ) => {
     setIsOrderSubmitting(true)
     try {
-      // Create order
       const orderRes = await fetch(`${apiUrl}/api/v1/orders/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          site_id: siteId,
-          session_id: sessionId,
-          billing_address: billing,
-          shipping_address: shipping,
-          shopper_email: email,
-          same_as_billing: sameAsBilling,
+          site_id: siteId, session_id: sessionId,
+          billing_address: billing, shipping_address: shipping,
+          shopper_email: email, same_as_billing: sameAsBilling,
         }),
       })
 
@@ -407,52 +348,33 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       const order = orderData.order
 
       if (paymentMethod === 'online') {
-        // Online payment: call Stripe
         const payRes = await fetch(`${apiUrl}/api/v1/orders/${order?.id}/pay`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            success_url: window.location.href,
-            cancel_url: window.location.href,
-          }),
+          body: JSON.stringify({ success_url: window.location.href, cancel_url: window.location.href }),
         })
-
         if (!payRes.ok) {
           const data = await payRes.json().catch(() => ({}))
           throw new Error(data.detail || 'Failed to initiate payment')
         }
-
         const payData = await payRes.json()
-
-        const paymentMsgId = (Date.now() + 3).toString()
         setMessages(prev => [...prev, {
-          id: paymentMsgId,
-          role: 'assistant',
+          id: (Date.now() + 3).toString(), role: 'assistant',
           content: `Order **${order?.order_number}** created! Redirecting to secure payment...`,
           paymentPending: { checkoutUrl: payData.checkout_url },
         }])
-
-        if (payData.checkout_url) {
-          setTimeout(() => { window.location.href = payData.checkout_url }, 1500)
-        }
+        if (payData.checkout_url) setTimeout(() => { window.location.href = payData.checkout_url }, 1500)
       } else {
-        // Cash on Delivery: confirm order immediately
-        const confirmMsgId = (Date.now() + 3).toString()
         setMessages(prev => [...prev, {
-          id: confirmMsgId,
-          role: 'assistant',
+          id: (Date.now() + 3).toString(), role: 'assistant',
           content: `Order **${order?.order_number}** placed successfully!\n\nTotal: ${order?.currency} ${order?.total?.toLocaleString()}\nPayment: Cash on Delivery\n\nWe'll process your order shortly. Thank you for shopping with us!`,
           suggestions: ['What\'s popular?', 'Show my wishlist'],
         }])
       }
     } catch (error) {
-      console.error('[Zunkiree] Order/payment error:', error)
       const errorMsg = error instanceof Error ? error.message : 'Failed to process order'
       setMessages(prev => [...prev, {
-        id: (Date.now() + 4).toString(),
-        role: 'assistant',
-        content: errorMsg,
-        isError: true,
+        id: (Date.now() + 4).toString(), role: 'assistant', content: errorMsg, isError: true,
       }])
     } finally {
       setIsOrderSubmitting(false)
@@ -464,34 +386,17 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     if (mode === 'bottom-minimized') setMode('bottom-expanded')
   }
 
-  const handleOpen = () => {
-    hasAnimated.current = true
-    setMode('bottom-expanded')
-  }
-
-  const handleMinimize = () => {
-    hasAnimated.current = true
-    setMode('bottom-minimized')
-  }
-
-  const handleDock = () => {
-    if (window.innerWidth < DOCK_MIN_WIDTH) return
-    setMode('right-docked')
-  }
-
-  const handleUndock = () => {
-    setMode('bottom-expanded')
-  }
+  const handleOpen = () => { hasAnimated.current = true; setMode('bottom-expanded') }
+  const handleMinimize = () => { hasAnimated.current = true; setMode('bottom-minimized') }
+  const handleDock = () => { if (window.innerWidth < DOCK_MIN_WIDTH) return; setMode('right-docked') }
+  const handleUndock = () => { setMode('bottom-expanded') }
 
   const brandName = config?.brand_name || siteId
   const primaryColor = config?.primary_color || '#2563eb'
 
-  // Get current suggestions: last assistant message's, or config quick_actions
   const getSuggestions = (): string[] => {
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === 'assistant' && messages[i].suggestions?.length) {
-        return messages[i].suggestions!
-      }
+      if (messages[i].role === 'assistant' && messages[i].suggestions?.length) return messages[i].suggestions!
     }
     return config?.quick_actions || []
   }
@@ -499,28 +404,14 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   const placeholder = config?.placeholder_text || `Ask ${brandName} a question\u2026`
 
   const sharedProps = {
-    brandName,
-    messages,
-    suggestions: getSuggestions(),
-    input,
-    isLoading,
-    onInputChange: setInput,
-    onSubmit: handleSubmit,
-    onSuggestionClick: handleSuggestionClick,
-    placeholder,
-    apiUrl,
-    siteId,
-    supportedLanguages: config?.supported_languages || [],
-    language,
-    onLanguageChange: setLanguage,
-    onAddToCart: handleAddToCart,
-    onRemoveFromCart: handleRemoveFromCart,
-    onCheckout: handleCheckout,
-    onAddToWishlist: handleAddToWishlist,
-    onRemoveFromWishlist: handleRemoveFromWishlist,
-    onMoveToCart: handleMoveToCart,
-    onAddressSubmit: handleAddressSubmit,
-    isOrderSubmitting,
+    brandName, messages, suggestions: getSuggestions(), input, isLoading,
+    onInputChange: setInput, onSubmit: handleSubmit, onSuggestionClick: handleSuggestionClick,
+    placeholder, apiUrl, siteId, supportedLanguages: config?.supported_languages || [],
+    language, onLanguageChange: setLanguage, onAddToCart: handleAddToCart,
+    onRemoveFromCart: handleRemoveFromCart, onCheckout: handleCheckout,
+    onAddToWishlist: handleAddToWishlist, onRemoveFromWishlist: handleRemoveFromWishlist,
+    onMoveToCart: handleMoveToCart, onAddressSubmit: handleAddressSubmit, isOrderSubmitting,
+    streamingId: streamingRef.current?.id || null,
   }
 
   return (
@@ -529,29 +420,18 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
 
       {mode === 'bottom-minimized' && (
         <CollapsedBar
-          brandName={brandName}
-          suggestions={getSuggestions()}
-          animate={!hasAnimated.current}
-          hasMessages={messages.length > 0}
-          onClick={handleOpen}
-          onSuggestionClick={handleSuggestionClick}
+          brandName={brandName} suggestions={getSuggestions()}
+          animate={!hasAnimated.current} hasMessages={messages.length > 0}
+          onClick={handleOpen} onSuggestionClick={handleSuggestionClick}
         />
       )}
 
       {mode === 'bottom-expanded' && (
-        <ExpandedPanel
-          {...sharedProps}
-          onClose={handleMinimize}
-          onDock={handleDock}
-        />
+        <ExpandedPanel {...sharedProps} onClose={handleMinimize} onDock={handleDock} />
       )}
 
       {mode === 'right-docked' && dockPortalTarget && createPortal(
-        <DockedPanel
-          {...sharedProps}
-          onMinimize={handleMinimize}
-          onUndock={handleUndock}
-        />,
+        <DockedPanel {...sharedProps} onMinimize={handleMinimize} onUndock={handleUndock} />,
         dockPortalTarget,
       )}
     </div>

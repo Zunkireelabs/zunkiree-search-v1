@@ -48,6 +48,7 @@ interface DockedPanelProps {
   onMoveToCart?: (productId: string, size?: string, color?: string) => void
   onAddressSubmit?: (billing: any, shipping: any, email: string, sameAsBilling: boolean) => void
   isOrderSubmitting?: boolean
+  streamingId?: string | null
 }
 
 const LANGUAGE_LABELS: Record<string, string> = {
@@ -91,6 +92,7 @@ export function DockedPanel({
   onMoveToCart,
   onAddressSubmit,
   isOrderSubmitting,
+  streamingId,
 }: DockedPanelProps) {
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -234,7 +236,11 @@ export function DockedPanel({
             <div key={message.id} className={`zk-message zk-message-${message.role}`}>
               <div className="zk-message-content">
                 {message.role === 'assistant' ? (
-                  <MarkdownContent content={message.content} />
+                  streamingId === message.id ? (
+                    <span id="zk-streaming-msg">{message.content}</span>
+                  ) : (
+                    <MarkdownContent content={message.content} />
+                  )
                 ) : (
                   message.content
                 )}
