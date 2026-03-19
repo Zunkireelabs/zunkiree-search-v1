@@ -19,9 +19,10 @@ export interface Product {
 interface ProductCardProps {
   product: Product
   onAddToCart: (productId: string, size?: string, color?: string) => void
+  onAddToWishlist?: (productId: string) => void
 }
 
-export function ProductCard({ product, onAddToCart }: ProductCardProps) {
+export function ProductCard({ product, onAddToCart, onAddToWishlist }: ProductCardProps) {
   const [selectedSize, setSelectedSize] = React.useState(product.sizes[0] || '')
   const [selectedColor, setSelectedColor] = React.useState(product.colors[0] || '')
 
@@ -41,6 +42,22 @@ export function ProductCard({ product, onAddToCart }: ProductCardProps) {
           <img src={imageUrl} alt={product.name} loading="lazy" />
           {!product.in_stock && <span className="zk-product-card__badge zk-product-card__badge--out">Out of Stock</span>}
           {product.in_stock && <span className="zk-product-card__badge zk-product-card__badge--in">In Stock</span>}
+          {onAddToWishlist && (
+            <button
+              type="button"
+              className="zk-product-card__wishlist-btn"
+              onClick={(e) => {
+                e.stopPropagation()
+                onAddToWishlist(product.id)
+              }}
+              title="Save to Wishlist"
+              aria-label="Save to Wishlist"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+              </svg>
+            </button>
+          )}
         </div>
       ) : (
         <div className="zk-product-card__image zk-product-card__image--placeholder">

@@ -4,6 +4,9 @@ import { Autocomplete } from './Autocomplete'
 import { ProductGrid } from './ProductGrid'
 import { CartView } from './CartView'
 import { CheckoutView } from './CheckoutView'
+import { WishlistView } from './WishlistView'
+import { AddressForm } from './AddressForm'
+import { PaymentPending } from './PaymentPending'
 
 interface Message {
   id: string
@@ -14,6 +17,9 @@ interface Message {
   products?: any[]
   cartUpdate?: any
   checkout?: any
+  wishlistUpdate?: any[]
+  addressForm?: any
+  paymentPending?: { checkoutUrl?: string }
   toolStatus?: { name: string; status: 'running' | 'done' }
 }
 
@@ -37,6 +43,11 @@ interface ExpandedPanelProps {
   onAddToCart?: (productId: string, size?: string, color?: string) => void
   onRemoveFromCart?: (index: number) => void
   onCheckout?: () => void
+  onAddToWishlist?: (productId: string) => void
+  onRemoveFromWishlist?: (productId: string) => void
+  onMoveToCart?: (productId: string, size?: string, color?: string) => void
+  onAddressSubmit?: (billing: any, shipping: any, email: string, sameAsBilling: boolean) => void
+  isOrderSubmitting?: boolean
 }
 
 const LANGUAGE_LABELS: Record<string, string> = {
@@ -75,6 +86,11 @@ export function ExpandedPanel({
   onAddToCart,
   onRemoveFromCart,
   onCheckout,
+  onAddToWishlist,
+  onRemoveFromWishlist,
+  onMoveToCart,
+  onAddressSubmit,
+  isOrderSubmitting,
 }: ExpandedPanelProps) {
   const messagesRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -283,13 +299,34 @@ export function ExpandedPanel({
                   )}
                 </div>
                 {message.products && message.products.length > 0 && onAddToCart && (
-                  <ProductGrid products={message.products} onAddToCart={onAddToCart} />
+                  <ProductGrid
+                    products={message.products}
+                    onAddToCart={onAddToCart}
+                    onAddToWishlist={onAddToWishlist}
+                  />
                 )}
                 {message.cartUpdate && onRemoveFromCart && onCheckout && (
                   <CartView cart={message.cartUpdate} onRemoveItem={onRemoveFromCart} onCheckout={onCheckout} />
                 )}
                 {message.checkout && (
                   <CheckoutView checkout={message.checkout} brandName={brandName} />
+                )}
+                {message.wishlistUpdate && onRemoveFromWishlist && onMoveToCart && (
+                  <WishlistView
+                    items={message.wishlistUpdate}
+                    onRemove={onRemoveFromWishlist}
+                    onMoveToCart={onMoveToCart}
+                  />
+                )}
+                {message.addressForm && onAddressSubmit && (
+                  <AddressForm
+                    checkout={message.addressForm}
+                    onSubmit={onAddressSubmit}
+                    isSubmitting={isOrderSubmitting || false}
+                  />
+                )}
+                {message.paymentPending && (
+                  <PaymentPending checkoutUrl={message.paymentPending.checkoutUrl} />
                 )}
                 {message.suggestions && message.suggestions.length > 0 && (
                   <div className="zk-message__suggestions">

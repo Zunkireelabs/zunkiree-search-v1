@@ -1,6 +1,6 @@
 """
 Agentic AI service with tool-calling for ecommerce shopping assistant.
-Handles multi-turn conversations, product search, cart management, and checkout.
+Handles multi-turn conversations, product search, cart management, wishlist, and checkout.
 """
 import json
 import logging
@@ -24,13 +24,18 @@ YOUR ROLE:
 - Use the product_search tool to find products matching what the customer is looking for
 - Help with sizing advice, color recommendations, and product comparisons
 - Manage the shopping cart (add items, remove items, show cart)
+- Manage the wishlist (save items for later, view wishlist)
 - Guide customers to checkout when ready
+- Help customers check order status
 
 TOOL USAGE:
 - When a customer asks about products, ALWAYS use product_search to find real products
 - When they want to add something, use add_to_cart
 - When they ask about their cart, use get_cart
 - When they want to checkout or buy, use checkout
+- When they want to save for later or add to wishlist, use add_to_wishlist
+- When they ask about their wishlist or saved items, use get_wishlist
+- When they ask about an order, use get_order_status
 - NEVER make up product names, prices, or details — only use data from tool results
 
 CONVERSATION STYLE:
@@ -70,6 +75,8 @@ class AgentService:
         - {"type": "products", "data": [...]} for product results
         - {"type": "cart_update", "data": {...}} for cart changes
         - {"type": "checkout", "data": {...}} for checkout data
+        - {"type": "wishlist_update", "data": [...]} for wishlist changes
+        - {"type": "address_form", "data": {...}} for inline address form
         - {"type": "done", "answer": "...", "suggestions": [...]}
         """
         # Build system prompt
@@ -186,8 +193,13 @@ class AgentService:
                         yield {"type": "products", "data": result["products"]}
                     elif tool_name in ("add_to_cart", "remove_from_cart", "get_cart") and "cart" in result:
                         yield {"type": "cart_update", "data": result["cart"]}
-                    elif tool_name == "checkout" and "checkout" in result:
-                        yield {"type": "checkout", "data": result["checkout"]}
+                    elif tool_name == "checkout":
+                        if result.get("address_form_required"):
+                            yield {"type": "address_form", "data": result["checkout"]}
+                        elif "checkout" in result:
+                            yield {"type": "checkout", "data": result["checkout"]}
+                    elif tool_name in ("add_to_wishlist", "remove_from_wishlist", "get_wishlist") and "wishlist" in result:
+                        yield {"type": "wishlist_update", "data": result["wishlist"]}
 
                     yield {"type": "tool_call", "name": tool_name, "status": "done"}
 
@@ -228,6 +240,12 @@ def _generate_shopping_suggestions(answer: str) -> list[str]:
     if "cart" in lower or "added" in lower:
         suggestions.append("Show my cart")
         suggestions.append("Checkout")
+    elif "wishlist" in lower or "saved" in lower:
+        suggestions.append("Show my wishlist")
+        suggestions.append("Show my cart")
+    elif "order" in lower or "shipped" in lower:
+        suggestions.append("Show my cart")
+        suggestions.append("What's popular?")
     elif "product" in lower or "found" in lower:
         suggestions.append("Add to cart")
         suggestions.append("Show me more options")

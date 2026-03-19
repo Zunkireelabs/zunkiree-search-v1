@@ -8,9 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.models.product import Product
+from app.models.widget_config import WidgetConfig
 from app.services.cart import get_cart_service
 from app.services.embeddings import get_embedding_service
 from app.services.vector_store import get_vector_store_service
+from app.services.wishlist import get_wishlist_service
+from app.services.order import get_order_service
 
 logger = logging.getLogger("zunkiree.tools")
 
@@ -120,10 +123,72 @@ ECOMMERCE_TOOLS = [
         "type": "function",
         "function": {
             "name": "checkout",
-            "description": "Proceed to checkout. Returns cart summary with product URLs for redirect.",
+            "description": "Proceed to checkout. Initiates the checkout process for the current cart.",
             "parameters": {
                 "type": "object",
                 "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_to_wishlist",
+            "description": "Add a product to the user's wishlist. Use when the user wants to save a product for later.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "product_id": {
+                        "type": "string",
+                        "description": "The product ID to add to wishlist",
+                    },
+                },
+                "required": ["product_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "remove_from_wishlist",
+            "description": "Remove a product from the user's wishlist.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "product_id": {
+                        "type": "string",
+                        "description": "The product ID to remove from wishlist",
+                    },
+                },
+                "required": ["product_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_wishlist",
+            "description": "Get the user's wishlist contents. Use when user asks about saved or wishlisted items.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_order_status",
+            "description": "Check the status of an order by order number. Use when a user asks about their order.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "order_number": {
+                        "type": "string",
+                        "description": "The order number (e.g. ZK-ABC123-0001)",
+                    },
+                },
+                "required": ["order_number"],
             },
         },
     },
@@ -144,11 +209,19 @@ async def execute_tool(
     elif tool_name == "add_to_cart":
         return await _add_to_cart(db, session_id, customer_id, **tool_args)
     elif tool_name == "get_cart":
-        return _get_cart(session_id)
+        return await _get_cart(db, session_id)
     elif tool_name == "remove_from_cart":
-        return _remove_from_cart(session_id, **tool_args)
+        return await _remove_from_cart(db, session_id, customer_id, **tool_args)
     elif tool_name == "checkout":
-        return _checkout(session_id)
+        return await _checkout(db, session_id, customer_id)
+    elif tool_name == "add_to_wishlist":
+        return await _add_to_wishlist(db, session_id, customer_id, **tool_args)
+    elif tool_name == "remove_from_wishlist":
+        return await _remove_from_wishlist(db, session_id, **tool_args)
+    elif tool_name == "get_wishlist":
+        return await _get_wishlist(db, session_id)
+    elif tool_name == "get_order_status":
+        return await _get_order_status(db, **tool_args)
     else:
         return {"error": f"Unknown tool: {tool_name}"}
 
@@ -310,30 +383,40 @@ async def _add_to_cart(
         url=product.url or "",
     )
 
+    await cart_service.save_to_db(db, session_id, customer_id)
+
     return {"cart": cart.to_dict(), "message": f"Added {product.name} to your cart!"}
 
 
-def _get_cart(session_id: str) -> dict:
+async def _get_cart(db: AsyncSession, session_id: str) -> dict:
     """Get current cart contents."""
     cart_service = get_cart_service()
     cart = cart_service.get_cart(session_id)
     return {"cart": cart.to_dict()}
 
 
-def _remove_from_cart(session_id: str, item_index: int = 0) -> dict:
+async def _remove_from_cart(db: AsyncSession, session_id: str, customer_id: uuid.UUID, item_index: int = 0) -> dict:
     """Remove item from cart."""
     cart_service = get_cart_service()
     cart = cart_service.remove_item(session_id, item_index)
+    await cart_service.save_to_db(db, session_id, customer_id)
     return {"cart": cart.to_dict(), "message": "Item removed from cart."}
 
 
-def _checkout(session_id: str) -> dict:
-    """Generate checkout data with product URLs."""
+async def _checkout(db: AsyncSession, session_id: str, customer_id: uuid.UUID) -> dict:
+    """Handle checkout based on merchant's checkout_mode setting."""
     cart_service = get_cart_service()
     cart = cart_service.get_cart(session_id)
 
     if not cart.items:
         return {"error": "Your cart is empty."}
+
+    # Check checkout mode from widget config
+    config_result = await db.execute(
+        select(WidgetConfig).where(WidgetConfig.customer_id == customer_id)
+    )
+    config = config_result.scalar_one_or_none()
+    checkout_mode = config.checkout_mode if config else "redirect"
 
     checkout_items = []
     for item in cart.items:
@@ -348,14 +431,57 @@ def _checkout(session_id: str) -> dict:
             "image": item.image,
         })
 
+    if checkout_mode == "in-app":
+        # In-app checkout: signal that address form is needed
+        return {
+            "address_form_required": True,
+            "checkout": {
+                "items": checkout_items,
+                "subtotal": round(cart.subtotal, 2),
+                "currency": cart.currency,
+                "item_count": cart.item_count,
+                "checkout_mode": "in-app",
+            },
+        }
+
+    # Default: redirect checkout
     return {
         "checkout": {
             "items": checkout_items,
             "subtotal": round(cart.subtotal, 2),
             "currency": cart.currency,
             "item_count": cart.item_count,
+            "checkout_mode": "redirect",
         }
     }
+
+
+# ===== Wishlist tools =====
+
+async def _add_to_wishlist(db: AsyncSession, session_id: str, customer_id: uuid.UUID, product_id: str) -> dict:
+    """Add a product to the wishlist."""
+    service = get_wishlist_service()
+    return await service.add_to_wishlist(db, session_id, customer_id, product_id)
+
+
+async def _remove_from_wishlist(db: AsyncSession, session_id: str, product_id: str) -> dict:
+    """Remove a product from the wishlist."""
+    service = get_wishlist_service()
+    return await service.remove_from_wishlist(db, session_id, product_id)
+
+
+async def _get_wishlist(db: AsyncSession, session_id: str) -> dict:
+    """Get wishlist contents."""
+    service = get_wishlist_service()
+    return await service.get_wishlist(db, session_id)
+
+
+# ===== Order tools =====
+
+async def _get_order_status(db: AsyncSession, order_number: str) -> dict:
+    """Get order status by order number."""
+    service = get_order_service()
+    return await service.get_order_by_number(db, order_number)
 
 
 def _product_to_dict(p: Product) -> dict:
