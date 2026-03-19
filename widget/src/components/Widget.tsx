@@ -391,40 +391,16 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       }
 
       const orderData = await orderRes.json()
-      const orderId = orderData.order?.id
+      const order = orderData.order
 
-      // Initiate payment
-      const payRes = await fetch(`${apiUrl}/api/v1/orders/${orderId}/pay`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          success_url: window.location.href,
-          cancel_url: window.location.href,
-        }),
-      })
-
-      if (!payRes.ok) {
-        const data = await payRes.json().catch(() => ({}))
-        throw new Error(data.detail || 'Failed to initiate payment')
-      }
-
-      const payData = await payRes.json()
-
-      // Show payment pending and redirect
-      const paymentMsgId = (Date.now() + 3).toString()
+      // Show order confirmation
+      const confirmMsgId = (Date.now() + 3).toString()
       setMessages(prev => [...prev, {
-        id: paymentMsgId,
+        id: confirmMsgId,
         role: 'assistant',
-        content: `Order ${orderData.order?.order_number} created! Redirecting to secure payment...`,
-        paymentPending: { checkoutUrl: payData.checkout_url },
+        content: `Order **${order?.order_number}** placed successfully! Total: ${order?.currency} ${order?.total?.toLocaleString()}\n\nWe'll process your order shortly. Thank you for shopping with us!`,
+        suggestions: ['What\'s popular?', 'Show my wishlist'],
       }])
-
-      // Redirect to Stripe
-      if (payData.checkout_url) {
-        setTimeout(() => {
-          window.location.href = payData.checkout_url
-        }, 1500)
-      }
     } catch (error) {
       console.error('[Zunkiree] Order/payment error:', error)
       const errorMsg = error instanceof Error ? error.message : 'Failed to process order'
