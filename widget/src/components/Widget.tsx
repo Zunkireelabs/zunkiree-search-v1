@@ -139,16 +139,23 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     if (el) el.textContent = content
   }, [])
 
+  // Pending display override — set before auto-submitting to show a clean message
+  const pendingDisplayText = useRef<string | null>(null)
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!input.trim() || isLoading) return
 
     if (mode === 'bottom-minimized') setMode('bottom-expanded')
 
+    const rawContent = input.trim()
+    const displayContent = pendingDisplayText.current || rawContent
+    pendingDisplayText.current = null
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input.trim(),
+      content: displayContent,
     }
     const assistantId = (Date.now() + 1).toString()
 
@@ -158,7 +165,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
 
     const payload = {
       site_id: siteId,
-      question: userMessage.content,
+      question: rawContent, // send the full query to the API (with product ID)
       session_id: sessionId,
       language: language !== 'en' ? language : undefined,
     }
@@ -284,13 +291,13 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   }
 
   const handleAddToCart = (productId: string, size?: string, color?: string) => {
-    // If size is provided, add directly. Otherwise ask the agent for sizing help.
     if (size) {
       let msg = `Add product ${productId} to my cart, size ${size}`
       if (color) msg += `, color ${color}`
+      pendingDisplayText.current = `Add this to my cart, size ${size}${color ? `, ${color}` : ''}`
       setInput(msg)
     } else {
-      // Trigger conversational sizing flow — agent will ask for measurements
+      pendingDisplayText.current = 'Add this to my cart — what size should I get?'
       setInput(`I want to add product ${productId} to my cart. What size should I get?`)
     }
     const fakeEvent = { preventDefault: () => {} } as React.FormEvent
@@ -298,6 +305,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   }
 
   const handleRemoveFromCart = (index: number) => {
+    pendingDisplayText.current = `Remove item ${index + 1} from my cart`
     setInput(`Remove item ${index + 1} from my cart`)
     const fakeEvent = { preventDefault: () => {} } as React.FormEvent
     setTimeout(() => handleSubmit(fakeEvent), 50)
@@ -310,12 +318,14 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   }
 
   const handleAddToWishlist = (productId: string) => {
+    pendingDisplayText.current = 'Save this to my wishlist'
     setInput(`Save product ${productId} to my wishlist`)
     const fakeEvent = { preventDefault: () => {} } as React.FormEvent
     setTimeout(() => handleSubmit(fakeEvent), 50)
   }
 
   const handleRemoveFromWishlist = (productId: string) => {
+    pendingDisplayText.current = 'Remove this from my wishlist'
     setInput(`Remove product ${productId} from my wishlist`)
     const fakeEvent = { preventDefault: () => {} } as React.FormEvent
     setTimeout(() => handleSubmit(fakeEvent), 50)
