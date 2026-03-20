@@ -62,6 +62,7 @@ class AgentService:
         question: str,
         customer_id: uuid.UUID,
         brand_name: str,
+        image_data: str | None = None,
     ):
         """
         Process a query through the agentic pipeline with tool calling.
@@ -75,6 +76,27 @@ class AgentService:
         - {"type": "address_form", "data": {...}} for inline address form
         - {"type": "done", "answer": "...", "suggestions": [...]}
         """
+        # If image_data is provided, use GPT-4o Vision to describe the item
+        if image_data:
+            try:
+                vision_response = await self.client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Describe this clothing item for a product search. Include: type of garment, color, material/texture, style. One sentence only."},
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}},
+                        ],
+                    }],
+                    max_tokens=100,
+                )
+                image_description = vision_response.choices[0].message.content
+                question = f"Find products matching: {image_description}"
+                logger.info("[AGENT] Vision description: %s", image_description)
+            except Exception as e:
+                logger.error("[AGENT] Vision API error: %s", e)
+                question = "Show me your most popular products"
+
         # Build system prompt
         system_prompt = ECOMMERCE_SYSTEM_PROMPT.format(brand_name=brand_name)
 

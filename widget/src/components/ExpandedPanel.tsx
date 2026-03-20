@@ -21,6 +21,7 @@ interface Message {
   addressForm?: any
   paymentPending?: { checkoutUrl?: string }
   toolStatus?: { name: string; status: 'running' | 'done' }
+  imagePreview?: string
 }
 
 interface ExpandedPanelProps {
@@ -49,6 +50,7 @@ interface ExpandedPanelProps {
   onAddressSubmit?: (billing: any, shipping: any, email: string, sameAsBilling: boolean) => void
   isOrderSubmitting?: boolean
   streamingId?: string | null
+  onImageSearch?: (base64: string) => void
 }
 
 const LANGUAGE_LABELS: Record<string, string> = {
@@ -93,9 +95,11 @@ export function ExpandedPanel({
   onAddressSubmit,
   isOrderSubmitting,
   streamingId,
+  onImageSearch,
 }: ExpandedPanelProps) {
   const messagesRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const [showAutocomplete, setShowAutocomplete] = useState(false)
   const userScrolledUp = useRef(false)
@@ -228,6 +232,32 @@ export function ExpandedPanel({
     }
   }
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !onImageSearch) return
+    e.target.value = ''
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        const maxSize = 512
+        let { width, height } = img
+        if (width > maxSize || height > maxSize) {
+          if (width > height) { height = Math.round(height * maxSize / width); width = maxSize }
+          else { width = Math.round(width * maxSize / height); height = maxSize }
+        }
+        canvas.width = width
+        canvas.height = height
+        canvas.getContext('2d')!.drawImage(img, 0, 0, width, height)
+        const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1]
+        onImageSearch(base64)
+      }
+      img.src = reader.result as string
+    }
+    reader.readAsDataURL(file)
+  }
+
   return (
     <>
       {/* Subtle backdrop */}
@@ -317,7 +347,16 @@ export function ExpandedPanel({
                       <MarkdownContent content={message.content} />
                     )
                   ) : (
-                    message.content
+                    <>
+                      {message.imagePreview && (
+                        <img
+                          src={`data:image/jpeg;base64,${message.imagePreview}`}
+                          alt="Uploaded"
+                          style={{ maxWidth: '120px', borderRadius: '8px', marginBottom: '6px', display: 'block' }}
+                        />
+                      )}
+                      {message.content}
+                    </>
                   )}
                 </div>
                 {message.products && message.products.length > 0 && onAddToCart && (
@@ -389,13 +428,14 @@ export function ExpandedPanel({
           />
           <div className="zk-input-container">
             <div className="zk-input-inner">
-              <button type="button" className="zk-input-icon zk-input-icon--left" aria-label="Attach image" title="Attach image">
+              <button type="button" className="zk-input-icon zk-input-icon--left" aria-label="Attach image" title="Attach image" onClick={() => fileInputRef.current?.click()}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                   <rect x="3" y="3" width="18" height="18" rx="2" />
                   <circle cx="8.5" cy="8.5" r="1.5" />
                   <path d="M21 15l-5-5L5 21" />
                 </svg>
               </button>
+              <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileSelect} />
               <textarea
                 ref={inputRef}
                 className="zk-input"

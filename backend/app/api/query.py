@@ -164,6 +164,7 @@ class QueryRequest(BaseModel):
     question: str = Field(..., max_length=500, description="User question")
     session_id: str | None = Field(None, description="Session identifier for identity verification")
     language: str | None = Field(None, description="Response language code (e.g. 'en', 'ne')")
+    image_data: str | None = Field(None, description="Base64-encoded image for visual product search")
 
 
 class SourceInfo(BaseModel):
@@ -610,6 +611,7 @@ async def submit_query_stream(
                     question=question_to_answer,
                     customer_id=customer.id,
                     brand_name=brand_name,
+                    image_data=query.image_data,
                 ):
                     yield f"data: {json.dumps(event)}\n\n"
                 return

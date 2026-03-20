@@ -70,6 +70,7 @@ export interface Message {
   addressForm?: CheckoutData
   paymentPending?: { checkoutUrl?: string }
   toolStatus?: { name: string; status: 'running' | 'done' }
+  imagePreview?: string
 }
 
 interface WidgetConfig {
@@ -141,6 +142,8 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
 
   // Pending display override — set before auto-submitting to show a clean message
   const pendingDisplayText = useRef<string | null>(null)
+  // Pending image data for visual search
+  const pendingImageData = useRef<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -151,11 +154,14 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     const rawContent = input.trim()
     const displayContent = pendingDisplayText.current || rawContent
     pendingDisplayText.current = null
+    const imageData = pendingImageData.current
+    pendingImageData.current = null
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
       content: displayContent,
+      imagePreview: imageData || undefined,
     }
     const assistantId = (Date.now() + 1).toString()
 
@@ -163,12 +169,13 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     setInput('')
     setIsLoading(true)
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       site_id: siteId,
       question: rawContent, // send the full query to the API (with product ID)
       session_id: sessionId,
       language: language !== 'en' ? language : undefined,
     }
+    if (imageData) payload.image_data = imageData
 
     try {
       const response = await fetch(`${apiUrl}/api/v1/query/stream`, {
@@ -335,6 +342,15 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     handleAddToCart(productId, size, color)
   }
 
+  const handleImageSearch = (base64: string) => {
+    if (isLoading) return
+    pendingImageData.current = base64
+    pendingDisplayText.current = 'Find products like this'
+    setInput('Find products matching this image')
+    const fakeEvent = { preventDefault: () => {} } as React.FormEvent
+    setTimeout(() => handleSubmit(fakeEvent), 50)
+  }
+
   const handleAddressSubmit = async (
     billing: { full_name: string; line1: string; line2: string; city: string; state: string; postal_code: string; country: string; phone: string },
     shipping: { full_name: string; line1: string; line2: string; city: string; state: string; postal_code: string; country: string; phone: string } | null,
@@ -425,7 +441,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     language, onLanguageChange: setLanguage, onAddToCart: handleAddToCart,
     onRemoveFromCart: handleRemoveFromCart, onCheckout: handleCheckout,
     onAddToWishlist: handleAddToWishlist, onRemoveFromWishlist: handleRemoveFromWishlist,
-    onMoveToCart: handleMoveToCart, onAddressSubmit: handleAddressSubmit, isOrderSubmitting,
+    onMoveToCart: handleMoveToCart, onAddressSubmit: handleAddressSubmit, isOrderSubmitting, onImageSearch: handleImageSearch,
     streamingId: streamingRef.current?.id || null,
   }
 
