@@ -72,6 +72,7 @@ export const getTopProducts = (limit = 10) => request(`/analytics/top-products?l
 
 // Customers
 export const getCustomers = (page = 1) => request(`/customers?page=${page}`)
+export const getCustomerOrders = (email: string) => request(`/customers/${encodeURIComponent(email)}/orders`)
 
 // Settings
 export const getSettings = () => request('/settings')

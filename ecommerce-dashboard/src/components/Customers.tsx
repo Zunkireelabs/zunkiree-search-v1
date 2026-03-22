@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { getCustomers } from '../api'
 
 interface Customer {
@@ -15,6 +16,7 @@ export function Customers() {
   const [page, setPage] = useState(1)
   const [pages, setPages] = useState(1)
   const [loading, setLoading] = useState(true)
+  const navigate = useNavigate()
 
   useEffect(() => {
     setLoading(true)
@@ -57,7 +59,10 @@ export function Customers() {
             <tbody>
               {customers.map(customer => (
                 <tr key={customer.email} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                  <td style={{ padding: '12px 16px', fontWeight: 500, color: '#374151' }}>{customer.email}</td>
+                  <td
+                    style={{ padding: '12px 16px', fontWeight: 500, color: '#2563eb', cursor: 'pointer' }}
+                    onClick={() => navigate(`/customers/${encodeURIComponent(customer.email)}`)}
+                  >{customer.email}</td>
                   <td style={{ padding: '12px 16px', textAlign: 'right', color: '#6b7280' }}>{customer.total_orders}</td>
                   <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600 }}>{formatPrice(customer.total_spent, customer.currency)}</td>
                   <td style={{ padding: '12px 16px', textAlign: 'right', color: '#6b7280' }}>{formatDate(customer.last_order_date)}</td>

@@ -8,6 +8,7 @@ import { ProductsTable } from './components/ProductsTable'
 import { Analytics } from './components/Analytics'
 import { Settings } from './components/Settings'
 import { Customers } from './components/Customers'
+import { CustomerDetail } from './components/CustomerDetail'
 import { getApiKey, setApiKey } from './api'
 
 function LoginPage() {
@@ -56,6 +57,7 @@ export function App() {
           <Route path="/orders/:id" element={<OrderDetail />} />
           <Route path="/products" element={<ProductsTable />} />
           <Route path="/customers" element={<Customers />} />
+          <Route path="/customers/:email" element={<CustomerDetail />} />
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>

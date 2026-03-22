@@ -611,6 +611,34 @@ async def list_customers(
     }
 
 
+@router.get("/customers/{email}/orders")
+async def get_customer_orders(
+    email: str,
+    x_api_key: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get all orders for a specific customer email."""
+    customer = await _authenticate(db, x_api_key)
+
+    result = await db.execute(
+        select(Order).where(
+            Order.customer_id == customer.id,
+            Order.shopper_email == email,
+        ).order_by(desc(Order.created_at))
+    )
+    orders = result.scalars().all()
+
+    # Aggregate stats
+    total_spent = sum(o.total or 0 for o in orders)
+
+    return {
+        "email": email,
+        "total_orders": len(orders),
+        "total_spent": round(total_spent, 2),
+        "orders": [_order_to_dict(o) for o in orders],
+    }
+
+
 # ===== Helpers =====
 
 def _order_to_dict(order: Order) -> dict:
