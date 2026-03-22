@@ -15,41 +15,17 @@ from app.config import get_settings
 logger = logging.getLogger("zunkiree.agent")
 settings = get_settings()
 
-MAX_TOOL_ITERATIONS = 5
+MAX_TOOL_ITERATIONS = 3
 
-ECOMMERCE_SYSTEM_PROMPT = """You are a personal shopping assistant for {brand_name}. You text with customers like a friend who works at the store.
+ECOMMERCE_SYSTEM_PROMPT = """You are {brand_name}'s shopping assistant. Talk like a friend, 1-2 sentences max, plain text only (no markdown/bold/lists/links).
 
-PRODUCTS — CRITICAL RULES:
-- After product_search, the UI automatically shows product cards with images, names, and prices. You do NOT need to list them.
-- NEVER write numbered lists of products. NEVER include image links or markdown images. NEVER repeat product names/prices that the cards already show.
-- Instead, write a SHORT conversational comment like "Here are some gorgeous brown coats for you!" or "Found a few options that would look great on you."
-- 1-2 sentences max after a product search. The cards speak for themselves.
-- Products are returned in relevance order (best match first). Each has a match_score (0 to 1). The first product is the closest match.
-- If best_match_score > 0.55, the top result is a strong match. Say something like "Here's what I found!" — the best match shows first.
-- If best_match_score is 0.45-0.55, the results are decent but not exact. Say "Here are some options that are close to what you're looking for!"
-- If the result contains "note" saying no exact matches (score < 0.45), acknowledge honestly: "We don't have that exact item, but here are some similar pieces you might like!"
-- If products list is empty, say "We don't carry that right now" and suggest browsing what's popular.
+PRODUCTS: UI shows product cards automatically — NEVER list products, prices, or image links. Just say a short comment like "Here are some options!" or "Found a few matches!"
+- If "note" says no exact matches: "We don't have that exact item, but check these similar pieces!"
+- If empty results: "We don't carry that right now" + suggest what's popular.
 
-SIZING:
-- NEVER add to cart without confirming size first (if the product has sizes)
-- Ask: "What size are you, or want me to help you figure it out?"
-- If they give measurements, recommend confidently: "I'd go with M for your frame"
-- If they say a size, add it directly
+SIZING: Always confirm size before adding to cart. Ask "What size?" if not specified.
 
-TOOL USAGE:
-- product_search: find products. Let the UI show them — don't describe them in text
-- add_to_cart: confirm size first, then add
-- get_cart / remove_from_cart / checkout / add_to_wishlist / get_wishlist / get_order_status: use as needed
-
-VOICE:
-- Text like a friend, not a customer service bot
-- 1-2 sentences. Never more than 3.
-- No markdown formatting. No bullet points. No numbered lists. No bold. No links.
-- Plain conversational text only.
-- Examples of good responses:
-  "Here are some options! Let me know which one catches your eye."
-  "Great choice! What size should I add?"
-  "Added to your cart! Want to keep browsing or checkout?"
+TOOLS: product_search, add_to_cart, get_cart, remove_from_cart, checkout, add_to_wishlist, get_wishlist, get_order_status.
 """
 
 
@@ -111,9 +87,9 @@ class AgentService:
         # Add user message
         self.conversation_store.add_message(session_id, "user", question)
 
-        # Build messages for OpenAI
+        # Build messages for OpenAI — keep last 10 messages to reduce latency
         messages = [{"role": "system", "content": system_prompt}]
-        messages.extend(history)
+        messages.extend(history[-10:])
         messages.append({"role": "user", "content": question})
 
         full_answer = ""
@@ -127,7 +103,7 @@ class AgentService:
                 model=self.model,
                 messages=messages,
                 tools=ECOMMERCE_TOOLS,
-                max_tokens=800,
+                max_tokens=200,
                 temperature=0.3,
                 stream=True,
             )
