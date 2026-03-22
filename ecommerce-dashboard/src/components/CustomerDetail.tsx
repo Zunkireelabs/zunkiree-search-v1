@@ -79,7 +79,7 @@ export function CustomerDetail() {
       </div>
 
       {/* Stats cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16, marginBottom: 24 }}>
         <div style={{ background: 'white', borderRadius: 12, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
           <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Total Orders</div>
           <div style={{ fontSize: 24, fontWeight: 700, color: '#111827' }}>{data.total_orders}</div>
@@ -93,6 +93,14 @@ export function CustomerDetail() {
           <div style={{ fontSize: 24, fontWeight: 700, color: '#111827' }}>
             {data.total_orders > 0 ? formatPrice(data.total_spent / data.total_orders) : '-'}
           </div>
+        </div>
+        <div style={{ background: 'white', borderRadius: 12, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+          <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Phone</div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: '#111827' }}>{customerPhone || '-'}</div>
+        </div>
+        <div style={{ background: 'white', borderRadius: 12, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+          <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Location</div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: '#111827' }}>{customerLocation || '-'}</div>
         </div>
       </div>
 
