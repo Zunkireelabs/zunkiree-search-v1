@@ -32,7 +32,10 @@ export function OrdersTable() {
       .finally(() => setLoading(false))
   }, [page, statusFilter])
 
-  const formatPrice = (amount: number) => `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+  const formatPrice = (amount: number, currency = 'NPR') => {
+    const symbols: Record<string, string> = { USD: '$', EUR: '€', GBP: '£', NPR: 'Rs ', INR: '₹' }
+    return `${symbols[currency] || currency + ' '}${amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+  }
   const formatDate = (d: string | null) => d ? new Date(d).toLocaleDateString() : '-'
 
   return (
@@ -93,7 +96,7 @@ export function OrdersTable() {
                       color: order.payment_status === 'paid' ? '#166534' : '#92400e',
                     }}>{order.payment_status}</span>
                   </td>
-                  <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600 }}>{formatPrice(order.total)}</td>
+                  <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600 }}>{formatPrice(order.total, order.currency)}</td>
                   <td style={{ padding: '12px 16px', textAlign: 'right', color: '#6b7280' }}>{formatDate(order.created_at)}</td>
                 </tr>
               ))}

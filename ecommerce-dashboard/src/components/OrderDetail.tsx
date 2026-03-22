@@ -42,7 +42,10 @@ export function OrderDetail() {
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#6b7280' }}>Loading...</div>
   if (!order) return <div style={{ padding: 40, textAlign: 'center', color: '#6b7280' }}>Order not found</div>
 
-  const formatPrice = (amount: number) => `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+  const formatPrice = (amount: number, currency = 'NPR') => {
+    const symbols: Record<string, string> = { USD: '$', EUR: '€', GBP: '£', NPR: 'Rs ', INR: '₹' }
+    return `${symbols[currency] || currency + ' '}${amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+  }
   const transitions = ALLOWED_TRANSITIONS[order.status] || []
 
   const renderAddress = (addr: Order['billing_address'], title: string) => {

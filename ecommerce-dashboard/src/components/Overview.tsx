@@ -24,7 +24,10 @@ export function Overview() {
 
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#6b7280' }}>Loading...</div>
 
-  const formatPrice = (amount: number) => `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+  const formatPrice = (amount: number, currency = 'NPR') => {
+    const symbols: Record<string, string> = { USD: '$', EUR: '€', GBP: '£', NPR: 'Rs ', INR: '₹' }
+    return `${symbols[currency] || currency + ' '}${amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+  }
 
   const kpis = overview ? [
     { label: 'Total Revenue', value: formatPrice(overview.total_revenue), color: '#059669' },
@@ -85,7 +88,7 @@ export function Overview() {
                         color: statusColors[order.status] || '#6b7280',
                       }}>{order.status}</span>
                     </td>
-                    <td style={{ padding: '10px 0', textAlign: 'right', fontWeight: 600 }}>{formatPrice(order.total)}</td>
+                    <td style={{ padding: '10px 0', textAlign: 'right', fontWeight: 600 }}>{formatPrice(order.total, order.currency)}</td>
                   </tr>
                 ))}
               </tbody>

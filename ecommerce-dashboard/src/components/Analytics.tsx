@@ -22,7 +22,10 @@ export function Analytics() {
 
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#6b7280' }}>Loading...</div>
 
-  const formatPrice = (amount: number) => `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+  const formatPrice = (amount: number, currency = 'NPR') => {
+    const symbols: Record<string, string> = { USD: '$', EUR: '€', GBP: '£', NPR: 'Rs ', INR: '₹' }
+    return `${symbols[currency] || currency + ' '}${amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+  }
   const maxRevenue = Math.max(...revenue.map(d => d.revenue), 1)
 
   return (
