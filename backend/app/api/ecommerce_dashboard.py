@@ -187,10 +187,36 @@ async def list_products(
     }
 
 
+class CreateProductRequest(BaseModel):
+    name: str
+    description: str | None = None
+    price: float | None = None
+    currency: str | None = None
+    original_price: float | None = None
+    images: list[str] | None = None
+    url: str | None = None
+    sku: str | None = None
+    brand: str | None = None
+    category: str | None = None
+    sizes: list[str] | None = None
+    colors: list[str] | None = None
+    in_stock: bool | None = True
+
+
 class UpdateProductRequest(BaseModel):
+    name: str | None = None
     price: float | None = None
     in_stock: bool | None = None
     description: str | None = None
+    currency: str | None = None
+    original_price: float | None = None
+    images: list[str] | None = None
+    url: str | None = None
+    sku: str | None = None
+    brand: str | None = None
+    category: str | None = None
+    sizes: list[str] | None = None
+    colors: list[str] | None = None
 
 
 @router.put("/products/{product_id}")
@@ -210,16 +236,94 @@ async def update_product(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
+    if body.name is not None:
+        product.name = body.name
     if body.price is not None:
         product.price = body.price
     if body.in_stock is not None:
         product.in_stock = body.in_stock
     if body.description is not None:
         product.description = body.description
+    if body.currency is not None:
+        product.currency = body.currency
+    if body.original_price is not None:
+        product.original_price = body.original_price
+    if body.images is not None:
+        product.images = json.dumps(body.images)
+    if body.url is not None:
+        product.url = body.url
+    if body.sku is not None:
+        product.sku = body.sku
+    if body.brand is not None:
+        product.brand = body.brand
+    if body.category is not None:
+        product.category = body.category
+    if body.sizes is not None:
+        product.sizes = json.dumps(body.sizes)
+    if body.colors is not None:
+        product.colors = json.dumps(body.colors)
     product.updated_at = datetime.utcnow()
     await db.commit()
 
     return {"product": _product_to_dict(product)}
+
+
+@router.post("/products")
+async def create_product(
+    body: CreateProductRequest,
+    x_api_key: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new product."""
+    customer = await _authenticate(db, x_api_key)
+
+    now = datetime.utcnow()
+    product = Product(
+        id=uuid.uuid4(),
+        customer_id=customer.id,
+        name=body.name,
+        description=body.description,
+        price=body.price,
+        currency=body.currency,
+        original_price=body.original_price,
+        images=json.dumps(body.images) if body.images else None,
+        url=body.url,
+        sku=body.sku,
+        brand=body.brand,
+        category=body.category,
+        sizes=json.dumps(body.sizes) if body.sizes else None,
+        colors=json.dumps(body.colors) if body.colors else None,
+        in_stock=body.in_stock if body.in_stock is not None else True,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(product)
+    await db.commit()
+    await db.refresh(product)
+
+    return {"product": _product_to_dict(product)}
+
+
+@router.delete("/products/{product_id}")
+async def delete_product(
+    product_id: uuid.UUID,
+    x_api_key: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a product by ID."""
+    customer = await _authenticate(db, x_api_key)
+
+    result = await db.execute(
+        select(Product).where(Product.id == product_id, Product.customer_id == customer.id)
+    )
+    product = result.scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    await db.delete(product)
+    await db.commit()
+
+    return {"detail": "Product deleted"}
 
 
 @router.get("/products/stats")
@@ -450,6 +554,60 @@ async def get_settings(
         "checkout_mode": config.checkout_mode,
         "shipping_countries": json.loads(config.shipping_countries) if config.shipping_countries else [],
         "enable_shopping": config.enable_shopping,
+    }
+
+
+# ===== Customers =====
+
+@router.get("/customers")
+async def list_customers(
+    x_api_key: str = Header(...),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    """List unique customers (shoppers) from orders, with aggregated stats."""
+    customer = await _authenticate(db, x_api_key)
+
+    # Count unique shopper emails
+    count_query = select(func.count(func.distinct(Order.shopper_email))).where(
+        Order.customer_id == customer.id, Order.shopper_email.isnot(None)
+    )
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    # Aggregate per shopper email
+    query = (
+        select(
+            Order.shopper_email,
+            func.count().label("total_orders"),
+            func.sum(Order.total).label("total_spent"),
+            func.max(Order.created_at).label("last_order_date"),
+        )
+        .where(Order.customer_id == customer.id, Order.shopper_email.isnot(None))
+        .group_by(Order.shopper_email)
+        .order_by(desc(func.max(Order.created_at)))
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+    )
+    result = await db.execute(query)
+    rows = result.fetchall()
+
+    customers_list = []
+    for row in rows:
+        customers_list.append({
+            "email": row[0],
+            "total_orders": row[1],
+            "total_spent": round(row[2], 2) if row[2] else 0,
+            "last_order_date": row[3].isoformat() if row[3] else None,
+        })
+
+    return {
+        "customers": customers_list,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "pages": (total + per_page - 1) // per_page,
     }
 
 

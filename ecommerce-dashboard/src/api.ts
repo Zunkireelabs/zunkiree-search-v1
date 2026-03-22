@@ -48,11 +48,20 @@ export const updateOrderStatus = (id: string, status: string) =>
 export const getProducts = (page = 1, search?: string) =>
   request(`/products?page=${page}${search ? `&search=${search}` : ''}`)
 
-export const updateProduct = (id: string, data: { price?: number; in_stock?: boolean; description?: string }) =>
+export const createProduct = (data: Record<string, unknown>) =>
+  request('/products', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const updateProduct = (id: string, data: Record<string, unknown>) =>
   request(`/products/${id}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   })
+
+export const deleteProduct = (id: string) =>
+  request(`/products/${id}`, { method: 'DELETE' })
 
 export const getProductStats = () => request('/products/stats')
 
@@ -60,6 +69,9 @@ export const getProductStats = () => request('/products/stats')
 export const getAnalyticsOverview = () => request('/analytics/overview')
 export const getRevenueData = (days = 30) => request(`/analytics/revenue?days=${days}`)
 export const getTopProducts = (limit = 10) => request(`/analytics/top-products?limit=${limit}`)
+
+// Customers
+export const getCustomers = (page = 1) => request(`/customers?page=${page}`)
 
 // Settings
 export const getSettings = () => request('/settings')
