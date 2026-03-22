@@ -315,8 +315,8 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       if (color) msg += `, color ${color}`
       pendingDisplayText.current = `Add this to my cart, size ${size}${color ? `, ${color}` : ''}`
     } else {
-      msg = `I want to add product ${productId} to my cart. What size should I get?`
-      pendingDisplayText.current = 'Add this to my cart — what size should I get?'
+      msg = `Add product ${productId} to my cart`
+      pendingDisplayText.current = 'Add this to my cart'
     }
     handleSubmit(fakeEvent, msg)
   }
