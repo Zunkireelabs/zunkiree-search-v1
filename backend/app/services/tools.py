@@ -257,6 +257,9 @@ async def _product_search(
     if not matches:
         return {"products": [], "message": "No products found matching your search."}
 
+    # Track the best match score to indicate relevance
+    best_score = max(m.get("score", 0) for m in matches)
+
     # Get product IDs from metadata
     product_ids = []
     for match in matches:
@@ -297,7 +300,10 @@ async def _product_search(
 
         filtered.append(_product_to_dict(p))
 
-    return {"products": filtered[:5]}
+    result = {"products": filtered[:5], "best_match_score": round(best_score, 3)}
+    if best_score < 0.45:
+        result["note"] = "No exact matches found. These are the closest items we have."
+    return result
 
 
 async def _fallback_product_search(
