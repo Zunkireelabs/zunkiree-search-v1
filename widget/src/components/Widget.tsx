@@ -69,6 +69,7 @@ export interface Message {
   wishlistUpdate?: WishlistItem[]
   addressForm?: CheckoutData
   paymentPending?: { checkoutUrl?: string }
+  paymentSelector?: { orderId: string; total: number; currency: string }
   toolStatus?: { name: string; status: 'running' | 'done' }
   imagePreview?: string
 }
@@ -351,6 +352,19 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     setTimeout(() => handleSubmit(fakeEvent), 50)
   }
 
+  const handlePaymentComplete = (gateway: string) => {
+    const label = gateway === 'esewa' ? 'eSewa' : 'Khalti'
+    setMessages(prev => [...prev, {
+      id: (Date.now() + 5).toString(), role: 'assistant',
+      content: `Payment successful via ${label}! Thank you for your purchase. We'll process your order shortly.`,
+      suggestions: ['What\'s popular?', 'Show my wishlist'],
+    }])
+  }
+
+  const handlePaymentFailed = () => {
+    // PaymentFlow shows retry UI inline — no extra message needed
+  }
+
   const handleAddressSubmit = async (
     billing: { full_name: string; line1: string; line2: string; city: string; state: string; postal_code: string; country: string; phone: string },
     shipping: { full_name: string; line1: string; line2: string; city: string; state: string; postal_code: string; country: string; phone: string } | null,
@@ -379,22 +393,11 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       const order = orderData.order
 
       if (paymentMethod === 'online') {
-        const payRes = await fetch(`${apiUrl}/api/v1/orders/${order?.id}/pay`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ success_url: window.location.href, cancel_url: window.location.href }),
-        })
-        if (!payRes.ok) {
-          const data = await payRes.json().catch(() => ({}))
-          throw new Error(data.detail || 'Failed to initiate payment')
-        }
-        const payData = await payRes.json()
         setMessages(prev => [...prev, {
           id: (Date.now() + 3).toString(), role: 'assistant',
-          content: `Order **${order?.order_number}** created! Redirecting to secure payment...`,
-          paymentPending: { checkoutUrl: payData.checkout_url },
+          content: `Order **${order?.order_number}** created! Choose your payment method:`,
+          paymentSelector: { orderId: order?.id, total: order?.total, currency: order?.currency || 'NPR' },
         }])
-        if (payData.checkout_url) setTimeout(() => { window.location.href = payData.checkout_url }, 1500)
       } else {
         setMessages(prev => [...prev, {
           id: (Date.now() + 3).toString(), role: 'assistant',
@@ -442,6 +445,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     onRemoveFromCart: handleRemoveFromCart, onCheckout: handleCheckout,
     onAddToWishlist: handleAddToWishlist, onRemoveFromWishlist: handleRemoveFromWishlist,
     onMoveToCart: handleMoveToCart, onAddressSubmit: handleAddressSubmit, isOrderSubmitting, onImageSearch: handleImageSearch,
+    onPaymentComplete: handlePaymentComplete, onPaymentFailed: handlePaymentFailed,
     streamingId: streamingRef.current?.id || null,
   }
 

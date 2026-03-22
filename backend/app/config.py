@@ -48,6 +48,15 @@ class Settings(BaseSettings):
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
 
+    # eSewa
+    esewa_merchant_code: str = ""
+    esewa_secret_key: str = ""
+    esewa_sandbox: bool = True
+
+    # Khalti
+    khalti_secret_key: str = ""
+    khalti_sandbox: bool = True
+
     # Embeddings
     embedding_model: str = "text-embedding-3-large"
     embedding_dimensions: int = 3072

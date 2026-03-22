@@ -7,6 +7,7 @@ import { CheckoutView } from './CheckoutView'
 import { WishlistView } from './WishlistView'
 import { AddressForm } from './AddressForm'
 import { PaymentPending } from './PaymentPending'
+import { PaymentFlow } from './PaymentFlow'
 
 interface Message {
   id: string
@@ -20,6 +21,7 @@ interface Message {
   wishlistUpdate?: any[]
   addressForm?: any
   paymentPending?: { checkoutUrl?: string }
+  paymentSelector?: { orderId: string; total: number; currency: string }
   toolStatus?: { name: string; status: 'running' | 'done' }
   imagePreview?: string
 }
@@ -51,6 +53,8 @@ interface ExpandedPanelProps {
   isOrderSubmitting?: boolean
   streamingId?: string | null
   onImageSearch?: (base64: string) => void
+  onPaymentComplete?: (gateway: string) => void
+  onPaymentFailed?: () => void
 }
 
 const LANGUAGE_LABELS: Record<string, string> = {
@@ -96,6 +100,8 @@ export function ExpandedPanel({
   isOrderSubmitting,
   streamingId,
   onImageSearch,
+  onPaymentComplete,
+  onPaymentFailed,
 }: ExpandedPanelProps) {
   const messagesRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -388,6 +394,16 @@ export function ExpandedPanel({
                 )}
                 {message.paymentPending && (
                   <PaymentPending checkoutUrl={message.paymentPending.checkoutUrl} />
+                )}
+                {message.paymentSelector && onPaymentComplete && (
+                  <PaymentFlow
+                    orderId={message.paymentSelector.orderId}
+                    total={message.paymentSelector.total}
+                    currency={message.paymentSelector.currency}
+                    apiUrl={apiUrl}
+                    onComplete={onPaymentComplete}
+                    onFailed={onPaymentFailed || (() => {})}
+                  />
                 )}
                 {message.suggestions && message.suggestions.length > 0 && (
                   <div className="zk-message__suggestions">

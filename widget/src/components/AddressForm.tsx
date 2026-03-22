@@ -228,7 +228,7 @@ export function AddressForm({ checkout, onSubmit, isSubmitting }: AddressFormPro
               </div>
               <div>
                 <div className="zk-address-form__payment-label">Online Payment</div>
-                <div className="zk-address-form__payment-desc">Pay securely with card via Stripe</div>
+                <div className="zk-address-form__payment-desc">Pay via eSewa or Khalti</div>
               </div>
             </label>
           </div>
