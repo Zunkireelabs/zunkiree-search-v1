@@ -105,7 +105,7 @@ async def update_order_status(
     """Update order status (processing, shipped, delivered, cancelled)."""
     customer = await _authenticate(db, x_api_key)
 
-    valid_statuses = {"pending", "processing", "shipped", "delivered", "cancelled", "refunded"}
+    valid_statuses = {"pending", "payment_pending", "paid", "processing", "shipped", "delivered", "cancelled", "refunded"}
     if body.status not in valid_statuses:
         raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}")
 

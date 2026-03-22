@@ -13,6 +13,7 @@ const statusColors: Record<string, string> = {
 
 const statusTransitions: Record<string, string[]> = {
   pending: ['processing', 'cancelled'],
+  payment_pending: ['pending', 'processing', 'cancelled'],
   paid: ['processing', 'cancelled', 'refunded'],
   processing: ['shipped', 'cancelled'],
   shipped: ['delivered'],
