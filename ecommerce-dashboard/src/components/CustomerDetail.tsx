@@ -32,6 +32,14 @@ export function CustomerDetail() {
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#6b7280' }}>Loading...</div>
   if (!data) return <div style={{ padding: 40, textAlign: 'center', color: '#6b7280' }}>Customer not found</div>
 
+  // Extract contact info from the most recent order's address
+  const latestAddr = data.orders[0]?.billing_address || data.orders[0]?.shipping_address
+  const customerName = latestAddr?.full_name || null
+  const customerPhone = latestAddr?.phone || null
+  const customerLocation = latestAddr
+    ? [latestAddr.city, latestAddr.state, latestAddr.country].filter(Boolean).join(', ')
+    : null
+
   return (
     <div>
       <button onClick={() => navigate('/customers')} style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontSize: 13, marginBottom: 16 }}>
@@ -39,10 +47,34 @@ export function CustomerDetail() {
       </button>
 
       {/* Customer header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start', marginBottom: 24 }}>
+        <div style={{ width: 56, height: 56, borderRadius: 28, background: '#e0e7ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <span style={{ fontSize: 22, fontWeight: 700, color: '#4338ca' }}>
+            {(customerName || data.email)[0].toUpperCase()}
+          </span>
+        </div>
         <div>
-          <h2 style={{ fontSize: 22, fontWeight: 600 }}>{data.email}</h2>
-          <p style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>Customer details</p>
+          {customerName && <h2 style={{ fontSize: 22, fontWeight: 600 }}>{customerName}</h2>}
+          <p style={{ fontSize: 14, color: customerName ? '#6b7280' : '#111827', fontWeight: customerName ? 400 : 600, marginTop: customerName ? 2 : 0 }}>{data.email}</p>
+          <div style={{ display: 'flex', gap: 16, marginTop: 6 }}>
+            {customerPhone && (
+              <span style={{ fontSize: 13, color: '#6b7280', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z" />
+                </svg>
+                {customerPhone}
+              </span>
+            )}
+            {customerLocation && (
+              <span style={{ fontSize: 13, color: '#6b7280', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" />
+                  <circle cx="12" cy="10" r="3" />
+                </svg>
+                {customerLocation}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
