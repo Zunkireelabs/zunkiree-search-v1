@@ -146,13 +146,12 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   // Pending image data for visual search
   const pendingImageData = useRef<string | null>(null)
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent, directMessage?: string) => {
     e.preventDefault()
-    if (!input.trim() || isLoading) return
+    const rawContent = directMessage || input.trim()
+    if (!rawContent || isLoading) return
 
     if (mode === 'bottom-minimized') setMode('bottom-expanded')
-
-    const rawContent = input.trim()
     const displayContent = pendingDisplayText.current || rawContent
     pendingDisplayText.current = null
     const imageData = pendingImageData.current
@@ -298,45 +297,39 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     }
   }
 
+  const fakeEvent = { preventDefault: () => {} } as React.FormEvent
+
   const handleAddToCart = (productId: string, size?: string, color?: string) => {
+    let msg: string
     if (size) {
-      let msg = `Add product ${productId} to my cart, size ${size}`
+      msg = `Add product ${productId} to my cart, size ${size}`
       if (color) msg += `, color ${color}`
       pendingDisplayText.current = `Add this to my cart, size ${size}${color ? `, ${color}` : ''}`
-      setInput(msg)
     } else {
+      msg = `I want to add product ${productId} to my cart. What size should I get?`
       pendingDisplayText.current = 'Add this to my cart — what size should I get?'
-      setInput(`I want to add product ${productId} to my cart. What size should I get?`)
     }
-    const fakeEvent = { preventDefault: () => {} } as React.FormEvent
-    setTimeout(() => handleSubmit(fakeEvent), 50)
+    handleSubmit(fakeEvent, msg)
   }
 
   const handleRemoveFromCart = (index: number) => {
-    pendingDisplayText.current = `Remove item ${index + 1} from my cart`
-    setInput(`Remove item ${index + 1} from my cart`)
-    const fakeEvent = { preventDefault: () => {} } as React.FormEvent
-    setTimeout(() => handleSubmit(fakeEvent), 50)
+    const msg = `Remove item ${index + 1} from my cart`
+    pendingDisplayText.current = msg
+    handleSubmit(fakeEvent, msg)
   }
 
   const handleCheckout = () => {
-    setInput('Checkout')
-    const fakeEvent = { preventDefault: () => {} } as React.FormEvent
-    setTimeout(() => handleSubmit(fakeEvent), 50)
+    handleSubmit(fakeEvent, 'Checkout')
   }
 
   const handleAddToWishlist = (productId: string) => {
     pendingDisplayText.current = 'Save this to my wishlist'
-    setInput(`Save product ${productId} to my wishlist`)
-    const fakeEvent = { preventDefault: () => {} } as React.FormEvent
-    setTimeout(() => handleSubmit(fakeEvent), 50)
+    handleSubmit(fakeEvent, `Save product ${productId} to my wishlist`)
   }
 
   const handleRemoveFromWishlist = (productId: string) => {
     pendingDisplayText.current = 'Remove this from my wishlist'
-    setInput(`Remove product ${productId} from my wishlist`)
-    const fakeEvent = { preventDefault: () => {} } as React.FormEvent
-    setTimeout(() => handleSubmit(fakeEvent), 50)
+    handleSubmit(fakeEvent, `Remove product ${productId} from my wishlist`)
   }
 
   const handleMoveToCart = (productId: string, size?: string, color?: string) => {
@@ -347,9 +340,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     if (isLoading) return
     pendingImageData.current = base64
     pendingDisplayText.current = 'Find products like this'
-    setInput('Find products matching this image')
-    const fakeEvent = { preventDefault: () => {} } as React.FormEvent
-    setTimeout(() => handleSubmit(fakeEvent), 50)
+    handleSubmit(fakeEvent, 'Find products matching this image')
   }
 
   const handlePaymentComplete = (gateway: string) => {
