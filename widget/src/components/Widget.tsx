@@ -99,7 +99,13 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [config, setConfig] = useState<WidgetConfig | null>(null)
-  const [sessionId, setSessionId] = useState(() => crypto.randomUUID())
+  const [sessionId, setSessionId] = useState(() => {
+    const stored = localStorage.getItem(`zk_session_${siteId}`)
+    if (stored) return stored
+    const id = crypto.randomUUID()
+    localStorage.setItem(`zk_session_${siteId}`, id)
+    return id
+  })
   const [language, setLanguage] = useState('en')
   const [dockPortalTarget, setDockPortalTarget] = useState<HTMLElement | null>(null)
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
@@ -264,7 +270,10 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
                 } : m)
               )
             } else if (event.type === 'done') {
-              if (event.session_id) setSessionId(event.session_id)
+              if (event.session_id) {
+                    setSessionId(event.session_id)
+                    localStorage.setItem(`zk_session_${siteId}`, event.session_id)
+                  }
               streamingRef.current = null
               // Final commit — one React update with the complete content
               setMessages(prev =>

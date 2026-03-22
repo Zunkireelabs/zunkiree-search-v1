@@ -60,10 +60,38 @@ class CartService:
         self._carts: dict[str, CartState] = {}
 
     def get_cart(self, session_id: str) -> CartState:
-        """Get cart for a session."""
+        """Get cart for a session (in-memory only — use async get_cart_with_db for DB fallback)."""
         if session_id not in self._carts:
             self._carts[session_id] = CartState()
         return self._carts[session_id]
+
+    async def load_from_db(self, db: AsyncSession, session_id: str) -> CartState:
+        """Load cart from DB if not in memory. Called once when a returning session is seen."""
+        if session_id in self._carts and self._carts[session_id].items:
+            return self._carts[session_id]
+        result = await db.execute(
+            select(ShoppingCart).where(ShoppingCart.session_id == session_id)
+        )
+        db_cart = result.scalar_one_or_none()
+        if db_cart and db_cart.items:
+            items_data = json.loads(db_cart.items)
+            cart = CartState()
+            for item in items_data:
+                cart.items.append(CartItem(
+                    product_id=item.get("product_id", ""),
+                    name=item.get("name", ""),
+                    price=item.get("price", 0),
+                    currency=item.get("currency", ""),
+                    quantity=item.get("quantity", 1),
+                    size=item.get("size", ""),
+                    color=item.get("color", ""),
+                    image=item.get("image", ""),
+                    url=item.get("url", ""),
+                ))
+            self._recalculate(cart)
+            self._carts[session_id] = cart
+            return cart
+        return self.get_cart(session_id)
 
     def add_item(
         self,

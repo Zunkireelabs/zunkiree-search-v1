@@ -81,6 +81,10 @@ class AgentService:
         # Build system prompt
         system_prompt = ECOMMERCE_SYSTEM_PROMPT.format(brand_name=brand_name)
 
+        # Load cart from DB if this is a returning session
+        from app.services.cart import get_cart_service
+        await get_cart_service().load_from_db(db, session_id)
+
         # Get conversation history
         history = self.conversation_store.get_messages(session_id)
 
