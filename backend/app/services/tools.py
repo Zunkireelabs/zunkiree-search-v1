@@ -257,20 +257,20 @@ async def _product_search(
     if not matches:
         return {"products": [], "message": "No products found matching your search."}
 
-    # Build ordered list of (product_id, score) preserving relevance ranking
-    scored_ids: list[tuple[str, float]] = []
+    # Deduplicate product IDs, keeping the highest score per product
+    score_map: dict[str, float] = {}
     for match in matches:
         pid = match.get("metadata", {}).get("product_id")
         score = match.get("score", 0)
-        if pid:
-            scored_ids.append((pid, score))
+        if pid and (pid not in score_map or score > score_map[pid]):
+            score_map[pid] = score
 
-    if not scored_ids:
+    if not score_map:
         return await _fallback_product_search(db, customer_id, query, min_price, max_price, in_stock_only)
 
-    best_score = scored_ids[0][1]  # already sorted by score from Pinecone
-    product_ids = [pid for pid, _ in scored_ids]
-    score_map = {pid: score for pid, score in scored_ids}
+    # Sort by score descending — best match first
+    product_ids = sorted(score_map.keys(), key=lambda pid: score_map[pid], reverse=True)
+    best_score = score_map[product_ids[0]]
 
     # Fetch full product data from database
     result = await db.execute(
