@@ -284,6 +284,26 @@ async def _product_search(
     # Index products by ID for ordered retrieval
     products_by_id = {str(p.id): p for p in products}
 
+    # Boost products whose name closely matches the query text
+    query_lower = query.lower().strip()
+    query_words = set(query_lower.split())
+    for pid, p in products_by_id.items():
+        name_lower = (p.name or "").lower()
+        # Exact name contained in query or query contained in name
+        if query_lower in name_lower or name_lower in query_lower:
+            score_map[pid] = score_map.get(pid, 0) + 0.3
+        else:
+            # Boost by fraction of query words found in product name
+            name_words = set(name_lower.split())
+            overlap = query_words & name_words
+            if overlap:
+                boost = 0.15 * (len(overlap) / len(query_words))
+                score_map[pid] = score_map.get(pid, 0) + boost
+
+    # Re-sort after boosting
+    product_ids = sorted(score_map.keys(), key=lambda pid: score_map[pid], reverse=True)
+    best_score = min(score_map[product_ids[0]], 1.0)
+
     # Apply filters while preserving relevance order from vector search
     filtered = []
     for pid in product_ids:
