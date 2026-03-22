@@ -257,19 +257,20 @@ async def _product_search(
     if not matches:
         return {"products": [], "message": "No products found matching your search."}
 
-    # Track the best match score to indicate relevance
-    best_score = max(m.get("score", 0) for m in matches)
-
-    # Get product IDs from metadata
-    product_ids = []
+    # Build ordered list of (product_id, score) preserving relevance ranking
+    scored_ids: list[tuple[str, float]] = []
     for match in matches:
         pid = match.get("metadata", {}).get("product_id")
+        score = match.get("score", 0)
         if pid:
-            product_ids.append(pid)
+            scored_ids.append((pid, score))
 
-    if not product_ids:
-        # Fallback: search products table directly
+    if not scored_ids:
         return await _fallback_product_search(db, customer_id, query, min_price, max_price, in_stock_only)
+
+    best_score = scored_ids[0][1]  # already sorted by score from Pinecone
+    product_ids = [pid for pid, _ in scored_ids]
+    score_map = {pid: score for pid, score in scored_ids}
 
     # Fetch full product data from database
     result = await db.execute(
@@ -280,9 +281,15 @@ async def _product_search(
     )
     products = result.scalars().all()
 
-    # Apply filters
+    # Index products by ID for ordered retrieval
+    products_by_id = {str(p.id): p for p in products}
+
+    # Apply filters while preserving relevance order from vector search
     filtered = []
-    for p in products:
+    for pid in product_ids:
+        p = products_by_id.get(pid)
+        if not p:
+            continue
         if in_stock_only and not p.in_stock:
             continue
         if min_price is not None and p.price and p.price < min_price:
@@ -298,7 +305,9 @@ async def _product_search(
             if not any(size.upper() == s.upper() for s in product_sizes):
                 continue
 
-        filtered.append(_product_to_dict(p))
+        product_dict = _product_to_dict(p)
+        product_dict["match_score"] = round(score_map.get(pid, 0), 3)
+        filtered.append(product_dict)
 
     result = {"products": filtered[:5], "best_match_score": round(best_score, 3)}
     if best_score < 0.45:
