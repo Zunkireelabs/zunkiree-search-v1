@@ -440,7 +440,8 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   const sharedProps = {
     brandName, messages, suggestions: getSuggestions(), input, isLoading,
     onInputChange: setInput, onSubmit: handleSubmit, onSuggestionClick: handleSuggestionClick,
-    placeholder, apiUrl, siteId, supportedLanguages: config?.supported_languages || [],
+    placeholder, apiUrl, siteId, websiteType: config?.website_type || null,
+    supportedLanguages: config?.supported_languages || [],
     language, onLanguageChange: setLanguage, onAddToCart: handleAddToCart,
     onRemoveFromCart: handleRemoveFromCart, onCheckout: handleCheckout,
     onAddToWishlist: handleAddToWishlist, onRemoveFromWishlist: handleRemoveFromWishlist,

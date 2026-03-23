@@ -55,6 +55,7 @@ interface DockedPanelProps {
   onImageSearch?: (base64: string) => void
   onPaymentComplete?: (gateway: string) => void
   onPaymentFailed?: () => void
+  websiteType?: string | null
 }
 
 const LANGUAGE_LABELS: Record<string, string> = {
@@ -102,6 +103,7 @@ export function DockedPanel({
   onImageSearch,
   onPaymentComplete,
   onPaymentFailed,
+  websiteType,
 }: DockedPanelProps) {
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -369,14 +371,18 @@ export function DockedPanel({
         />
         <div className="zk-input-container">
           <div className="zk-input-inner">
-            <button type="button" className="zk-input-icon zk-input-icon--left" aria-label="Attach image" title="Attach image" onClick={() => fileInputRef.current?.click()}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <circle cx="8.5" cy="8.5" r="1.5" />
-                <path d="M21 15l-5-5L5 21" />
-              </svg>
-            </button>
-            <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileSelect} />
+            {websiteType === 'ecommerce' && (
+              <button type="button" className="zk-input-icon zk-input-icon--left" aria-label="Attach image" title="Attach image" onClick={() => fileInputRef.current?.click()}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <path d="M21 15l-5-5L5 21" />
+                </svg>
+              </button>
+            )}
+            {websiteType === 'ecommerce' && (
+              <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileSelect} />
+            )}
             <textarea
               ref={inputRef}
               className="zk-input"
@@ -398,7 +404,7 @@ export function DockedPanel({
                   <path d="M5 12h14M12 5l7 7-7 7" />
                 </svg>
               </button>
-            ) : (
+            ) : websiteType === 'ecommerce' ? (
               <button type="button" className="zk-input-icon zk-input-icon--right" aria-label="Voice input" title="Voice input">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                   <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
@@ -407,7 +413,7 @@ export function DockedPanel({
                   <line x1="8" y1="23" x2="16" y2="23" />
                 </svg>
               </button>
-            )}
+            ) : null}
           </div>
         </div>
         <div className="zk-powered-by">
