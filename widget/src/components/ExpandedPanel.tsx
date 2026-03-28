@@ -36,6 +36,7 @@ interface ExpandedPanelProps {
   onSubmit: (e: React.FormEvent) => void
   onSuggestionClick: (suggestion: string) => void
   onClose: () => void
+  onBackdropClose?: () => void
   onDock: () => void
   placeholder: string
   apiUrl: string
@@ -84,6 +85,7 @@ export function ExpandedPanel({
   onSubmit,
   onSuggestionClick,
   onClose,
+  onBackdropClose,
   onDock,
   placeholder,
   apiUrl,
@@ -236,7 +238,7 @@ export function ExpandedPanel({
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
-      onClose()
+      (onBackdropClose || onClose)()
     }
   }
 

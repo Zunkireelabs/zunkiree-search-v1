@@ -422,7 +422,8 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   }
 
   const handleOpen = () => { hasAnimated.current = true; setMode('bottom-expanded') }
-  const handleMinimize = () => { hasAnimated.current = true; setMode('bottom-minimized') }
+  const handleMinimize = () => { hasAnimated.current = true; setUserMinimized(true); setMode('bottom-minimized') }
+  const handleBackdropClose = () => { hasAnimated.current = true; setUserMinimized(false); setMode('bottom-minimized') }
   const handleDock = () => { if (window.innerWidth < DOCK_MIN_WIDTH) return; setMode('right-docked') }
   const handleUndock = () => { setMode('bottom-expanded') }
 
@@ -466,7 +467,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       )}
 
       {mode === 'bottom-expanded' && (
-        <ExpandedPanel {...sharedProps} onClose={handleMinimize} onDock={handleDock} />
+        <ExpandedPanel {...sharedProps} onClose={handleMinimize} onBackdropClose={handleBackdropClose} onDock={handleDock} />
       )}
 
       {mode === 'right-docked' && dockPortalTarget && createPortal(
