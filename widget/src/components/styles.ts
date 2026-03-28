@@ -21,7 +21,7 @@ export const styles = (primaryColor: string) => `
     min-width: 0 !important;
     z-index: 9999 !important;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    transition: transform 180ms ease-out, opacity 180ms ease-out;
+    transition: transform 250ms ease, opacity 250ms ease;
     box-sizing: border-box !important;
     float: none !important;
     display: block !important;
@@ -30,6 +30,12 @@ export const styles = (primaryColor: string) => `
   .zk-collapsed-bar--visible {
     transform: translateX(-50%) translateY(0) !important;
     opacity: 1;
+  }
+
+  .zk-collapsed-bar--hidden {
+    transform: translateX(-50%) translateY(20px) !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
   }
 
   /* Card container - glassmorphic */
@@ -934,7 +940,7 @@ export const styles = (primaryColor: string) => `
     display: none; /* hidden on desktop by default */
   }
 
-  /* Desktop FAB pill — shown after user minimizes the panel */
+  /* Desktop FAB pill — shown on scroll down or after minimize */
   .zk-fab--desktop {
     display: flex !important;
     align-items: center;
@@ -956,7 +962,7 @@ export const styles = (primaryColor: string) => `
     cursor: pointer;
     opacity: 0;
     transform: scale(0.9);
-    transition: opacity 180ms ease-out, transform 180ms ease-out, box-shadow 150ms;
+    transition: opacity 250ms ease, transform 250ms ease, box-shadow 150ms;
   }
 
   .zk-fab--desktop.zk-fab--visible {
