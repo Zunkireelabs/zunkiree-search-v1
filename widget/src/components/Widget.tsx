@@ -458,6 +458,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
         <CollapsedBar
           brandName={brandName} suggestions={getSuggestions()}
           animate={!hasAnimated.current} hasMessages={messages.length > 0}
+          minimized={hasAnimated.current}
           onClick={handleOpen} onSuggestionClick={handleSuggestionClick}
         />
       )}

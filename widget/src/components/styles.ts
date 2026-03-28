@@ -931,7 +931,50 @@ export const styles = (primaryColor: string) => `
 
   /* ===== Mobile FAB ===== */
   .zk-fab {
-    display: none; /* hidden on desktop */
+    display: none; /* hidden on desktop by default */
+  }
+
+  /* Desktop FAB pill — shown after user minimizes the panel */
+  .zk-fab--desktop {
+    display: flex !important;
+    align-items: center;
+    gap: 8px;
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    height: 48px;
+    padding: 0 20px;
+    border-radius: 24px;
+    border: none;
+    background: linear-gradient(135deg, #2067fb 0%, #000b22 100%);
+    color: white;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 15px;
+    font-weight: 500;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    z-index: 9999;
+    cursor: pointer;
+    opacity: 0;
+    transform: scale(0.9);
+    transition: opacity 180ms ease-out, transform 180ms ease-out, box-shadow 150ms;
+  }
+
+  .zk-fab--desktop.zk-fab--visible {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .zk-fab--desktop:hover {
+    box-shadow: 0 6px 28px rgba(0, 0, 0, 0.3);
+    transform: scale(1.03);
+  }
+
+  .zk-fab--desktop .zk-fab__label {
+    display: inline;
+  }
+
+  .zk-fab__label {
+    display: none; /* hidden on mobile FAB */
   }
 
   /* ===== Mobile (JS-detected via .zk-mobile class) ===== */
@@ -948,6 +991,7 @@ export const styles = (primaryColor: string) => `
     right: 16px;
     width: 56px;
     height: 56px;
+    padding: 0 !important;
     border-radius: 50%;
     border: none;
     background: linear-gradient(135deg, #2067fb 0%, #000b22 100%);
@@ -963,6 +1007,10 @@ export const styles = (primaryColor: string) => `
   .zk-mobile .zk-fab--visible {
     opacity: 1;
     transform: scale(1);
+  }
+
+  .zk-mobile .zk-fab__label {
+    display: none !important;
   }
 
   /* Kill the desktop collapsed bar — it causes page overflow */
