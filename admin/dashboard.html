@@ -175,6 +175,9 @@
     <div class="tabs">
       <button class="tab active" onclick="showTab('leads')">Leads & Users</button>
       <button class="tab" onclick="showTab('queries')">Query History</button>
+      <button class="tab" onclick="showTab('ingest')">Ingest Data</button>
+      <button class="tab" onclick="showTab('config')">Widget Config</button>
+      <button class="tab" onclick="showTab('embed')">Embed Code</button>
     </div>
 
     <!-- Leads Section -->
@@ -212,11 +215,102 @@
       </div>
       <div class="pagination" id="queriesPagination"></div>
     </div>
+
+    <!-- Ingest Data Section -->
+    <div class="section hidden" id="ingestSection">
+      <h2>Ingest Data</h2>
+      <div class="tabs" style="margin-bottom:16px;">
+        <button class="tab active" onclick="showIngestTab('url')">URL</button>
+        <button class="tab" onclick="showIngestTab('file')">File</button>
+        <button class="tab" onclick="showIngestTab('qa')">QA Seeds</button>
+      </div>
+
+      <form id="ingestUrlForm" onsubmit="submitIngestUrl(event)">
+        <div class="form-group">
+          <label>URL to crawl</label>
+          <input type="url" id="ingestUrl" placeholder="https://example.com/page" required>
+        </div>
+        <div class="form-group">
+          <label>Max Pages</label>
+          <input type="number" id="maxPages" min="1" max="50" value="1">
+        </div>
+        <button type="submit">Start Ingestion</button>
+      </form>
+
+      <form id="ingestFileForm" class="hidden" onsubmit="submitIngestFile(event)">
+        <div class="form-group">
+          <label>Upload File (.pdf, .docx, .txt — max 10MB)</label>
+          <input type="file" id="fileInput" accept=".pdf,.docx,.txt" required>
+        </div>
+        <button type="submit">Upload & Ingest</button>
+      </form>
+
+      <div id="ingestQAForm" class="hidden">
+        <div id="qaPairsContainer">
+          <div class="qa-pair" style="margin-bottom:12px; padding:12px; background:#f9fafb; border-radius:8px;">
+            <div class="form-group"><label>Question</label><input type="text" class="qa-question" required></div>
+            <div class="form-group"><label>Answer</label><input type="text" class="qa-answer" required></div>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:8px;">
+          <button type="button" class="secondary" onclick="addQAPair()">+ Add Pair</button>
+          <button type="button" onclick="submitQABatch()">Submit All</button>
+        </div>
+      </div>
+
+      <div id="ingestStatus" class="alert info hidden" style="margin-top:16px;"></div>
+
+      <div style="margin-top:24px;">
+        <h3 style="font-size:14px; color:#374151; margin-bottom:10px;">Recent Jobs</h3>
+        <div id="jobsList" style="font-size:13px; color:#6b7280;">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Widget Config Section -->
+    <div class="section hidden" id="configSection">
+      <h2>Widget Configuration</h2>
+      <form id="configForm" onsubmit="submitConfig(event)">
+        <div class="form-group">
+          <label>Brand Name</label>
+          <input type="text" id="cfgBrandName">
+        </div>
+        <div class="form-group">
+          <label>Tone</label>
+          <select id="cfgTone">
+            <option value="neutral">Neutral</option>
+            <option value="formal">Formal</option>
+            <option value="friendly">Friendly</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Primary Color</label>
+          <input type="color" id="cfgPrimaryColor" value="#2563eb">
+        </div>
+        <div class="form-group">
+          <label>Welcome Message</label>
+          <input type="text" id="cfgWelcomeMessage" placeholder="How can we help?">
+        </div>
+        <div class="form-group">
+          <label>Confidence Threshold</label>
+          <input type="number" id="cfgConfidence" min="0.1" max="0.5" step="0.05" value="0.25">
+        </div>
+        <button type="submit">Save Config</button>
+      </form>
+    </div>
+
+    <!-- Embed Code Section -->
+    <div class="section hidden" id="embedSection">
+      <h2>Embed Code</h2>
+      <p style="font-size:14px; color:#6b7280; margin-bottom:16px;">Add this script tag to your website, just before the closing <code>&lt;/body&gt;</code> tag:</p>
+      <pre id="embedCode" style="background:#1a1a2e; color:#e2e8f0; padding:16px; border-radius:8px; font-size:13px; overflow-x:auto; white-space:pre-wrap;"></pre>
+      <button onclick="copyEmbedCode()" style="margin-top:12px;">Copy to Clipboard</button>
+    </div>
   </div>
 
   <script>
     const API_URL = 'https://api.zunkireelabs.com';
     let API_KEY = sessionStorage.getItem('zunkiree_dashboard_key') || '';
+    let SITE_ID = '';
     let leadsPage = 1, leadsPageSize = 25;
     let queriesPage = 1, queriesPageSize = 25;
     let leadsSearchTimer = null;
@@ -304,10 +398,12 @@
         const res = await apiFetch('/overview');
         if (!res.ok) return;
         const d = await res.json();
+        SITE_ID = d.site_id;
         document.getElementById('ovSiteId').textContent = d.site_id;
         document.getElementById('ovLeads').textContent = d.total_leads;
         document.getElementById('ovQueries').textContent = d.total_queries;
         document.getElementById('headerBrand').textContent = d.brand_name;
+        updateEmbedCode();
       } catch { /* silent */ }
     }
 
@@ -315,8 +411,12 @@
     function showTab(tab) {
       document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('active'));
       event.target.classList.add('active');
-      document.getElementById('leadsSection').classList.toggle('hidden', tab !== 'leads');
-      document.getElementById('queriesSection').classList.toggle('hidden', tab !== 'queries');
+      ['leadsSection','queriesSection','ingestSection','configSection','embedSection'].forEach(id => {
+        document.getElementById(id).classList.add('hidden');
+      });
+      document.getElementById(tab + 'Section').classList.remove('hidden');
+      if (tab === 'ingest') loadJobs();
+      if (tab === 'config') loadConfig();
     }
 
     // --- Pagination ---
@@ -424,6 +524,169 @@
         a.href = url; a.download = 'queries.csv'; a.click();
         URL.revokeObjectURL(url);
       } catch { showAlert('Export failed', 'error'); }
+    }
+
+    // --- Ingest ---
+    function showIngestTab(tab) {
+      document.querySelectorAll('#ingestSection .tabs .tab').forEach(t => t.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById('ingestUrlForm').classList.toggle('hidden', tab !== 'url');
+      document.getElementById('ingestFileForm').classList.toggle('hidden', tab !== 'file');
+      document.getElementById('ingestQAForm').classList.toggle('hidden', tab !== 'qa');
+    }
+
+    async function submitIngestUrl(e) {
+      e.preventDefault();
+      const statusEl = document.getElementById('ingestStatus');
+      statusEl.textContent = 'Ingesting...';
+      statusEl.classList.remove('hidden');
+      try {
+        const res = await fetch(`${API_URL}/api/v1/dashboard/ingest/url`, {
+          method: 'POST',
+          headers: { 'X-Api-Key': API_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: document.getElementById('ingestUrl').value,
+            max_pages: parseInt(document.getElementById('maxPages').value) || 1,
+          }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          statusEl.textContent = data.message;
+          statusEl.className = 'alert success';
+          loadJobs();
+        } else {
+          statusEl.textContent = data.detail?.message || 'Ingestion failed';
+          statusEl.className = 'alert error';
+        }
+      } catch { statusEl.textContent = 'Ingestion failed'; statusEl.className = 'alert error'; }
+    }
+
+    async function submitIngestFile(e) {
+      e.preventDefault();
+      const statusEl = document.getElementById('ingestStatus');
+      statusEl.textContent = 'Uploading...';
+      statusEl.classList.remove('hidden');
+      const formData = new FormData();
+      formData.append('file', document.getElementById('fileInput').files[0]);
+      try {
+        const res = await fetch(`${API_URL}/api/v1/dashboard/ingest/file`, {
+          method: 'POST',
+          headers: { 'X-Api-Key': API_KEY },
+          body: formData,
+        });
+        const data = await res.json();
+        if (res.ok) {
+          statusEl.textContent = data.message;
+          statusEl.className = 'alert success';
+          loadJobs();
+        } else {
+          statusEl.textContent = data.detail?.message || 'Upload failed';
+          statusEl.className = 'alert error';
+        }
+      } catch { statusEl.textContent = 'Upload failed'; statusEl.className = 'alert error'; }
+    }
+
+    function addQAPair() {
+      const container = document.getElementById('qaPairsContainer');
+      const pair = document.createElement('div');
+      pair.className = 'qa-pair';
+      pair.style.cssText = 'margin-bottom:12px; padding:12px; background:#f9fafb; border-radius:8px; position:relative;';
+      pair.innerHTML = `
+        <div class="form-group"><label>Question</label><input type="text" class="qa-question" required></div>
+        <div class="form-group"><label>Answer</label><input type="text" class="qa-answer" required></div>
+        <button type="button" class="secondary" style="position:absolute;top:8px;right:8px;padding:2px 8px;font-size:12px;" onclick="this.parentElement.remove()">×</button>
+      `;
+      container.appendChild(pair);
+    }
+
+    async function submitQABatch() {
+      const pairs = [];
+      document.querySelectorAll('.qa-pair').forEach(p => {
+        const q = p.querySelector('.qa-question').value.trim();
+        const a = p.querySelector('.qa-answer').value.trim();
+        if (q && a) pairs.push({ question: q, answer: a });
+      });
+      if (pairs.length === 0) { showAlert('Add at least one Q&A pair', 'error'); return; }
+      const statusEl = document.getElementById('ingestStatus');
+      statusEl.textContent = 'Submitting...';
+      statusEl.classList.remove('hidden');
+      try {
+        const res = await fetch(`${API_URL}/api/v1/dashboard/ingest/qa/batch`, {
+          method: 'POST',
+          headers: { 'X-Api-Key': API_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ qa_pairs: pairs }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          statusEl.textContent = `${data.succeeded} of ${data.total} pairs ingested successfully`;
+          statusEl.className = 'alert success';
+          loadJobs();
+        } else {
+          statusEl.textContent = data.detail?.message || 'QA ingestion failed';
+          statusEl.className = 'alert error';
+        }
+      } catch { statusEl.textContent = 'QA ingestion failed'; statusEl.className = 'alert error'; }
+    }
+
+    async function loadJobs() {
+      const el = document.getElementById('jobsList');
+      try {
+        const res = await apiFetch('/jobs?limit=10');
+        if (!res.ok) { el.textContent = 'Failed to load jobs'; return; }
+        const data = await res.json();
+        if (data.jobs.length === 0) { el.textContent = 'No jobs yet'; return; }
+        el.innerHTML = data.jobs.map(j => `
+          <div style="padding:8px 0; border-bottom:1px solid #f3f4f6; display:flex; justify-content:space-between;">
+            <span>${esc(j.source_url || j.source_filename || j.source_type)} — ${j.chunks_created} chunks</span>
+            <span style="color:${j.status === 'completed' ? '#16a34a' : j.status === 'failed' ? '#dc2626' : '#f59e0b'}">${j.status}</span>
+          </div>
+        `).join('');
+      } catch { el.textContent = 'Failed to load jobs'; }
+    }
+
+    // --- Widget Config ---
+    async function loadConfig() {
+      try {
+        const res = await apiFetch('/config');
+        if (!res.ok) return;
+        const c = await res.json();
+        document.getElementById('cfgBrandName').value = c.brand_name || '';
+        document.getElementById('cfgTone').value = c.tone || 'neutral';
+        document.getElementById('cfgPrimaryColor').value = c.primary_color || '#2563eb';
+        document.getElementById('cfgWelcomeMessage').value = c.welcome_message || '';
+        document.getElementById('cfgConfidence').value = c.confidence_threshold || 0.25;
+      } catch { /* silent */ }
+    }
+
+    async function submitConfig(e) {
+      e.preventDefault();
+      try {
+        const res = await fetch(`${API_URL}/api/v1/dashboard/config`, {
+          method: 'PUT',
+          headers: { 'X-Api-Key': API_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            brand_name: document.getElementById('cfgBrandName').value || undefined,
+            tone: document.getElementById('cfgTone').value || undefined,
+            primary_color: document.getElementById('cfgPrimaryColor').value || undefined,
+            welcome_message: document.getElementById('cfgWelcomeMessage').value || undefined,
+            confidence_threshold: parseFloat(document.getElementById('cfgConfidence').value) || undefined,
+          }),
+        });
+        if (res.ok) showAlert('Config saved successfully', 'success');
+        else showAlert('Failed to save config', 'error');
+      } catch { showAlert('Failed to save config', 'error'); }
+    }
+
+    // --- Embed Code ---
+    function updateEmbedCode() {
+      const code = `<script\n  src="https://zunkiree-search-v1.vercel.app/zunkiree-widget.iife.js"\n  data-site-id="${SITE_ID}"\n  data-api-url="https://api.zunkireelabs.com"\n><\/script>`;
+      document.getElementById('embedCode').textContent = code;
+    }
+
+    function copyEmbedCode() {
+      const code = document.getElementById('embedCode').textContent;
+      if (!code) return;
+      navigator.clipboard.writeText(code).then(() => showAlert('Embed code copied!', 'success'));
     }
 
     // --- Init ---
