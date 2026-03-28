@@ -112,8 +112,8 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   const [isOrderSubmitting, setIsOrderSubmitting] = useState(false)
   // Ref for streaming content — updates DOM directly, no React re-render
   const streamingRef = useRef<{ id: string; content: string } | null>(null)
-  const hasAnimated = useRef(false)
-  const [userMinimized, setUserMinimized] = useState(false)
+  const [userMinimized, setUserMinimized] = useState(() => sessionStorage.getItem(`zk_minimized_${siteId}`) === '1')
+  const hasAnimated = useRef(userMinimized)
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth <= 768)
@@ -422,8 +422,8 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   }
 
   const handleOpen = () => { hasAnimated.current = true; setMode('bottom-expanded') }
-  const handleMinimize = () => { hasAnimated.current = true; setUserMinimized(true); setMode('bottom-minimized') }
-  const handleBackdropClose = () => { hasAnimated.current = true; setUserMinimized(false); setMode('bottom-minimized') }
+  const handleMinimize = () => { hasAnimated.current = true; setUserMinimized(true); sessionStorage.setItem(`zk_minimized_${siteId}`, '1'); setMode('bottom-minimized') }
+  const handleBackdropClose = () => { hasAnimated.current = true; setUserMinimized(false); sessionStorage.removeItem(`zk_minimized_${siteId}`); setMode('bottom-minimized') }
   const handleDock = () => { if (window.innerWidth < DOCK_MIN_WIDTH) return; setMode('right-docked') }
   const handleUndock = () => { setMode('bottom-expanded') }
 
@@ -462,7 +462,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
           animate={!hasAnimated.current} hasMessages={messages.length > 0}
           minimized={userMinimized}
           onClick={handleOpen} onSuggestionClick={handleSuggestionClick}
-          onMinimize={() => { hasAnimated.current = true; setUserMinimized(true) }}
+          onMinimize={() => { hasAnimated.current = true; setUserMinimized(true); sessionStorage.setItem(`zk_minimized_${siteId}`, '1') }}
         />
       )}
 
