@@ -113,6 +113,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   // Ref for streaming content — updates DOM directly, no React re-render
   const streamingRef = useRef<{ id: string; content: string } | null>(null)
   const hasAnimated = useRef(false)
+  const [userMinimized, setUserMinimized] = useState(false)
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth <= 768)
@@ -458,8 +459,9 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
         <CollapsedBar
           brandName={brandName} suggestions={getSuggestions()}
           animate={!hasAnimated.current} hasMessages={messages.length > 0}
-          minimized={hasAnimated.current}
+          minimized={userMinimized}
           onClick={handleOpen} onSuggestionClick={handleSuggestionClick}
+          onMinimize={() => { hasAnimated.current = true; setUserMinimized(true) }}
         />
       )}
 

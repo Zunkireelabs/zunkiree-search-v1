@@ -7,6 +7,7 @@ interface CollapsedBarProps {
   hasMessages: boolean
   minimized?: boolean
   onClick: () => void
+  onMinimize: () => void
   onSuggestionClick: (suggestion: string) => void
 }
 
@@ -19,6 +20,7 @@ export function CollapsedBar({
   hasMessages,
   minimized,
   onClick,
+  onMinimize,
   onSuggestionClick,
 }: CollapsedBarProps) {
   const [visible, setVisible] = useState(!animate)
@@ -75,9 +77,9 @@ export function CollapsedBar({
             className="zk-collapsed-bar__minimize"
             onClick={(e) => {
               e.stopPropagation()
-              onClick()
+              onMinimize()
             }}
-            aria-label="Open panel"
+            aria-label="Minimize"
             type="button"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
