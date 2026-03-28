@@ -323,6 +323,49 @@ async def get_customer_api_key(
     return {"api_key": customer.api_key}
 
 
+@router.post("/customers/{site_id}/rotate-key")
+async def rotate_customer_api_key(
+    site_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """Rotate (regenerate) the API key for a customer."""
+    result = await db.execute(
+        select(Customer).where(Customer.site_id == site_id)
+    )
+    customer = result.scalar_one_or_none()
+    if not customer:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "CUSTOMER_NOT_FOUND", "message": "Customer not found"},
+        )
+    new_key = f"zk_live_{site_id}_{secrets.token_urlsafe(24)}"
+    customer.api_key = new_key
+    await db.commit()
+    return {"api_key": new_key, "message": "API key rotated successfully"}
+
+
+@router.post("/customers/{site_id}/toggle-active")
+async def toggle_customer_active(
+    site_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """Toggle the is_active status for a customer (enable/disable widget)."""
+    result = await db.execute(
+        select(Customer).where(Customer.site_id == site_id)
+    )
+    customer = result.scalar_one_or_none()
+    if not customer:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "CUSTOMER_NOT_FOUND", "message": "Customer not found"},
+        )
+    customer.is_active = not customer.is_active
+    await db.commit()
+    return {"is_active": customer.is_active, "message": f"Widget {'enabled' if customer.is_active else 'disabled'} successfully"}
+
+
 @router.get("/stats/{site_id}", response_model=TenantStatsResponse)
 async def get_tenant_stats(
     site_id: str,

@@ -449,10 +449,16 @@
               <div class="stat-value small" id="ovLastIngestion">—</div>
             </div>
           </div>
-          <div style="margin-top: 16px; padding: 12px; background: #f9fafb; border-radius: 8px; display: flex; align-items: center; gap: 12px;">
+          <div style="margin-top: 16px; padding: 12px; background: #f9fafb; border-radius: 8px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
             <span style="font-size: 13px; color: #6b7280; white-space: nowrap;">API Key:</span>
             <code id="ovApiKey" style="font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">—</code>
             <button onclick="copyApiKey()" style="padding: 4px 12px; font-size: 12px; white-space: nowrap;">Copy</button>
+            <button onclick="rotateApiKey()" style="padding: 4px 12px; font-size: 12px; white-space: nowrap; background: #f59e0b;">Rotate Key</button>
+          </div>
+          <div style="margin-top: 12px; padding: 12px; background: #f9fafb; border-radius: 8px; display: flex; align-items: center; gap: 12px;">
+            <span style="font-size: 13px; color: #6b7280; white-space: nowrap;">Widget Status:</span>
+            <span id="ovWidgetStatus" style="font-size: 13px; font-weight: 600;">—</span>
+            <button id="toggleActiveBtn" onclick="toggleWidgetActive()" style="padding: 4px 12px; font-size: 12px; white-space: nowrap;">—</button>
           </div>
           <div style="margin-top: 16px;">
             <h3 style="font-size: 14px; color: #374151; margin-bottom: 10px;">Recent Jobs</h3>
@@ -1075,6 +1081,7 @@
         data.customers.forEach(c => {
           const opt = document.createElement('option');
           opt.value = c.site_id;
+          opt.dataset.active = c.is_active ? '1' : '0';
           opt.textContent = `${c.name} (${c.site_id})`;
           sel.appendChild(opt);
         });
@@ -1105,6 +1112,7 @@
       queriesPage = 1;
       syncSiteIdFields();
       loadApiKey(siteId);
+      updateWidgetStatusUI();
       loadRetrievalStats(siteId);
       loadLeads();
       loadQueries();
@@ -1180,6 +1188,61 @@
       const key = document.getElementById('ovApiKey').textContent;
       if (!key || key === '...' || key === '—') return;
       navigator.clipboard.writeText(key).then(() => showAlert('API key copied!', 'success'));
+    }
+
+    async function rotateApiKey() {
+      const siteId = document.getElementById('tenantSelect').value;
+      if (!siteId) return;
+      if (!confirm('This will invalidate the current API key. The client will need to use the new key. Proceed?')) return;
+      try {
+        const res = await fetch(`${API_URL}/api/v1/admin/customers/${siteId}/rotate-key`, {
+          method: 'POST',
+          headers: { 'X-Admin-Key': ADMIN_KEY },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          document.getElementById('ovApiKey').textContent = data.api_key;
+          showAlert('API key rotated successfully', 'success');
+        } else {
+          showAlert('Failed to rotate API key', 'error');
+        }
+      } catch { showAlert('Failed to rotate API key', 'error'); }
+    }
+
+    function updateWidgetStatusUI() {
+      const sel = document.getElementById('tenantSelect');
+      const opt = sel.options[sel.selectedIndex];
+      const isActive = opt && opt.dataset.active === '1';
+      const statusEl = document.getElementById('ovWidgetStatus');
+      const btn = document.getElementById('toggleActiveBtn');
+      statusEl.textContent = isActive ? 'Active' : 'Disabled';
+      statusEl.style.color = isActive ? '#16a34a' : '#dc2626';
+      btn.textContent = isActive ? 'Disable Widget' : 'Enable Widget';
+      btn.style.background = isActive ? '#dc2626' : '#16a34a';
+    }
+
+    async function toggleWidgetActive() {
+      const siteId = document.getElementById('tenantSelect').value;
+      if (!siteId) return;
+      const sel = document.getElementById('tenantSelect');
+      const opt = sel.options[sel.selectedIndex];
+      const currentlyActive = opt.dataset.active === '1';
+      const action = currentlyActive ? 'disable' : 'enable';
+      if (!confirm(`This will ${action} the widget for this tenant. Proceed?`)) return;
+      try {
+        const res = await fetch(`${API_URL}/api/v1/admin/customers/${siteId}/toggle-active`, {
+          method: 'POST',
+          headers: { 'X-Admin-Key': ADMIN_KEY },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          opt.dataset.active = data.is_active ? '1' : '0';
+          updateWidgetStatusUI();
+          showAlert(data.message, 'success');
+        } else {
+          showAlert(`Failed to ${action} widget`, 'error');
+        }
+      } catch { showAlert(`Failed to ${action} widget`, 'error'); }
     }
 
     // --- Leads & Query History ---
