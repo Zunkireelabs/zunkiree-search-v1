@@ -442,9 +442,10 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     if (mode === 'bottom-minimized') setMode('bottom-expanded')
   }
 
+  const [scrollTransition, setScrollTransition] = useState(!hasAnimated.current)
   const handleOpen = () => { hasAnimated.current = true; setMode('bottom-expanded') }
-  const handleMinimize = () => { hasAnimated.current = true; setUserMinimized(true); sessionStorage.setItem(`zk_minimized_${siteId}`, '1'); setMode('bottom-minimized') }
-  const handleBackdropClose = () => { hasAnimated.current = true; setUserMinimized(false); sessionStorage.removeItem(`zk_minimized_${siteId}`); setMode('bottom-minimized') }
+  const handleMinimize = () => { hasAnimated.current = true; setUserMinimized(true); setScrollTransition(false); sessionStorage.setItem(`zk_minimized_${siteId}`, '1'); setMode('bottom-minimized') }
+  const handleBackdropClose = () => { hasAnimated.current = true; setUserMinimized(false); setScrollTransition(false); sessionStorage.removeItem(`zk_minimized_${siteId}`); setMode('bottom-minimized') }
   const handleDock = () => { if (window.innerWidth < DOCK_MIN_WIDTH) return; setMode('right-docked') }
   const handleUndock = () => { setMode('bottom-expanded') }
 
@@ -483,7 +484,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
         <CollapsedBar
           brandName={brandName} suggestions={getSuggestions()}
           animate={!hasAnimated.current} hasMessages={messages.length > 0}
-          minimized={userMinimized}
+          minimized={userMinimized} scrollTransition={scrollTransition}
           onClick={handleOpen} onSuggestionClick={handleSuggestionClick}
           onMinimize={() => { hasAnimated.current = true; setUserMinimized(true); sessionStorage.setItem(`zk_minimized_${siteId}`, '1') }}
         />

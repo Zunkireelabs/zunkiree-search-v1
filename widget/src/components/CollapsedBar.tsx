@@ -6,6 +6,7 @@ interface CollapsedBarProps {
   animate: boolean
   hasMessages: boolean
   minimized?: boolean
+  scrollTransition?: boolean
   onClick: () => void
   onMinimize: () => void
   onSuggestionClick: (suggestion: string) => void
@@ -19,6 +20,7 @@ export function CollapsedBar({
   animate,
   hasMessages,
   minimized,
+  scrollTransition,
   onClick,
   onMinimize,
   onSuggestionClick,
@@ -33,9 +35,12 @@ export function CollapsedBar({
     }
   }, [animate])
 
-  // Scroll listener for card→pill transition (desktop only, not when manually minimized)
+  // Scroll listener for card→pill transition (only on initial load, disabled after interaction)
   useEffect(() => {
-    if (minimized) return
+    if (minimized || !scrollTransition) {
+      setScrolledDown(false)
+      return
+    }
     const onScroll = () => {
       cancelAnimationFrame(rafRef.current)
       rafRef.current = requestAnimationFrame(() => {
@@ -48,7 +53,7 @@ export function CollapsedBar({
       window.removeEventListener('scroll', onScroll)
       cancelAnimationFrame(rafRef.current)
     }
-  }, [minimized])
+  }, [minimized, scrollTransition])
 
   const showPill = minimized || scrolledDown
 
