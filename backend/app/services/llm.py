@@ -33,11 +33,31 @@ LANGUAGE_NAMES = {
 # Website-type-specific prompt adjustments
 WEBSITE_TYPE_PROMPTS = {
     "ecommerce": "You specialize in helping customers find and purchase products. Focus on product features, sizing, availability, and pricing.",
-    "blog": "You specialize in helping readers find relevant articles and content. Focus on topics, authors, and related posts.",
     "saas": "You specialize in helping users understand the product's features, pricing plans, and integration options.",
+    "blog": "You specialize in helping readers find relevant articles and content. Focus on topics, authors, and related posts.",
     "service": "You specialize in helping clients understand available services, processes, and how to get started.",
+    "manufacturing": "You specialize in helping visitors learn about products, materials, specifications, and manufacturing capabilities.",
+    "trading": "You specialize in helping clients explore product catalogs, bulk pricing, import/export details, and trade terms.",
+    "government": "You specialize in helping citizens find public services, policies, procedures, forms, and official information.",
+    "education": "You specialize in helping students and parents find courses, admissions info, scholarships, and academic resources.",
+    "healthcare": "You specialize in helping patients find medical services, doctors, treatments, and health information.",
+    "real-estate": "You specialize in helping clients find properties, pricing, locations, and real estate services.",
+    "finance": "You specialize in helping clients understand financial products, rates, plans, and investment options.",
+    "hospitality": "You specialize in helping guests find accommodations, travel packages, amenities, and booking options.",
     "restaurant": "You specialize in helping guests explore the menu, make reservations, and learn about dining options.",
+    "ngo": "You specialize in helping visitors learn about the organization's mission, programs, impact, and how to contribute.",
     "portfolio": "You specialize in helping visitors explore the work and creative projects showcased here.",
+    "legal": "You specialize in helping clients understand legal services, practice areas, and how to seek counsel.",
+    "media": "You specialize in helping users discover content, shows, channels, and entertainment offerings.",
+    "logistics": "You specialize in helping clients understand shipping, tracking, delivery options, and supply chain services.",
+    "automotive": "You specialize in helping customers find vehicles, parts, service options, and pricing.",
+    "agriculture": "You specialize in helping users find agricultural products, farming solutions, and agri-tech services.",
+    "telecom": "You specialize in helping customers find plans, coverage, devices, and communication services.",
+    "energy": "You specialize in helping clients understand energy solutions, pricing, sustainability options, and utility services.",
+    "construction": "You specialize in helping clients find construction services, materials, project capabilities, and estimates.",
+    "sports": "You specialize in helping users find sports programs, memberships, fitness plans, and event schedules.",
+    "religious": "You specialize in helping visitors find service times, events, teachings, and community information.",
+    "events": "You specialize in helping users find event details, venues, tickets, and booking information.",
 }
 
 SYSTEM_PROMPT_TEMPLATE = """You are a knowledgeable assistant for {brand_name}.

@@ -10,7 +10,13 @@ from app.models import Customer, DocumentChunk
 logger = logging.getLogger("zunkiree.site_classifier")
 
 # Website type constants
-WEBSITE_TYPES = ["ecommerce", "blog", "saas", "service", "portfolio", "restaurant", "other"]
+WEBSITE_TYPES = [
+    "ecommerce", "saas", "blog", "service", "manufacturing", "trading",
+    "government", "education", "healthcare", "real-estate", "finance",
+    "hospitality", "restaurant", "ngo", "portfolio", "legal", "media",
+    "logistics", "automotive", "agriculture", "telecom", "energy",
+    "construction", "sports", "religious", "events", "other",
+]
 
 # --- Heuristic signal patterns ---
 
