@@ -420,8 +420,9 @@ async def delete_customer(
     if not customer:
         raise HTTPException(status_code=404, detail={"code": "CUSTOMER_NOT_FOUND", "message": "Customer not found"})
 
-    # CASCADE delete handles related records (domains, config, jobs, chunks, queries, leads, products, rooms)
-    await db.delete(customer)
+    # Use raw SQL DELETE to let database-level CASCADE handle all related records
+    from sqlalchemy import text
+    await db.execute(text("DELETE FROM customers WHERE id = :cid"), {"cid": str(customer.id)})
     await db.commit()
     return {"message": f"Customer '{site_id}' deleted successfully"}
 
