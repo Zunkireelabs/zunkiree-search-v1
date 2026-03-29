@@ -580,6 +580,19 @@
             <label>Contact Email (optional — sends welcome email with API key)</label>
             <input type="email" id="contactEmail" placeholder="admin@acme.com">
           </div>
+          <div class="form-group">
+            <label>Website Type</label>
+            <select id="websiteType">
+              <option value="">Select industry...</option>
+              <option value="ecommerce">E-commerce</option>
+              <option value="blog">Blog</option>
+              <option value="saas">SaaS</option>
+              <option value="service">Service</option>
+              <option value="portfolio">Portfolio</option>
+              <option value="restaurant">Restaurant</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
           <button type="submit">Create Customer</button>
         </form>
       </div>
@@ -777,6 +790,7 @@
             site_id: document.getElementById('siteId').value,
             allowed_domains: document.getElementById('domains').value.split(',').map(d => d.trim()),
             contact_email: document.getElementById('contactEmail').value || null,
+            website_type: document.getElementById('websiteType').value || null,
           }),
         });
 

@@ -33,6 +33,7 @@ class CreateCustomerRequest(BaseModel):
     site_id: str = Field(..., pattern="^[a-z0-9-]+$", description="Unique site identifier (lowercase, alphanumeric, hyphens)")
     allowed_domains: list[str] = Field(..., description="List of allowed domains")
     contact_email: str | None = Field(None, description="Customer contact email for welcome email")
+    website_type: str | None = Field(None, description="Industry type (ecommerce, blog, saas, service, portfolio, restaurant, other)")
 
 
 class CreateCustomerResponse(BaseModel):
@@ -230,6 +231,7 @@ async def create_customer(
         name=request.name,
         site_id=request.site_id,
         api_key=api_key,
+        website_type=request.website_type,
     )
     db.add(customer)
     await db.flush()
