@@ -332,6 +332,8 @@ async def _product_search(
     result = {"products": filtered[:5], "best_match_score": round(best_score, 3)}
     if best_score < 0.45:
         result["note"] = "No exact matches found. These are the closest items we have."
+    elif best_score < 0.75:
+        result["note"] = "We couldn't find an exact match, but these similar products might interest you."
     return result
 
 
