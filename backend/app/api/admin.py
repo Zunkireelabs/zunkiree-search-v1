@@ -144,6 +144,8 @@ class TenantStatsResponse(BaseModel):
     total_chunks: int
     total_jobs: int
     last_ingestion_date: str | None
+    domains: list[str] = []
+    website_type: str | None = None
 
 
 class ModeCount(BaseModel):
@@ -368,6 +370,62 @@ async def toggle_customer_active(
     return {"is_active": customer.is_active, "message": f"Widget {'enabled' if customer.is_active else 'disabled'} successfully"}
 
 
+class UpdateCustomerRequest(BaseModel):
+    name: str | None = None
+    website_type: str | None = None
+    allowed_domains: list[str] | None = None
+
+
+@router.put("/customers/{site_id}")
+async def update_customer(
+    site_id: str,
+    request: UpdateCustomerRequest,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """Update tenant details (name, website_type, domains)."""
+    result = await db.execute(select(Customer).where(Customer.site_id == site_id))
+    customer = result.scalar_one_or_none()
+    if not customer:
+        raise HTTPException(status_code=404, detail={"code": "CUSTOMER_NOT_FOUND", "message": "Customer not found"})
+
+    if request.name is not None:
+        customer.name = request.name
+    if request.website_type is not None:
+        customer.website_type = request.website_type
+
+    if request.allowed_domains is not None:
+        # Replace all domains
+        await db.execute(delete(Domain).where(Domain.customer_id == customer.id))
+        for d in request.allowed_domains:
+            db.add(Domain(customer_id=customer.id, domain=d.lower().strip()))
+
+    await db.commit()
+    return {"message": "Customer updated successfully"}
+
+
+@router.delete("/customers/{site_id}")
+async def delete_customer(
+    site_id: str,
+    confirm: bool = False,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """Delete a tenant and all related data. Requires confirm=true."""
+    if not confirm:
+        raise HTTPException(status_code=400, detail={"code": "CONFIRMATION_REQUIRED", "message": "Add ?confirm=true to delete"})
+
+    result = await db.execute(select(Customer).where(Customer.site_id == site_id))
+    customer = result.scalar_one_or_none()
+    if not customer:
+        raise HTTPException(status_code=404, detail={"code": "CUSTOMER_NOT_FOUND", "message": "Customer not found"})
+
+    # CASCADE delete handles related records (domains, config, jobs, chunks, queries, leads, products, rooms)
+    await db.delete(customer)
+    await db.commit()
+    return {"message": f"Customer '{site_id}' deleted successfully"}
+
+
 @router.get("/stats/{site_id}", response_model=TenantStatsResponse)
 async def get_tenant_stats(
     site_id: str,
@@ -412,12 +470,20 @@ async def get_tenant_stats(
     config = config_result.scalar_one_or_none()
     brand_name = config.brand_name if config else customer.name
 
+    # Load domains
+    domain_result = await db.execute(
+        select(Domain).where(Domain.customer_id == customer.id)
+    )
+    domains = [d.domain for d in domain_result.scalars().all()]
+
     return TenantStatsResponse(
         site_id=site_id,
         brand_name=brand_name,
         total_chunks=total_chunks,
         total_jobs=total_jobs,
         last_ingestion_date=last_ingestion.isoformat() if last_ingestion else None,
+        domains=domains,
+        website_type=customer.website_type,
     )
 
 

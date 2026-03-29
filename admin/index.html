@@ -460,6 +460,57 @@
             <span id="ovWidgetStatus" style="font-size: 13px; font-weight: 600;">—</span>
             <button id="toggleActiveBtn" onclick="toggleWidgetActive()" style="padding: 4px 12px; font-size: 12px; white-space: nowrap;">—</button>
           </div>
+          <div style="margin-top: 12px; display: flex; gap: 8px;">
+            <button onclick="showEditTenant()" style="padding: 6px 16px; font-size: 12px; background: #2563eb;">Edit Tenant</button>
+            <button onclick="deleteTenant()" style="padding: 6px 16px; font-size: 12px; background: #dc2626;">Delete Tenant</button>
+          </div>
+          <div id="editTenantForm" class="hidden" style="margin-top: 12px; padding: 16px; background: #f9fafb; border-radius: 8px;">
+            <div class="form-group">
+              <label>Company Name</label>
+              <input type="text" id="editName">
+            </div>
+            <div class="form-group">
+              <label>Website Type</label>
+              <select id="editWebsiteType">
+                <option value="">Select industry...</option>
+                <option value="ecommerce">E-commerce</option>
+                <option value="saas">SaaS</option>
+                <option value="blog">Blog</option>
+                <option value="service">Service</option>
+                <option value="manufacturing">Manufacturing</option>
+                <option value="trading">Trading</option>
+                <option value="government">Government</option>
+                <option value="education">Education</option>
+                <option value="healthcare">Healthcare</option>
+                <option value="real-estate">Real Estate</option>
+                <option value="finance">Finance</option>
+                <option value="hospitality">Hospitality</option>
+                <option value="restaurant">Restaurant</option>
+                <option value="ngo">NGO / Non-profit</option>
+                <option value="portfolio">Portfolio</option>
+                <option value="legal">Legal</option>
+                <option value="media">Media / Entertainment</option>
+                <option value="logistics">Logistics</option>
+                <option value="automotive">Automotive</option>
+                <option value="agriculture">Agriculture</option>
+                <option value="telecom">Telecom</option>
+                <option value="energy">Energy</option>
+                <option value="construction">Construction</option>
+                <option value="sports">Sports / Fitness</option>
+                <option value="religious">Religious</option>
+                <option value="events">Events</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Allowed Domains (comma separated)</label>
+              <input type="text" id="editDomains">
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button onclick="saveEditTenant()" style="padding: 6px 16px; font-size: 12px;">Save</button>
+              <button onclick="cancelEditTenant()" class="secondary" style="padding: 6px 16px; font-size: 12px;">Cancel</button>
+            </div>
+          </div>
           <div style="margin-top: 16px;">
             <h3 style="font-size: 14px; color: #374151; margin-bottom: 10px;">Recent Jobs</h3>
             <div id="tenantJobsList"></div>
@@ -1277,6 +1328,82 @@
           showAlert(`Failed to ${action} widget`, 'error');
         }
       } catch { showAlert(`Failed to ${action} widget`, 'error'); }
+    }
+
+    // --- Edit / Delete Tenant ---
+    async function showEditTenant() {
+      const siteId = document.getElementById('tenantSelect').value;
+      if (!siteId) return;
+      const form = document.getElementById('editTenantForm');
+      form.classList.remove('hidden');
+      // Pre-fill name from display
+      document.getElementById('editName').value = document.getElementById('ovBrandName').textContent || '';
+      // Load domains
+      try {
+        const res = await fetch(`${API_URL}/api/v1/admin/stats/${siteId}`, {
+          headers: { 'X-Admin-Key': ADMIN_KEY },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          document.getElementById('editDomains').value = (data.domains || []).join(', ');
+          document.getElementById('editWebsiteType').value = data.website_type || '';
+        }
+      } catch { /* silent */ }
+    }
+
+    function cancelEditTenant() {
+      document.getElementById('editTenantForm').classList.add('hidden');
+    }
+
+    async function saveEditTenant() {
+      const siteId = document.getElementById('tenantSelect').value;
+      if (!siteId) return;
+      const body = {};
+      const name = document.getElementById('editName').value.trim();
+      const websiteType = document.getElementById('editWebsiteType').value;
+      const domains = document.getElementById('editDomains').value.trim();
+      if (name) body.name = name;
+      if (websiteType) body.website_type = websiteType;
+      if (domains) body.allowed_domains = domains.split(',').map(d => d.trim());
+      try {
+        const res = await fetch(`${API_URL}/api/v1/admin/customers/${siteId}`, {
+          method: 'PUT',
+          headers: { 'X-Admin-Key': ADMIN_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (res.ok) {
+          showAlert('Tenant updated successfully', 'success');
+          cancelEditTenant();
+          loadTenants();
+          onTenantSelected();
+        } else {
+          const data = await res.json();
+          showAlert(data.detail?.message || 'Failed to update tenant', 'error');
+        }
+      } catch { showAlert('Failed to update tenant', 'error'); }
+    }
+
+    async function deleteTenant() {
+      const siteId = document.getElementById('tenantSelect').value;
+      if (!siteId) return;
+      if (!confirm(`This will permanently delete tenant "${siteId}" and ALL its data (pages, products, leads, queries). This cannot be undone. Proceed?`)) return;
+      try {
+        const res = await fetch(`${API_URL}/api/v1/admin/customers/${siteId}?confirm=true`, {
+          method: 'DELETE',
+          headers: { 'X-Admin-Key': ADMIN_KEY },
+        });
+        if (res.ok) {
+          showAlert(`Tenant "${siteId}" deleted successfully`, 'success');
+          loadTenants();
+          document.getElementById('tenantOverview').classList.add('hidden');
+          document.getElementById('retrievalSection').style.display = 'none';
+          document.getElementById('leadsSection').style.display = 'none';
+          document.getElementById('queriesSection').style.display = 'none';
+        } else {
+          const data = await res.json();
+          showAlert(data.detail?.message || 'Failed to delete tenant', 'error');
+        }
+      } catch { showAlert('Failed to delete tenant', 'error'); }
     }
 
     // --- Leads & Query History ---
