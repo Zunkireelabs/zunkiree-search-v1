@@ -616,6 +616,21 @@ async def submit_query_stream(
                     yield f"data: {json.dumps(event)}\n\n"
                 return
 
+            # Route hospitality customers to booking agent
+            if customer.website_type == "hospitality":
+                from app.services.hospitality_agent import get_hospitality_agent_service
+                agent_service = get_hospitality_agent_service()
+                async for event in agent_service.process_agent_stream(
+                    db=db,
+                    site_id=query.site_id,
+                    session_id=query.session_id or "",
+                    question=question_to_answer,
+                    customer_id=customer.id,
+                    brand_name=brand_name,
+                ):
+                    yield f"data: {json.dumps(event)}\n\n"
+                return
+
             # Standard RAG pipeline for non-ecommerce
             if welcome_prefix:
                 yield f"data: {json.dumps({'type': 'token', 'data': welcome_prefix + ' '})}\n\n"

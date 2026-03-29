@@ -72,6 +72,7 @@ export interface Message {
   paymentSelector?: { orderId: string; total: number; currency: string }
   toolStatus?: { name: string; status: 'running' | 'done' }
   imagePreview?: string
+  rooms?: any[]
 }
 
 interface WidgetConfig {
@@ -242,6 +243,11 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
               ensureMessage()
               setMessages(prev =>
                 prev.map(m => m.id === assistantId ? { ...m, products: event.data } : m)
+              )
+            } else if (event.type === 'rooms') {
+              ensureMessage()
+              setMessages(prev =>
+                prev.map(m => m.id === assistantId ? { ...m, rooms: event.data } : m)
               )
             } else if (event.type === 'cart_update') {
               ensureMessage()
@@ -416,6 +422,10 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     }
   }
 
+  const handleBookRoom = (roomId: string) => {
+    handleSubmit(null as any, `I'd like to book room ${roomId}`)
+  }
+
   const handleSuggestionClick = (suggestion: string) => {
     setInput(suggestion)
     if (mode === 'bottom-minimized') setMode('bottom-expanded')
@@ -449,6 +459,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     onAddToWishlist: handleAddToWishlist, onRemoveFromWishlist: handleRemoveFromWishlist,
     onMoveToCart: handleMoveToCart, onAddressSubmit: handleAddressSubmit, isOrderSubmitting, onImageSearch: handleImageSearch,
     onPaymentComplete: handlePaymentComplete, onPaymentFailed: handlePaymentFailed,
+    onBookRoom: handleBookRoom,
     streamingId: streamingRef.current?.id || null,
   }
 

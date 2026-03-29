@@ -1445,6 +1445,27 @@ export const styles = (primaryColor: string) => `
     text-decoration: line-through;
   }
 
+  .zk-room-card__amenities {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+  }
+
+  .zk-room-card__amenity {
+    font-size: 10px;
+    padding: 1px 6px;
+    background: #f0f4ff;
+    color: #4b5563;
+    border-radius: 4px;
+  }
+
+  .zk-room-card__per-night {
+    font-size: 10px;
+    color: #9ca3af;
+    font-weight: 400;
+  }
+
   .zk-product-card__actions {
     margin-top: 6px;
   }

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import Integer, select, func, case, delete
 
 from app.database import get_db
-from app.models import Customer, Domain, WidgetConfig, IngestionJob, DocumentChunk, QueryLog, UserProfile, Product
+from app.models import Customer, Domain, WidgetConfig, IngestionJob, DocumentChunk, QueryLog, UserProfile, Product, Room
 from app.services.ingestion import get_ingestion_service
 from app.config import get_settings
 
@@ -1359,3 +1359,97 @@ async def rescrape_products(
     background_tasks.add_task(run_auto_ingestion, customer.id, customer.site_id, domains)
 
     return {"message": "Re-scrape queued for all domains"}
+
+
+# ===== Room management (hospitality) =====
+
+class RoomRequest(BaseModel):
+    name: str = Field(..., description="Room name/type")
+    description: str | None = None
+    price_per_night: float | None = None
+    currency: str = "USD"
+    original_price: float | None = None
+    images: list[str] = Field(default_factory=list)
+    amenities: list[str] = Field(default_factory=list)
+    capacity: int = 2
+    room_type: str | None = None
+    available: bool = True
+
+
+class BulkRoomsRequest(BaseModel):
+    rooms: list[RoomRequest] = Field(..., min_length=1, max_length=100)
+
+
+@router.post("/rooms/{site_id}")
+async def add_rooms(
+    site_id: str,
+    request: BulkRoomsRequest,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """Add rooms for a hospitality customer."""
+    result = await db.execute(select(Customer).where(Customer.site_id == site_id))
+    customer = result.scalar_one_or_none()
+    if not customer:
+        raise HTTPException(status_code=404, detail={"code": "CUSTOMER_NOT_FOUND", "message": "Customer not found"})
+
+    import json
+    created = 0
+    for r in request.rooms:
+        room = Room(
+            customer_id=customer.id,
+            name=r.name,
+            description=r.description,
+            price_per_night=r.price_per_night,
+            currency=r.currency,
+            original_price=r.original_price,
+            images=json.dumps(r.images),
+            amenities=json.dumps(r.amenities),
+            capacity=r.capacity,
+            room_type=r.room_type,
+            available=r.available,
+        )
+        db.add(room)
+        created += 1
+
+    await db.commit()
+    return {"message": f"{created} room(s) added successfully"}
+
+
+@router.get("/rooms/{site_id}")
+async def list_rooms(
+    site_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """List all rooms for a customer."""
+    result = await db.execute(select(Customer).where(Customer.site_id == site_id))
+    customer = result.scalar_one_or_none()
+    if not customer:
+        raise HTTPException(status_code=404, detail={"code": "CUSTOMER_NOT_FOUND", "message": "Customer not found"})
+
+    import json
+    result = await db.execute(
+        select(Room).where(Room.customer_id == customer.id).order_by(Room.price_per_night.asc())
+    )
+    rooms = result.scalars().all()
+
+    return {
+        "rooms": [
+            {
+                "id": str(r.id),
+                "name": r.name,
+                "description": r.description,
+                "price_per_night": r.price_per_night,
+                "currency": r.currency,
+                "original_price": r.original_price,
+                "images": json.loads(r.images) if r.images else [],
+                "amenities": json.loads(r.amenities) if r.amenities else [],
+                "capacity": r.capacity,
+                "room_type": r.room_type,
+                "available": r.available,
+            }
+            for r in rooms
+        ],
+        "total": len(rooms),
+    }

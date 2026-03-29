@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState } from 'react'
 import { MarkdownContent } from './Markdown'
 import { Autocomplete } from './Autocomplete'
 import { ProductGrid } from './ProductGrid'
+import { RoomGrid } from './RoomGrid'
 import { CartView } from './CartView'
 import { CheckoutView } from './CheckoutView'
 import { WishlistView } from './WishlistView'
@@ -55,6 +56,7 @@ interface DockedPanelProps {
   onImageSearch?: (base64: string) => void
   onPaymentComplete?: (gateway: string) => void
   onPaymentFailed?: () => void
+  onBookRoom?: (roomId: string) => void
   websiteType?: string | null
 }
 
@@ -103,6 +105,7 @@ export function DockedPanel({
   onImageSearch,
   onPaymentComplete,
   onPaymentFailed,
+  onBookRoom,
   websiteType,
 }: DockedPanelProps) {
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -298,6 +301,9 @@ export function DockedPanel({
                   onAddToCart={onAddToCart}
                   onAddToWishlist={onAddToWishlist}
                 />
+              )}
+              {message.rooms && message.rooms.length > 0 && onBookRoom && (
+                <RoomGrid rooms={message.rooms} onBookRoom={onBookRoom} />
               )}
               {message.cartUpdate && onRemoveFromCart && onCheckout && (
                 <CartView cart={message.cartUpdate} onRemoveItem={onRemoveFromCart} onCheckout={onCheckout} />

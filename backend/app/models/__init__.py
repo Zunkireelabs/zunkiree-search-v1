@@ -10,6 +10,7 @@ from app.models.cart import ShoppingCart
 from app.models.wishlist import Wishlist
 from app.models.order import Order
 from app.models.payment import Payment
+from app.models.room import Room
 
 __all__ = [
     "Customer",
@@ -25,4 +26,5 @@ __all__ = [
     "Wishlist",
     "Order",
     "Payment",
+    "Room",
 ]

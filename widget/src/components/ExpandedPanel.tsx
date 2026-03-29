@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState } from 'react'
 import { MarkdownContent } from './Markdown'
 import { Autocomplete } from './Autocomplete'
 import { ProductGrid } from './ProductGrid'
+import { RoomGrid } from './RoomGrid'
 import { CartView } from './CartView'
 import { CheckoutView } from './CheckoutView'
 import { WishlistView } from './WishlistView'
@@ -56,6 +57,7 @@ interface ExpandedPanelProps {
   onImageSearch?: (base64: string) => void
   onPaymentComplete?: (gateway: string) => void
   onPaymentFailed?: () => void
+  onBookRoom?: (roomId: string) => void
   websiteType?: string | null
 }
 
@@ -105,6 +107,7 @@ export function ExpandedPanel({
   onImageSearch,
   onPaymentComplete,
   onPaymentFailed,
+  onBookRoom,
   websiteType,
 }: ExpandedPanelProps) {
   const messagesRef = useRef<HTMLDivElement>(null)
@@ -375,6 +378,9 @@ export function ExpandedPanel({
                     onAddToCart={onAddToCart}
                     onAddToWishlist={onAddToWishlist}
                   />
+                )}
+                {message.rooms && message.rooms.length > 0 && onBookRoom && (
+                  <RoomGrid rooms={message.rooms} onBookRoom={onBookRoom} />
                 )}
                 {message.cartUpdate && onRemoveFromCart && onCheckout && (
                   <CartView cart={message.cartUpdate} onRemoveItem={onRemoveFromCart} onCheckout={onCheckout} />
