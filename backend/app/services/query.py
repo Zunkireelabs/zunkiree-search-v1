@@ -443,7 +443,7 @@ class QueryService:
 
         # Log query
         response_time_ms = int((_time.time() - start_time) * 1000)
-        await self._log_query(
+        log_id = await self._log_query(
             db=db, customer_id=customer.id, question=question, answer=full_answer,
             chunks_used=len(chunks_for_llm), response_time_ms=response_time_ms,
             origin=origin, user_agent=user_agent, ip_address=ip_address,
@@ -455,6 +455,7 @@ class QueryService:
             "answer": full_answer,
             "suggestions": suggestions if show_suggestions else [],
             "sources": sources if config and config.show_sources else [],
+            "query_log_id": log_id,
         }
 
     async def _keyword_search(
@@ -584,8 +585,8 @@ class QueryService:
         retrieval_blocked: bool = False,
         llm_declined: bool = False,
         retrieval_empty: bool = False,
-    ) -> None:
-        """Log query to database."""
+    ) -> str | None:
+        """Log query to database. Returns the log ID."""
         ip_hash = None
         if ip_address:
             ip_hash = hashlib.sha256(ip_address.encode()).hexdigest()[:64]
@@ -612,6 +613,7 @@ class QueryService:
         )
         db.add(log)
         await db.commit()
+        return str(log.id)
 
 
 def _reciprocal_rank_fusion(

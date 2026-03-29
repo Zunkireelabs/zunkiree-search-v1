@@ -802,3 +802,38 @@ def _profile_to_dict(profile) -> dict:
         "user_type": getattr(profile, "user_type", None),
         "lead_intent": getattr(profile, "lead_intent", None),
     }
+
+
+# --- Feedback ---
+
+class FeedbackRequest(BaseModel):
+    query_log_id: str = Field(..., description="The query log ID")
+    vote: int = Field(..., description="1 for thumbs up, -1 for thumbs down")
+
+
+@router.post("/feedback")
+async def submit_feedback(
+    request: FeedbackRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Submit feedback for a query (thumbs up/down)."""
+    import uuid as _uuid
+    from datetime import datetime
+
+    if request.vote not in (1, -1):
+        raise HTTPException(status_code=400, detail="Vote must be 1 or -1")
+
+    try:
+        log_id = _uuid.UUID(request.query_log_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid query_log_id")
+
+    result = await db.execute(select(QueryLog).where(QueryLog.id == log_id))
+    log = result.scalar_one_or_none()
+    if not log:
+        raise HTTPException(status_code=404, detail="Query log not found")
+
+    log.feedback_vote = request.vote
+    log.feedback_at = datetime.utcnow()
+    await db.commit()
+    return {"status": "ok"}

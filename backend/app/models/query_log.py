@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Boolean, Float, String, DateTime, ForeignKey, Integer, Text
+from sqlalchemy import Boolean, Float, SmallInteger, String, DateTime, ForeignKey, Integer, Text
 from typing import Optional
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
@@ -35,6 +35,8 @@ class QueryLog(Base):
     retrieval_blocked: Mapped[bool] = mapped_column(Boolean, default=False)
     llm_declined: Mapped[bool] = mapped_column(Boolean, default=False)
     retrieval_empty: Mapped[bool] = mapped_column(Boolean, default=False)
+    feedback_vote: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    feedback_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
     # Relationships

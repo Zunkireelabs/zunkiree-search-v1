@@ -1466,6 +1466,38 @@ export const styles = (primaryColor: string) => `
     font-weight: 400;
   }
 
+  .zk-feedback {
+    display: flex;
+    gap: 4px;
+    margin-top: 6px;
+    justify-content: flex-end;
+  }
+
+  .zk-feedback-btn {
+    background: none;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 3px 6px;
+    cursor: pointer;
+    color: #9ca3af;
+    display: flex;
+    align-items: center;
+    transition: color 150ms, border-color 150ms;
+  }
+
+  .zk-feedback-btn:hover {
+    color: #374151;
+    border-color: #9ca3af;
+  }
+
+  .zk-feedback-thanks {
+    font-size: 11px;
+    color: #9ca3af;
+    margin-top: 6px;
+    display: block;
+    text-align: right;
+  }
+
   .zk-product-card__actions {
     margin-top: 6px;
   }

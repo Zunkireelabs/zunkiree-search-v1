@@ -3,6 +3,7 @@ import { MarkdownContent } from './Markdown'
 import { Autocomplete } from './Autocomplete'
 import { ProductGrid } from './ProductGrid'
 import { RoomGrid } from './RoomGrid'
+import { FeedbackButtons } from './FeedbackButtons'
 import { CartView } from './CartView'
 import { CheckoutView } from './CheckoutView'
 import { WishlistView } from './WishlistView'
@@ -57,6 +58,7 @@ interface DockedPanelProps {
   onPaymentComplete?: (gateway: string) => void
   onPaymentFailed?: () => void
   onBookRoom?: (roomId: string) => void
+  isLongSession?: boolean
   websiteType?: string | null
 }
 
@@ -106,6 +108,7 @@ export function DockedPanel({
   onPaymentComplete,
   onPaymentFailed,
   onBookRoom,
+  isLongSession,
   websiteType,
 }: DockedPanelProps) {
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -350,6 +353,9 @@ export function DockedPanel({
                     </button>
                   ))}
                 </div>
+              )}
+              {message.role === 'assistant' && !message.isError && message.queryLogId && isLongSession && (
+                <FeedbackButtons queryLogId={message.queryLogId} apiUrl={apiUrl} />
               )}
             </div>
           ))}

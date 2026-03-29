@@ -610,6 +610,46 @@
       </div>
     </div>
 
+    <!-- Search Quality -->
+    <div class="tenant-section" id="searchQualitySection" style="display:none;">
+      <div class="card">
+        <h2>Search Quality <span style="font-size:12px; color:#6b7280; font-weight:400;">(last 30 days)</span></h2>
+        <div class="overview-grid" style="margin-bottom:20px;">
+          <div class="stat-card">
+            <div class="stat-label">Satisfaction Rate</div>
+            <div class="stat-value" id="sqSatisfaction">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Positive Feedback</div>
+            <div class="stat-value" id="sqPositive">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Negative Feedback</div>
+            <div class="stat-value" id="sqNegative">—</div>
+          </div>
+        </div>
+        <h3 style="font-size:14px; color:#374151; margin-bottom:10px;">Failed / Low-Quality Queries</h3>
+        <p style="font-size:12px; color:#6b7280; margin-bottom:10px;">Questions that got poor answers — add Q&A content to improve them.</p>
+        <div style="overflow-x:auto;">
+          <table class="data-table">
+            <thead>
+              <tr><th>Question</th><th>Times Asked</th><th>Avg Score</th><th>Negative Feedback</th><th>Action</th></tr>
+            </thead>
+            <tbody id="sqFailedBody"></tbody>
+          </table>
+        </div>
+        <h3 style="font-size:14px; color:#374151; margin:20px 0 10px;">Thumbs-Down Queries</h3>
+        <div style="overflow-x:auto;">
+          <table class="data-table">
+            <thead>
+              <tr><th>Question</th><th>Answer Given</th><th>Score</th><th>Date</th></tr>
+            </thead>
+            <tbody id="sqNegativeBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <div class="grid">
       <!-- Create Customer -->
       <div class="card">
@@ -1185,12 +1225,14 @@
         document.getElementById('retrievalSection').style.display = 'none';
         document.getElementById('leadsSection').style.display = 'none';
         document.getElementById('queriesSection').style.display = 'none';
+        document.getElementById('searchQualitySection').style.display = 'none';
         return;
       }
 
       overview.classList.remove('hidden');
       document.getElementById('leadsSection').style.display = '';
       document.getElementById('queriesSection').style.display = '';
+      document.getElementById('searchQualitySection').style.display = '';
       document.getElementById('leadsSearch').value = '';
       document.getElementById('queriesSearch').value = '';
       leadsPage = 1;
@@ -1199,6 +1241,7 @@
       loadApiKey(siteId);
       updateWidgetStatusUI();
       loadRetrievalStats(siteId);
+      loadSearchQuality(siteId);
       loadLeads();
       loadQueries();
       document.getElementById('ovSiteId').textContent = siteId;
@@ -1399,11 +1442,64 @@
           document.getElementById('retrievalSection').style.display = 'none';
           document.getElementById('leadsSection').style.display = 'none';
           document.getElementById('queriesSection').style.display = 'none';
+          document.getElementById('searchQualitySection').style.display = 'none';
         } else {
           const data = await res.json();
           showAlert(data.detail?.message || 'Failed to delete tenant', 'error');
         }
       } catch { showAlert('Failed to delete tenant', 'error'); }
+    }
+
+    // --- Search Quality ---
+    async function loadSearchQuality(siteId) {
+      try {
+        const res = await fetch(`${API_URL}/api/v1/admin/query-analytics/${siteId}`, {
+          headers: { 'X-Admin-Key': ADMIN_KEY },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+
+        document.getElementById('sqSatisfaction').textContent = data.satisfaction_rate + '%';
+        document.getElementById('sqPositive').textContent = data.positive_feedback;
+        document.getElementById('sqNegative').textContent = data.negative_feedback;
+
+        // Failed queries table
+        const failedBody = document.getElementById('sqFailedBody');
+        if (data.failed_queries.length === 0) {
+          failedBody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#6b7280;padding:24px;">No failed queries found</td></tr>';
+        } else {
+          failedBody.innerHTML = data.failed_queries.map(q => `<tr>
+            <td title="${esc(q.question)}">${esc(q.question)}</td>
+            <td>${q.count}</td>
+            <td>${q.avg_score.toFixed(3)}</td>
+            <td>${q.negative_feedback || 0}</td>
+            <td><button onclick="prefillQA('${esc(q.question).replace(/'/g, "\\'")}')" style="padding:2px 8px;font-size:11px;">Create Q&A</button></td>
+          </tr>`).join('');
+        }
+
+        // Negative feedback queries
+        const negBody = document.getElementById('sqNegativeBody');
+        if (data.negative_feedback_queries.length === 0) {
+          negBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#6b7280;padding:24px;">No negative feedback yet</td></tr>';
+        } else {
+          negBody.innerHTML = data.negative_feedback_queries.map(q => `<tr>
+            <td title="${esc(q.question)}">${esc(q.question)}</td>
+            <td title="${esc(q.answer_preview)}">${esc(q.answer_preview) || '—'}</td>
+            <td>${q.top_score ? q.top_score.toFixed(3) : '—'}</td>
+            <td>${q.date ? new Date(q.date).toLocaleDateString() : '—'}</td>
+          </tr>`).join('');
+        }
+      } catch { /* silent */ }
+    }
+
+    function prefillQA(question) {
+      // Scroll to QA ingestion and pre-fill
+      showIngestTab('qa');
+      const container = document.getElementById('qaPairsContainer');
+      const firstQ = container.querySelector('.qa-question');
+      if (firstQ) firstQ.value = question;
+      document.querySelector('[onclick*="ingestQAForm"]')?.scrollIntoView({ behavior: 'smooth' });
+      showAlert('Question pre-filled in QA form below. Add the answer and submit.', 'info');
     }
 
     // --- Leads & Query History ---

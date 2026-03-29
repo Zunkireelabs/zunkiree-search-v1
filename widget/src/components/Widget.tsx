@@ -73,6 +73,7 @@ export interface Message {
   toolStatus?: { name: string; status: 'running' | 'done' }
   imagePreview?: string
   rooms?: any[]
+  queryLogId?: string
 }
 
 interface WidgetConfig {
@@ -115,6 +116,15 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   const streamingRef = useRef<{ id: string; content: string } | null>(null)
   const [userMinimized, setUserMinimized] = useState(() => sessionStorage.getItem(`zk_minimized_${siteId}`) === '1')
   const hasAnimated = useRef(userMinimized)
+  const [sessionStartedAt] = useState(() => {
+    const key = `zk_session_start_${siteId}`
+    const stored = sessionStorage.getItem(key)
+    if (stored) return parseInt(stored, 10)
+    const now = Date.now()
+    sessionStorage.setItem(key, String(now))
+    return now
+  })
+  const isLongSession = () => (Date.now() - sessionStartedAt) >= 30 * 60 * 1000
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth <= 768)
@@ -289,6 +299,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
                   content: event.answer,
                   suggestions: event.suggestions,
                   toolStatus: undefined,
+                  queryLogId: event.query_log_id,
                 } : m)
               )
               setIsLoading(false)
@@ -460,6 +471,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     onMoveToCart: handleMoveToCart, onAddressSubmit: handleAddressSubmit, isOrderSubmitting, onImageSearch: handleImageSearch,
     onPaymentComplete: handlePaymentComplete, onPaymentFailed: handlePaymentFailed,
     onBookRoom: handleBookRoom,
+    isLongSession: isLongSession(),
     streamingId: streamingRef.current?.id || null,
   }
 
