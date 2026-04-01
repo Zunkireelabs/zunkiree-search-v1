@@ -1597,3 +1597,87 @@ async def get_query_analytics(
         "failed_queries": failed_queries,
         "negative_feedback_queries": negative_queries,
     }
+
+
+# ============================================
+# Agentic Commerce Connector
+# ============================================
+
+class AgenticomSyncRequest(BaseModel):
+    site_id: str = Field(..., description="Site ID to sync products for")
+    full_sync: bool = Field(False, description="If True, sync all products. If False, only sync updates since last sync.")
+
+
+class AgenticomSyncResponse(BaseModel):
+    job_id: str
+    status: str
+    products_synced: int
+    message: str
+
+
+@router.post("/sync/agenticom", response_model=AgenticomSyncResponse)
+async def sync_agenticom_products(
+    request: AgenticomSyncRequest,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """
+    Sync products from Agentic Commerce backend.
+
+    This endpoint fetches products from the Agentic Commerce API and syncs them
+    to Zunkiree's vector store (Pinecone) and database.
+
+    **Tenant Isolation**: Only affects the specified site_id. Other tenants are
+    completely isolated via Pinecone namespaces and customer_id filtering.
+
+    **Requirements**:
+    - Set AGENTICOM_API_URL in environment (default: http://localhost:8001)
+    - Set AGENTICOM_SYNC_SECRET to match ZUNKIREE_WEBHOOK_SECRET in agentic-commerce
+    - Set AGENTICOM_ENABLED=true to enable the connector
+    """
+    from app.services.connectors import get_agenticom_connector
+
+    if not settings.agenticom_enabled:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "CONNECTOR_DISABLED",
+                "message": "Agentic Commerce connector is disabled. Set AGENTICOM_ENABLED=true to enable.",
+            },
+        )
+
+    if not settings.agenticom_sync_secret:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "MISSING_SECRET",
+                "message": "AGENTICOM_SYNC_SECRET is not configured.",
+            },
+        )
+
+    connector = get_agenticom_connector()
+
+    try:
+        job = await connector.sync_products(
+            db=db,
+            site_id=request.site_id,
+            full_sync=request.full_sync,
+        )
+
+        return AgenticomSyncResponse(
+            job_id=str(job.id),
+            status=job.status,
+            products_synced=job.chunks_created or 0,
+            message=f"Sync completed. {job.chunks_created or 0} products synced.",
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "SYNC_ERROR", "message": str(e)},
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "SYNC_FAILED", "message": str(e)},
+        )

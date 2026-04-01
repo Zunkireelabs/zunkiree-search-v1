@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-3-large"
     embedding_dimensions: int = 3072
 
+    # Agentic Commerce connector
+    agenticom_api_url: str = "http://localhost:8001"
+    agenticom_sync_secret: str = ""  # Must match ZUNKIREE_WEBHOOK_SECRET in agentic-commerce
+    agenticom_enabled: bool = False  # Set to True to enable connector
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
