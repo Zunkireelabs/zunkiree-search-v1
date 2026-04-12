@@ -11,6 +11,8 @@ from app.api.orders import router as orders_router
 from app.api.webhooks import router as webhooks_router
 from app.api.ecommerce_dashboard import router as ecommerce_dashboard_router
 from app.api.payments import router as payments_router
+from app.api.chatbot_webhooks import router as chatbot_webhooks_router
+from app.api.chatbot_admin import router as chatbot_admin_router
 
 # --- Logging configuration (before anything else) ---
 logging.basicConfig(
@@ -67,6 +69,8 @@ app.include_router(orders_router, prefix="/api/v1")
 app.include_router(webhooks_router, prefix="/api/v1")
 app.include_router(ecommerce_dashboard_router, prefix="/api/v1")
 app.include_router(payments_router, prefix="/api/v1")
+app.include_router(chatbot_webhooks_router, prefix="/api/v1")
+app.include_router(chatbot_admin_router, prefix="/api/v1")
 
 
 @app.get("/")

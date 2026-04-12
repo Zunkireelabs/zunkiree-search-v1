@@ -61,6 +61,13 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-3-large"
     embedding_dimensions: int = 3072
 
+    # Meta Messaging / Chatbot
+    meta_app_secret: str = ""
+    meta_verify_token: str = ""
+    chatbot_encryption_key: str = ""  # Fernet key for encrypting page_access_tokens
+    chatbot_max_history: int = 10
+    chatbot_conversation_ttl_days: int = 7
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

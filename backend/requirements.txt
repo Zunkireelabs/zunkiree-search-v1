@@ -29,6 +29,9 @@ aiosmtplib>=2.0.0
 # Payments
 stripe>=8.0.0
 
+# Encryption
+cryptography>=42.0.0
+
 # Environment and utilities
 python-dotenv>=1.0.1
 pydantic>=2.6.0

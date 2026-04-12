@@ -28,6 +28,7 @@ class Customer(Base):
     query_logs: Mapped[list["QueryLog"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
     user_profiles: Mapped[list["UserProfile"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
     products: Mapped[list["Product"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
+    chatbot_channels: Mapped[list["ChatbotChannel"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
 
 
 # Import at bottom to avoid circular imports
@@ -37,3 +38,4 @@ from app.models.ingestion import IngestionJob, DocumentChunk
 from app.models.query_log import QueryLog
 from app.models.user_profile import UserProfile
 from app.models.product import Product
+from app.models.chatbot import ChatbotChannel
