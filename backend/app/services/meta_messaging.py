@@ -29,13 +29,17 @@ INSTAGRAM_CHAR_LIMIT = 1000
 def verify_webhook_signature(payload: bytes, signature: str, app_secret: str) -> bool:
     """Verify X-Hub-Signature-256 HMAC from Meta webhook."""
     if not signature or not signature.startswith("sha256="):
+        logger.warning("Missing or malformed signature: %r", signature[:50] if signature else None)
         return False
     expected = hmac.new(
-        app_secret.encode("utf-8"),
+        app_secret.strip().encode("utf-8"),
         payload,
         hashlib.sha256,
     ).hexdigest()
-    return hmac.compare_digest(f"sha256={expected}", signature)
+    result = hmac.compare_digest(f"sha256={expected}", signature)
+    if not result:
+        logger.warning("Signature mismatch: expected sha256=%s..., got %s...", expected[:12], signature[:19])
+    return result
 
 
 def encrypt_token(token: str) -> str:
