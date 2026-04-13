@@ -199,6 +199,36 @@ async def _handle_incoming_message(
                 logger.warning("No active channel for %s page_id=%s", platform, page_id)
                 return
 
+            # Mark seen + typing indicator immediately
+            import asyncio
+            import json as _json
+            try:
+                access_token = decrypt_token(channel.page_access_token)
+                client = get_meta_messaging_client()
+                send_page_id = page_id
+                if platform == "instagram" and channel.config:
+                    try:
+                        config = _json.loads(channel.config) if isinstance(channel.config, str) else channel.config
+                        send_page_id = config.get("facebook_page_id", page_id)
+                    except Exception:
+                        pass
+                # 1. Mark message as seen
+                await client.mark_seen(
+                    platform=platform,
+                    page_id=send_page_id,
+                    access_token=access_token,
+                    recipient_id=sender_id,
+                )
+                # 2. Show typing indicator
+                await client.send_typing_on(
+                    platform=platform,
+                    page_id=send_page_id,
+                    access_token=access_token,
+                    recipient_id=sender_id,
+                )
+            except Exception:
+                pass  # Non-critical
+
             # Deduplication check
             if message_id:
                 existing = await db.execute(
@@ -235,37 +265,24 @@ async def _handle_incoming_message(
             suggestions = result.get("suggestions", [])
             response_time_ms = result.get("response_time_ms", 0)
 
-            # Send reply via Meta API
-            access_token = decrypt_token(channel.page_access_token)
-            client = get_meta_messaging_client()
-
-            # For Instagram, use the Facebook Page ID for the Send API
-            import json as _json
-            send_page_id = page_id
-            if platform == "instagram" and channel.config:
-                try:
-                    config = _json.loads(channel.config) if isinstance(channel.config, str) else channel.config
-                    send_page_id = config.get("facebook_page_id", page_id)
-                except Exception:
-                    pass
-
+            # Send reply via Meta API (reuse token and page_id from typing indicator)
+            # Append suggestions as text instead of quick replies (quick reply titles
+            # are limited to 20 chars on Instagram which truncates them)
+            reply_text = answer
             if suggestions:
-                await client.send_quick_replies(
-                    platform=platform,
-                    page_id=send_page_id,
-                    access_token=access_token,
-                    recipient_id=sender_id,
-                    text=answer,
-                    options=suggestions[:2],
+                suggestion_text = "\n\nYou can also ask:\n" + "\n".join(
+                    f"  → {s}" for s in suggestions[:3]
                 )
-            else:
-                await client.send_text_message(
-                    platform=platform,
-                    page_id=send_page_id,
-                    access_token=access_token,
-                    recipient_id=sender_id,
-                    text=answer,
-                )
+                if len(reply_text) + len(suggestion_text) <= 950:
+                    reply_text += suggestion_text
+
+            await client.send_text_message(
+                platform=platform,
+                page_id=send_page_id,
+                access_token=access_token,
+                recipient_id=sender_id,
+                text=reply_text,
+            )
 
             # Log outbound message
             outbound_log = ChatbotMessageLog(

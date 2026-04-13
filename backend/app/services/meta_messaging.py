@@ -66,6 +66,54 @@ class MetaMessagingClient:
     def __init__(self):
         self._http = httpx.AsyncClient(timeout=15.0)
 
+    async def mark_seen(
+        self,
+        platform: str,
+        page_id: str,
+        access_token: str,
+        recipient_id: str,
+    ) -> None:
+        """Mark the message as seen (blue double-tick)."""
+        if platform == "whatsapp":
+            return
+        url = SEND_API_URLS[platform].format(page_id=page_id)
+        payload = {
+            "recipient": {"id": recipient_id},
+            "sender_action": "mark_seen",
+        }
+        try:
+            resp = await self._http.post(url, json=payload, params={"access_token": access_token})
+            if resp.status_code != 200:
+                logger.warning("mark_seen failed: %s %s", resp.status_code, resp.json())
+            else:
+                logger.info("mark_seen sent to %s", recipient_id)
+        except Exception as e:
+            logger.warning("mark_seen error: %s", e)
+
+    async def send_typing_on(
+        self,
+        platform: str,
+        page_id: str,
+        access_token: str,
+        recipient_id: str,
+    ) -> None:
+        """Send typing indicator so the user sees '...' while we process."""
+        if platform == "whatsapp":
+            return
+        url = SEND_API_URLS[platform].format(page_id=page_id)
+        payload = {
+            "recipient": {"id": recipient_id},
+            "sender_action": "typing_on",
+        }
+        try:
+            resp = await self._http.post(url, json=payload, params={"access_token": access_token})
+            if resp.status_code != 200:
+                logger.warning("typing_on failed: %s %s", resp.status_code, resp.json())
+            else:
+                logger.info("typing_on sent to %s", recipient_id)
+        except Exception as e:
+            logger.warning("typing_on error: %s", e)
+
     async def send_text_message(
         self,
         platform: str,

@@ -18,23 +18,23 @@ from app.services.chatbot_conversation import get_chatbot_conversation_service
 logger = logging.getLogger("zunkiree.chatbot.query")
 
 
-REFINEMENT_SYSTEM_PROMPT = """You are {brand_name}'s assistant responding to a customer on {platform} DM. \
+REFINEMENT_SYSTEM_PROMPT = """You are {brand_name}'s friendly assistant responding to a customer on {platform} DM. \
 Your job is to answer helpfully using the knowledge base answer provided.
 
-CONVERSATION SO FAR:
-{history}
+{history_section}
 
 KNOWLEDGE BASE ANSWER:
 {rag_answer}
 
 Instructions:
 - Use the knowledge base answer as your primary source of truth. Do not fabricate information.
-- Adapt your response to the conversation context — don't repeat what you already said.
+- Respond in a warm, conversational tone — like a helpful friend, not a search engine.
 - Keep it concise and under 800 characters for DM readability.
-- Do not use markdown formatting (no **, no ##, no bullet points with *). Use plain text.
+- Do not use markdown formatting (no **, no ##, no bullet points with *). Use plain text only.
+- Use short sentences. Break up information naturally.
 - If the knowledge base answer suggests contacting the business, include the contact info.
-- If the knowledge base answer is a fallback ("I don't have that information"), say so naturally.
-- Be warm and helpful — this is a DM conversation, not a search result."""
+- If the knowledge base answer is a fallback ("I don't have that information"), say so naturally and offer to help with something else.
+- Don't start with "Sure!" or "Of course!" every time — vary your opening."""
 
 
 class ChatbotQueryService:
@@ -101,18 +101,14 @@ class ChatbotQueryService:
         rag_answer = rag_result.get("answer", "")
         suggestions = rag_result.get("suggestions", [])
 
-        # If conversation history exists, refine the answer with context
-        if history:
-            answer = await self._refine_with_history(
-                rag_answer=rag_answer,
-                history=history,
-                question=message_text,
-                brand_name=brand_name,
-                platform=channel.platform,
-            )
-        else:
-            # First message — strip markdown and return RAG answer directly
-            answer = self._strip_markdown(rag_answer)
+        # Always refine through conversational LLM for DM-friendly tone
+        answer = await self._refine_with_history(
+            rag_answer=rag_answer,
+            history=history,
+            question=message_text,
+            brand_name=brand_name,
+            platform=channel.platform,
+        )
 
         # Ensure DM character limit
         if len(answer) > 950:
@@ -136,16 +132,19 @@ class ChatbotQueryService:
         platform: str,
     ) -> str:
         """Use LLM to produce a conversational reply grounded in the RAG answer."""
-        # Format conversation history
-        formatted_history = "\n".join(
-            f"{'Customer' if m['role'] == 'user' else 'You'}: {m['content']}"
-            for m in history[-8:]  # Last 8 messages for prompt size control
-        )
+        if history:
+            formatted_history = "\n".join(
+                f"{'Customer' if m['role'] == 'user' else 'You'}: {m['content']}"
+                for m in history[-8:]
+            )
+            history_section = f"CONVERSATION SO FAR:\n{formatted_history}\n\nAdapt your response to the conversation context — don't repeat what you already said."
+        else:
+            history_section = "This is the customer's first message. Greet them briefly and answer their question."
 
         system_prompt = REFINEMENT_SYSTEM_PROMPT.format(
             brand_name=brand_name,
             platform=platform.capitalize(),
-            history=formatted_history,
+            history_section=history_section,
             rag_answer=rag_answer,
         )
 
