@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head><title>OAuth Callback</title></head>
+<body>
+<h2>Instagram OAuth Callback</h2>
+<p id="status">Checking for authorization code...</p>
+<pre id="result"></pre>
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const error = params.get('error');
+  if (code) {
+    document.getElementById('status').textContent = 'Authorization code received! Copy this code:';
+    document.getElementById('result').textContent = code;
+  } else if (error) {
+    document.getElementById('status').textContent = 'Error: ' + error;
+    document.getElementById('result').textContent = params.get('error_description') || '';
+  } else {
+    document.getElementById('status').textContent = 'No code received. Check the URL.';
+  }
+</script>
+</body>
+</html>
