@@ -355,12 +355,12 @@ class ChatbotQueryService:
         # Fallback instruction
         fallback_instruction = f'- If you cannot answer from the knowledge base: "{fallback_message}"'
 
-        # Language instruction
-        language_instruction = ""
+        # Language instruction — must be strict to avoid unwanted language switching
+        language_instruction = "- ALWAYS respond in English by default. Only respond in another language if the customer's message is CLEARLY and ENTIRELY written in that language (e.g., full Nepali sentences in Devanagari or Romanized Nepali). Do NOT switch languages based on brand name, context clues, or mixed-language messages."
         if supported_languages and len(supported_languages) > 0:
             lang_names = [LANGUAGE_NAMES.get(code, code) for code in supported_languages if code != "en"]
             if lang_names:
-                language_instruction = f"- If the customer writes in {', '.join(lang_names)}, respond in their language. If they write in an unsupported language, respond in English."
+                language_instruction = f"- ALWAYS respond in English by default. Only switch to {', '.join(lang_names)} if the customer's ENTIRE message is clearly written in that language. If the message is in English or a mix of English and another language, respond in English."
 
         # Confidence section
         confidence_section = ""
