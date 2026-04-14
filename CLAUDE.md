@@ -115,28 +115,56 @@ Instagram DM → Meta webhook POST /api/v1/webhooks/meta
   → HMAC signature verification
   → Lookup chatbot_channels table (platform + page_id → tenant)
   → Mark message as seen (blue ticks) + show typing indicator
+  → Extract attachments (shared posts → URL, unsupported → polite reply)
   → Deduplication via platform_message_id
+  → Check for greeting ("hi") → instant branded response (skip RAG)
+  → Check for feedback signal ("thanks"/"wrong") → update QueryLog, acknowledge
+  → Expand abbreviations ("pp" → "price please", 40+ common DM shorthand)
   → Load conversation history (last 10 messages from DB)
   → Call QueryService.process_query() (same RAG pipeline as widget)
-  → Refine answer through conversational LLM (always, not just multi-turn)
+  → Confidence check: if fallback_triggered → smart fallback with contact info (skip LLM)
+  → Refine answer through conversational LLM with tenant personality (tone, website_type, contact info)
   → Send reply via Meta Send API (with inline suggestions as text)
-  → Persist messages to chatbot_conversations
+  → Persist messages to chatbot_conversations + link to QueryLog
 ```
+
+### Smart features
+
+- **Abbreviation expander** — 40+ common DM abbreviations ("pp"→"price please", "pls"→"please", "avail"→"available"). Per-tenant custom abbreviations via `ChatbotChannel.config` JSONB: `{"abbreviations": {"BHK": "bedroom hall kitchen"}}`.
+- **Greeting detection** — "hi", "hello", "namaste" etc. return instant branded greeting without calling RAG. Includes tenant's `quick_actions` as suggestions.
+- **Shared Instagram post handling** — Extracts URL from `message.attachments` type "share" instead of silently dropping. Unsupported types (images, stickers) get a polite "type your question" reply.
+- **Personality injection** — Tenant's `tone` (formal/neutral/friendly), `website_type` (24 industry specializations from `WEBSITE_TYPE_PROMPTS`), `contact_email`/`contact_phone`, and custom `fallback_message` all injected into the LLM refinement prompt.
+- **Confidence-aware responses** — Uses `_meta.top_score` and `_meta.fallback_triggered` from RAG. High confidence answers directly; low confidence triggers smart fallback with tenant's contact info (saves an LLM call).
+- **Natural feedback detection** — "thanks"/"thank you"/"helpful" = positive, "wrong"/"incorrect"/"not helpful" = negative. Updates linked QueryLog's `feedback_vote`, feeding into Search Quality dashboard.
+- **Language support** — Responds in English by default. Only switches to Nepali/Hindi/etc. if the customer's entire message is in that language and it's in the tenant's `supported_languages` config.
+
+### Search Quality training loop
+
+Clients can teach the chatbot correct answers via the dashboard:
+
+1. **Client dashboard** (`admin/dashboard.html`) → "Search Quality" tab shows failed/unanswered questions with "Add Answer" button
+2. Client types the correct answer → ingested as Q&A pair via existing `/dashboard/ingest/qa/batch`
+3. Next time someone asks that question, RAG finds the Q&A pair → bot answers correctly
+4. **Admin dashboard** (`admin/index.html`) → "Search Quality" section shows same data with "Create Q&A" button
+
+API endpoints:
+- `GET /dashboard/search-quality` — feedback stats + failed queries (client auth via X-Api-Key)
+- `GET /admin/query-analytics/{site_id}` — same data (admin auth via X-Admin-Key)
 
 ### Key files
 
-- `api/chatbot_webhooks.py` — `GET/POST /api/v1/webhooks/meta` (webhook verification + message reception + OAuth callback handler)
+- `api/chatbot_webhooks.py` — `GET/POST /api/v1/webhooks/meta` (webhook verification + message reception + OAuth callback + attachment handling)
 - `api/chatbot_admin.py` — Channel CRUD: connect/list/disconnect Instagram accounts per tenant
 - `services/meta_messaging.py` — Meta Send API client, HMAC verification, Fernet token encryption, mark_seen, typing_on
 - `services/chatbot_conversation.py` — Persistent conversation store (PostgreSQL-backed, 7-day TTL)
-- `services/chatbot_query.py` — Wraps existing RAG pipeline with conversational LLM refinement (does NOT modify QueryService)
+- `services/chatbot_query.py` — Wraps RAG pipeline with abbreviation expansion, greeting detection, feedback detection, personality injection, confidence-aware responses, conversational LLM refinement
 - `models/chatbot.py` — ChatbotChannel, ChatbotConversation, ChatbotMessageLog
 
 ### Database tables
 
-- `chatbot_channels` — Maps tenant Instagram accounts to customer_id. Access tokens encrypted with Fernet. `config` JSONB stores `facebook_page_id` for Instagram Send API routing.
+- `chatbot_channels` — Maps tenant Instagram accounts to customer_id. Access tokens encrypted with Fernet. `config` JSONB stores `facebook_page_id` for Send API routing + optional `abbreviations` dict for per-tenant shorthand.
 - `chatbot_conversations` — Persistent multi-turn message history per sender (user + assistant messages).
-- `chatbot_message_log` — Audit trail + webhook deduplication via unique `platform_message_id`.
+- `chatbot_message_log` — Audit trail + webhook deduplication via unique `platform_message_id`. `query_log_id` FK links to `query_logs` for analytics and feedback tracking (migration 027).
 
 ### Connecting a tenant's Instagram
 
