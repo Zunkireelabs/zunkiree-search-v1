@@ -1,0 +1,19 @@
+# Zunkiree Search — Code Owners
+# These owners are automatically requested for PR review.
+
+# Default owner for everything
+* @anishbalami
+
+# Backend
+/backend/ @anishbalami
+
+# Widget
+/widget/ @anishbalami
+
+# Admin dashboards
+/admin/ @anishbalami
+
+# Infrastructure
+/docker-compose.yml @anishbalami
+/.github/ @anishbalami
+/scripts/ @anishbalami

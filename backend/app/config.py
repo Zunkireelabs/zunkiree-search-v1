@@ -4,6 +4,9 @@ from functools import lru_cache
 
 
 class Settings(BaseSettings):
+    # Environment
+    environment: str = "production"  # development, staging, production
+
     # OpenAI
     openai_api_key: str
 

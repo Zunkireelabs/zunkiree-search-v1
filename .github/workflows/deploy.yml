@@ -1,0 +1,40 @@
+name: Deploy to VPS
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_migrations:
+        description: "Skip database migrations"
+        required: false
+        default: "false"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /home/zunkireelabs/devprojects/zunkiree-search-v1
+            git pull origin main
+
+            # Run migrations unless skipped
+            if [ "${{ inputs.skip_migrations }}" != "true" ]; then
+              DB_URL=$(docker compose exec zunkiree-search-api printenv DATABASE_URL 2>/dev/null | tr -d '\r' || true)
+              if [ -n "$DB_URL" ]; then
+                ./scripts/migrate.sh "$DB_URL"
+              fi
+            fi
+
+            # Rebuild and restart
+            docker compose build zunkiree-search-api
+            docker compose up -d --force-recreate zunkiree-search-api
+
+            # Verify health
+            sleep 5
+            curl -sf http://localhost:8000/health || echo "WARNING: Health check failed"

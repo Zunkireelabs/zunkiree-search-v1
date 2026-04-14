@@ -373,7 +373,9 @@
   </div>
 
   <script>
-    const API_URL = 'https://api.zunkireelabs.com';
+    const API_URL = window.location.hostname === 'localhost'
+      ? 'http://localhost:8000'
+      : 'https://api.zunkireelabs.com';
     let API_KEY = sessionStorage.getItem('zunkiree_dashboard_key') || '';
     let SITE_ID = '';
     let leadsPage = 1, leadsPageSize = 25;

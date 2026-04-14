@@ -1,3 +1,8 @@
+# Zunkiree Search — Docker Compose
+# Production: docker compose up -d
+# Dev:        docker compose --profile dev up
+# Backup:     docker compose --profile backup run zunkiree-backup
+
 services:
   zunkiree-search-api:
     build:
@@ -7,6 +12,8 @@ services:
     restart: unless-stopped
     env_file:
       - ./backend/.env
+    environment:
+      - ENVIRONMENT=production
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
@@ -23,6 +30,25 @@ services:
       - "traefik.http.services.zunkiree-search-api.loadbalancer.server.port=8000"
     networks:
       - hosting
+
+  # Local development (no Traefik, exposes port directly)
+  zunkiree-search-api-dev:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: zunkiree-search-api-dev
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      - ENVIRONMENT=development
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    profiles:
+      - dev
 
   zunkiree-backup:
     image: postgres:16-alpine
