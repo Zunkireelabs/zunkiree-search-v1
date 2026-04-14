@@ -115,6 +115,11 @@ async def _process_instagram_entry(entry: dict):
         if not sender_id:
             continue
 
+        # If user tapped a quick reply, use the full payload as the message
+        quick_reply = message.get("quick_reply", {})
+        if quick_reply.get("payload"):
+            message_text = quick_reply["payload"]
+
         page_id = event.get("recipient", {}).get("id")
 
         # Handle shared posts: extract URL from attachments
@@ -158,6 +163,11 @@ async def _process_messenger_entry(entry: dict):
 
         if not sender_id:
             continue
+
+        # If user tapped a quick reply, use the full payload as the message
+        quick_reply = message.get("quick_reply", {})
+        if quick_reply.get("payload"):
+            message_text = quick_reply["payload"]
 
         page_id = event.get("recipient", {}).get("id")
 
@@ -308,24 +318,35 @@ async def _handle_incoming_message(
             if feedback_signal and query_log_id is None:
                 await _update_feedback_from_signal(db, channel.id, sender_id, feedback_signal)
 
-            # Send reply via Meta API (reuse token and page_id from typing indicator)
-            # Append suggestions as text instead of quick replies (quick reply titles
-            # are limited to 20 chars on Instagram which truncates them)
-            reply_text = answer
-            if suggestions:
-                suggestion_text = "\n\nYou can also ask:\n" + "\n".join(
-                    f"  → {s}" for s in suggestions[:3]
-                )
-                if len(reply_text) + len(suggestion_text) <= 950:
-                    reply_text += suggestion_text
-
+            # Send reply as clean text (no suggestions cluttering the answer)
             await client.send_text_message(
                 platform=platform,
                 page_id=send_page_id,
                 access_token=access_token,
                 recipient_id=sender_id,
-                text=reply_text,
+                text=answer,
             )
+
+            # Send suggestions as quick reply buttons (separate message)
+            # Quick replies appear as horizontally scrollable pills on Instagram.
+            # Title is truncated to 20 chars (platform limit) but payload holds
+            # the full text — when tapped, webhook receives full suggestion.
+            if suggestions and len(suggestions) > 0:
+                suggestion_list = suggestions[:3]
+                prompt_text = "You can also ask:" + "".join(
+                    f"\n• {s}" for s in suggestion_list
+                )
+                try:
+                    await client.send_quick_replies(
+                        platform=platform,
+                        page_id=send_page_id,
+                        access_token=access_token,
+                        recipient_id=sender_id,
+                        text=prompt_text,
+                        options=suggestion_list,
+                    )
+                except Exception:
+                    pass  # Non-critical — answer already sent
 
             # Log outbound message
             outbound_log = ChatbotMessageLog(
