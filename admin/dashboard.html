@@ -819,9 +819,9 @@
         return;
       }
       try {
-        const res = await apiFetch('/ingest/qa/batch', {
+        const res = await fetch(`${API_URL}/api/v1/dashboard/ingest/qa/batch`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'X-Api-Key': API_KEY, 'Content-Type': 'application/json' },
           body: JSON.stringify({ qa_pairs: [{ question, answer }] }),
         });
         if (!res.ok) {
