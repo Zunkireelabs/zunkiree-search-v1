@@ -1540,7 +1540,7 @@ async def get_query_analytics(
         raise HTTPException(status_code=404, detail={"code": "CUSTOMER_NOT_FOUND", "message": "Customer not found"})
 
     cid = str(customer.id)
-    since = (datetime.utcnow() - timedelta(days=30)).isoformat()
+    since = datetime.utcnow() - timedelta(days=30)
 
     # Feedback summary
     feedback_result = await db.execute(text("""

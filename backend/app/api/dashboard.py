@@ -514,7 +514,7 @@ async def get_search_quality(
     can teach the chatbot/widget correct answers.
     """
     cid = str(customer.id)
-    since = (datetime.utcnow() - timedelta(days=30)).isoformat()
+    since = datetime.utcnow() - timedelta(days=30)
 
     # Feedback summary
     feedback_result = await db.execute(text("""
