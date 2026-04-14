@@ -175,9 +175,74 @@
     <div class="tabs">
       <button class="tab active" onclick="showTab('leads')">Leads & Users</button>
       <button class="tab" onclick="showTab('queries')">Query History</button>
+      <button class="tab" onclick="showTab('quality')">Search Quality</button>
       <button class="tab" onclick="showTab('ingest')">Ingest Data</button>
       <button class="tab" onclick="showTab('config')">Widget Config</button>
       <button class="tab" onclick="showTab('embed')">Embed Code</button>
+    </div>
+
+    <!-- Search Quality Section -->
+    <div class="section hidden" id="qualitySection">
+      <h2>Search Quality — Train Your Bot</h2>
+      <p style="font-size:13px; color:#6b7280; margin-bottom:16px;">Questions your bot couldn't answer well. Add correct answers to make it smarter.</p>
+
+      <div class="overview-grid" style="margin-bottom:20px;">
+        <div class="stat-card">
+          <div class="stat-label">Total Feedback</div>
+          <div class="stat-value" id="sqTotal">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Satisfaction Rate</div>
+          <div class="stat-value" id="sqRate">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Positive</div>
+          <div class="stat-value" id="sqPositive" style="color:#16a34a;">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Negative</div>
+          <div class="stat-value" id="sqNegative" style="color:#dc2626;">—</div>
+        </div>
+      </div>
+
+      <h3 style="font-size:14px; color:#374151; margin-bottom:10px;">Unanswered / Poorly Answered Questions</h3>
+      <p style="font-size:12px; color:#6b7280; margin-bottom:10px;">Click "Add Answer" to teach the bot the correct response. It will learn immediately.</p>
+      <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead>
+            <tr><th>Question</th><th>Times Asked</th><th>Avg Score</th><th>Negative Feedback</th><th>Action</th></tr>
+          </thead>
+          <tbody id="sqFailedBody"></tbody>
+        </table>
+      </div>
+
+      <!-- Inline Add Answer Form (hidden by default) -->
+      <div id="addAnswerPanel" class="hidden" style="margin-top:20px; padding:20px; background:#f9fafb; border-radius:12px; border:1px solid #e5e7eb;">
+        <h3 style="font-size:14px; color:#374151; margin-bottom:12px;">Add Correct Answer</h3>
+        <div class="form-group">
+          <label>Question</label>
+          <input type="text" id="addAnswerQuestion" readonly style="background:#f3f4f6;">
+        </div>
+        <div class="form-group">
+          <label>Correct Answer</label>
+          <textarea id="addAnswerText" rows="4" style="width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; font-family:inherit; resize:vertical;" placeholder="Type the correct answer that the bot should give..."></textarea>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button onclick="submitAnswer()">Save Answer</button>
+          <button class="secondary" onclick="cancelAddAnswer()">Cancel</button>
+        </div>
+      </div>
+
+      <h3 style="font-size:14px; color:#374151; margin:20px 0 10px;">Thumbs-Down Queries</h3>
+      <p style="font-size:12px; color:#6b7280; margin-bottom:10px;">Individual queries that users marked as unhelpful.</p>
+      <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead>
+            <tr><th>Question</th><th>Answer Given</th><th>Score</th><th>Date</th></tr>
+          </thead>
+          <tbody id="sqNegativeBody"></tbody>
+        </table>
+      </div>
     </div>
 
     <!-- Leads Section -->
@@ -411,12 +476,13 @@
     function showTab(tab) {
       document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('active'));
       event.target.classList.add('active');
-      ['leadsSection','queriesSection','ingestSection','configSection','embedSection'].forEach(id => {
+      ['leadsSection','queriesSection','qualitySection','ingestSection','configSection','embedSection'].forEach(id => {
         document.getElementById(id).classList.add('hidden');
       });
       document.getElementById(tab + 'Section').classList.remove('hidden');
       if (tab === 'ingest') loadJobs();
       if (tab === 'config') loadConfig();
+      if (tab === 'quality') loadSearchQuality();
     }
 
     // --- Pagination ---
@@ -687,6 +753,92 @@
       const code = document.getElementById('embedCode').textContent;
       if (!code) return;
       navigator.clipboard.writeText(code).then(() => showAlert('Embed code copied!', 'success'));
+    }
+
+    // --- Search Quality ---
+    async function loadSearchQuality() {
+      try {
+        const res = await apiFetch('/search-quality');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        document.getElementById('sqTotal').textContent = data.total_feedback;
+        document.getElementById('sqRate').textContent = data.satisfaction_rate + '%';
+        document.getElementById('sqPositive').textContent = data.positive_feedback;
+        document.getElementById('sqNegative').textContent = data.negative_feedback;
+
+        const failedBody = document.getElementById('sqFailedBody');
+        if (data.failed_queries.length === 0) {
+          failedBody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#6b7280;padding:24px;">No unanswered questions found. Your bot is doing great!</td></tr>';
+        } else {
+          failedBody.innerHTML = data.failed_queries.map(q => `<tr>
+            <td style="max-width:400px;white-space:normal;">${esc(q.question)}</td>
+            <td>${q.count}</td>
+            <td>${q.avg_score}</td>
+            <td>${q.negative_feedback}</td>
+            <td><button onclick="showAddAnswer('${esc(q.question).replace(/'/g, "\\'")}')" style="padding:4px 10px;font-size:12px;">Add Answer</button></td>
+          </tr>`).join('');
+        }
+
+        const negBody = document.getElementById('sqNegativeBody');
+        if (data.negative_feedback_queries.length === 0) {
+          negBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#6b7280;padding:24px;">No negative feedback yet.</td></tr>';
+        } else {
+          negBody.innerHTML = data.negative_feedback_queries.map(q => `<tr>
+            <td style="max-width:300px;white-space:normal;">${esc(q.question)}</td>
+            <td style="max-width:300px;white-space:normal;">${esc(q.answer_preview)}</td>
+            <td>${q.top_score}</td>
+            <td>${q.date ? new Date(q.date).toLocaleDateString() : '—'}</td>
+          </tr>`).join('');
+        }
+      } catch(e) {
+        console.error('Failed to load search quality:', e);
+      }
+    }
+
+    function showAddAnswer(question) {
+      document.getElementById('addAnswerQuestion').value = question;
+      document.getElementById('addAnswerText').value = '';
+      document.getElementById('addAnswerPanel').classList.remove('hidden');
+      document.getElementById('addAnswerPanel').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function cancelAddAnswer() {
+      document.getElementById('addAnswerPanel').classList.add('hidden');
+    }
+
+    async function submitAnswer() {
+      const question = document.getElementById('addAnswerQuestion').value.trim();
+      const answer = document.getElementById('addAnswerText').value.trim();
+      if (!question || !answer) {
+        showAlert('Please enter both question and answer.', 'error');
+        return;
+      }
+      if (answer.length < 10) {
+        showAlert('Answer must be at least 10 characters.', 'error');
+        return;
+      }
+      try {
+        const res = await apiFetch('/ingest/qa/batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ qa_pairs: [{ question, answer }] }),
+        });
+        if (!res.ok) {
+          showAlert('Failed to save answer. Please try again.', 'error');
+          return;
+        }
+        const data = await res.json();
+        if (data.succeeded > 0) {
+          showAlert('Answer saved! The bot will use this for future responses.', 'success');
+          cancelAddAnswer();
+          loadSearchQuality();
+        } else {
+          showAlert('Failed to ingest answer. Please try again.', 'error');
+        }
+      } catch(e) {
+        showAlert('Error saving answer: ' + e.message, 'error');
+      }
     }
 
     // --- Init ---

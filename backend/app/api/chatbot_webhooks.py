@@ -13,6 +13,7 @@ from app.services.chatbot_query import get_chatbot_query_service
 from app.models.chatbot import ChatbotChannel, ChatbotMessageLog
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("zunkiree.chatbot.webhook")
 
@@ -109,11 +110,33 @@ async def _process_instagram_entry(entry: dict):
         message = event.get("message", {})
         message_text = message.get("text")
         message_id = message.get("mid")
+        attachments = message.get("attachments", [])
 
-        if not sender_id or not message_text:
-            continue  # Skip non-text messages (reactions, read receipts, etc.)
+        if not sender_id:
+            continue
 
         page_id = event.get("recipient", {}).get("id")
+
+        # Handle shared posts: extract URL from attachments
+        if not message_text and attachments:
+            for att in attachments:
+                att_type = att.get("type")
+                att_url = att.get("payload", {}).get("url", "")
+                if att_type == "share" and att_url:
+                    # User shared an Instagram post — ask what they want to know
+                    message_text = f"[Shared post: {att_url}] I want to know about this"
+                    break
+                elif att_type in ("image", "video", "sticker", "audio"):
+                    # Unsupported attachment — send a polite reply
+                    await _send_unsupported_type_reply(
+                        platform="instagram", page_id=page_id,
+                        sender_id=sender_id,
+                    )
+                    continue
+
+        if not message_text:
+            continue  # Skip reactions, read receipts, etc.
+
         await _handle_incoming_message(
             platform="instagram",
             page_id=page_id,
@@ -131,11 +154,25 @@ async def _process_messenger_entry(entry: dict):
         message = event.get("message", {})
         message_text = message.get("text")
         message_id = message.get("mid")
+        attachments = message.get("attachments", [])
 
-        if not sender_id or not message_text:
+        if not sender_id:
             continue
 
         page_id = event.get("recipient", {}).get("id")
+
+        # Handle shared posts/links
+        if not message_text and attachments:
+            for att in attachments:
+                att_type = att.get("type")
+                att_url = att.get("payload", {}).get("url", "")
+                if att_type in ("share", "fallback") and att_url:
+                    message_text = f"[Shared link: {att_url}] I want to know about this"
+                    break
+
+        if not message_text:
+            continue
+
         await _handle_incoming_message(
             platform="messenger",
             page_id=page_id,
@@ -264,6 +301,12 @@ async def _handle_incoming_message(
             answer = result["answer"]
             suggestions = result.get("suggestions", [])
             response_time_ms = result.get("response_time_ms", 0)
+            query_log_id = result.get("query_log_id")
+            feedback_signal = result.get("feedback_signal")
+
+            # If this was a feedback signal, update the previous query log
+            if feedback_signal and query_log_id is None:
+                await _update_feedback_from_signal(db, channel.id, sender_id, feedback_signal)
 
             # Send reply via Meta API (reuse token and page_id from typing indicator)
             # Append suggestions as text instead of quick replies (quick reply titles
@@ -292,6 +335,7 @@ async def _handle_incoming_message(
                 direction="outbound",
                 message_text=answer,
                 response_time_ms=response_time_ms,
+                query_log_id=query_log_id,
             )
             db.add(outbound_log)
             await db.commit()
@@ -313,3 +357,79 @@ async def _handle_incoming_message(
                 await db.commit()
             except Exception:
                 pass  # Don't let error logging break the flow
+
+
+async def _send_unsupported_type_reply(
+    platform: str,
+    page_id: str | None,
+    sender_id: str,
+):
+    """Send a polite reply when we receive an unsupported attachment type."""
+    async with async_session_maker() as db:
+        try:
+            result = await db.execute(
+                select(ChatbotChannel).where(
+                    ChatbotChannel.platform == platform,
+                    ChatbotChannel.platform_page_id == page_id,
+                    ChatbotChannel.is_active == True,
+                )
+            )
+            channel = result.scalar_one_or_none()
+            if not channel:
+                return
+
+            import json as _json
+            access_token = decrypt_token(channel.page_access_token)
+            client = get_meta_messaging_client()
+            send_page_id = page_id
+            if platform == "instagram" and channel.config:
+                try:
+                    config = _json.loads(channel.config) if isinstance(channel.config, str) else channel.config
+                    send_page_id = config.get("facebook_page_id", page_id)
+                except Exception:
+                    pass
+
+            await client.send_text_message(
+                platform=platform,
+                page_id=send_page_id,
+                access_token=access_token,
+                recipient_id=sender_id,
+                text="I can read text messages and shared posts right now. Could you type out your question instead?",
+            )
+        except Exception as e:
+            logger.warning("Failed to send unsupported-type reply: %s", e)
+
+
+async def _update_feedback_from_signal(
+    db: AsyncSession,
+    channel_id,
+    sender_id: str,
+    signal: str,
+):
+    """Update the most recent query log with feedback from a natural language signal."""
+    from app.models import QueryLog
+    from datetime import datetime
+
+    try:
+        # Find the most recent outbound message for this sender
+        result = await db.execute(
+            select(ChatbotMessageLog).where(
+                ChatbotMessageLog.channel_id == channel_id,
+                ChatbotMessageLog.platform_sender_id == sender_id,
+                ChatbotMessageLog.direction == "outbound",
+            ).order_by(ChatbotMessageLog.created_at.desc()).limit(1)
+        )
+        last_outbound = result.scalar_one_or_none()
+        if not last_outbound:
+            return
+
+        # If we have a linked query_log_id, update its feedback
+        if hasattr(last_outbound, 'query_log_id') and last_outbound.query_log_id:
+            log = await db.get(QueryLog, last_outbound.query_log_id)
+            if log:
+                log.feedback_vote = 1 if signal == "positive" else -1
+                log.feedback_at = datetime.utcnow()
+                await db.commit()
+                logger.info("Updated feedback for query_log %s: %s", log.id, signal)
+    except Exception as e:
+        logger.warning("Failed to update feedback from signal: %s", e)

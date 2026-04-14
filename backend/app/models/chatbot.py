@@ -69,6 +69,9 @@ class ChatbotMessageLog(Base):
     message_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     response_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    query_log_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("query_logs.id", ondelete="SET NULL"), nullable=True, index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Relationships

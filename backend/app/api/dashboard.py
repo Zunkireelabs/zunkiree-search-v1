@@ -1,10 +1,11 @@
 import csv
 import io
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 
 from app.database import get_db
 from app.models import Customer, UserProfile, QueryLog, WidgetConfig, IngestionJob
@@ -497,3 +498,76 @@ async def list_dashboard_jobs(
         ],
         total=len(jobs),
     )
+
+
+# --- Search Quality (Knowledge Gap Training) ---
+
+
+@router.get("/search-quality")
+async def get_search_quality(
+    customer: Customer = Depends(get_current_customer),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Search quality analytics for the authenticated customer.
+    Shows failed queries, feedback stats, and knowledge gaps so clients
+    can teach the chatbot/widget correct answers.
+    """
+    cid = str(customer.id)
+    since = (datetime.utcnow() - timedelta(days=30)).isoformat()
+
+    # Feedback summary
+    feedback_result = await db.execute(text("""
+        SELECT
+            COUNT(*) FILTER (WHERE feedback_vote IS NOT NULL) as total_feedback,
+            COUNT(*) FILTER (WHERE feedback_vote = 1) as positive,
+            COUNT(*) FILTER (WHERE feedback_vote = -1) as negative
+        FROM query_logs WHERE customer_id = :cid AND created_at > :since
+    """), {"cid": cid, "since": since})
+    fb = feedback_result.one()
+    total_feedback = fb[0] or 0
+    positive = fb[1] or 0
+    negative = fb[2] or 0
+    satisfaction_rate = round((positive / total_feedback * 100) if total_feedback > 0 else 0, 1)
+
+    # Failed queries (grouped by question, counted)
+    failed_result = await db.execute(text("""
+        SELECT LOWER(TRIM(question)) as q,
+               COUNT(*) as cnt,
+               ROUND(AVG(top_score)::numeric, 3) as avg_score,
+               SUM(CASE WHEN feedback_vote = -1 THEN 1 ELSE 0 END) as neg_count
+        FROM query_logs
+        WHERE customer_id = :cid AND created_at > :since
+          AND (fallback_triggered = true OR retrieval_empty = true
+               OR llm_declined = true OR top_score < 0.25 OR feedback_vote = -1)
+        GROUP BY LOWER(TRIM(question))
+        HAVING COUNT(*) >= 1
+        ORDER BY cnt DESC
+        LIMIT 30
+    """), {"cid": cid, "since": since})
+    failed_queries = [
+        {"question": row[0], "count": row[1], "avg_score": float(row[2]) if row[2] else 0, "negative_feedback": row[3]}
+        for row in failed_result.fetchall()
+    ]
+
+    # Negative feedback queries (individual, with answers)
+    neg_result = await db.execute(text("""
+        SELECT question, LEFT(answer, 200) as answer_preview, top_score, created_at
+        FROM query_logs
+        WHERE customer_id = :cid AND feedback_vote = -1
+        ORDER BY feedback_at DESC
+        LIMIT 20
+    """), {"cid": cid})
+    negative_queries = [
+        {"question": row[0], "answer_preview": row[1], "top_score": float(row[2]) if row[2] else 0, "date": row[3].isoformat() if row[3] else ""}
+        for row in neg_result.fetchall()
+    ]
+
+    return {
+        "total_feedback": total_feedback,
+        "positive_feedback": positive,
+        "negative_feedback": negative,
+        "satisfaction_rate": satisfaction_rate,
+        "failed_queries": failed_queries,
+        "negative_feedback_queries": negative_queries,
+    }

@@ -260,7 +260,7 @@ class QueryService:
         fallback_triggered = retrieval_empty_flag or llm_declined
 
         # Log query
-        await self._log_query(
+        query_log_id = await self._log_query(
             db=db,
             customer_id=customer.id,
             question=question,
@@ -300,6 +300,13 @@ class QueryService:
             "answer": result["answer"],
             "suggestions": result["suggestions"] if show_suggestions else [],
             "sources": sources if config and config.show_sources else [],
+            "_meta": {
+                "top_score": top_score,
+                "fallback_triggered": fallback_triggered,
+                "llm_declined": llm_declined,
+                "chunks_used": len(chunks_for_llm),
+                "query_log_id": query_log_id,
+            },
         }
 
     async def process_query_stream(
