@@ -115,12 +115,26 @@ async def _process_instagram_entry(entry: dict):
         if not sender_id:
             continue
 
+        page_id = event.get("recipient", {}).get("id")
+
+        # Handle postback from suggestion card buttons (Generic Template)
+        postback = event.get("postback", {})
+        if postback.get("payload"):
+            message_text = postback["payload"]
+            message_id = None  # Postbacks don't have message IDs
+            await _handle_incoming_message(
+                platform="instagram",
+                page_id=page_id,
+                sender_id=sender_id,
+                message_text=message_text,
+                message_id=message_id,
+            )
+            continue
+
         # If user tapped a quick reply, use the full payload as the message
         quick_reply = message.get("quick_reply", {})
         if quick_reply.get("payload"):
             message_text = quick_reply["payload"]
-
-        page_id = event.get("recipient", {}).get("id")
 
         # Handle shared posts: extract URL from attachments
         if not message_text and attachments:
@@ -128,11 +142,9 @@ async def _process_instagram_entry(entry: dict):
                 att_type = att.get("type")
                 att_url = att.get("payload", {}).get("url", "")
                 if att_type == "share" and att_url:
-                    # User shared an Instagram post — ask what they want to know
                     message_text = f"[Shared post: {att_url}] I want to know about this"
                     break
                 elif att_type in ("image", "video", "sticker", "audio"):
-                    # Unsupported attachment — send a polite reply
                     await _send_unsupported_type_reply(
                         platform="instagram", page_id=page_id,
                         sender_id=sender_id,
@@ -164,12 +176,26 @@ async def _process_messenger_entry(entry: dict):
         if not sender_id:
             continue
 
+        page_id = event.get("recipient", {}).get("id")
+
+        # Handle postback from suggestion card buttons
+        postback = event.get("postback", {})
+        if postback.get("payload"):
+            message_text = postback["payload"]
+            message_id = None
+            await _handle_incoming_message(
+                platform="messenger",
+                page_id=page_id,
+                sender_id=sender_id,
+                message_text=message_text,
+                message_id=message_id,
+            )
+            continue
+
         # If user tapped a quick reply, use the full payload as the message
         quick_reply = message.get("quick_reply", {})
         if quick_reply.get("payload"):
             message_text = quick_reply["payload"]
-
-        page_id = event.get("recipient", {}).get("id")
 
         # Handle shared posts/links
         if not message_text and attachments:
@@ -318,7 +344,7 @@ async def _handle_incoming_message(
             if feedback_signal and query_log_id is None:
                 await _update_feedback_from_signal(db, channel.id, sender_id, feedback_signal)
 
-            # Send reply as clean text (no suggestions cluttering the answer)
+            # Send answer as clean text
             await client.send_text_message(
                 platform=platform,
                 page_id=send_page_id,
@@ -327,26 +353,32 @@ async def _handle_incoming_message(
                 text=answer,
             )
 
-            # Send suggestions as quick reply buttons (separate message)
-            # Quick replies appear as horizontally scrollable pills on Instagram.
-            # Title is truncated to 20 chars (platform limit) but payload holds
-            # the full text — when tapped, webhook receives full suggestion.
+            # Send suggestions as a card carousel (Generic Template).
+            # Each card shows the full suggestion text (up to 80 chars) with
+            # an "Ask this" postback button. Cards scroll horizontally.
             if suggestions and len(suggestions) > 0:
-                suggestion_list = suggestions[:3]
-                prompt_text = "You can also ask:" + "".join(
-                    f"\n• {s}" for s in suggestion_list
-                )
                 try:
-                    await client.send_quick_replies(
+                    await client.send_suggestion_cards(
                         platform=platform,
                         page_id=send_page_id,
                         access_token=access_token,
                         recipient_id=sender_id,
-                        text=prompt_text,
-                        options=suggestion_list,
+                        suggestions=suggestions[:3],
                     )
-                except Exception:
-                    pass  # Non-critical — answer already sent
+                except Exception as e:
+                    logger.warning("Suggestion cards failed, sending as text: %s", e)
+                    # Fallback: append suggestions as plain text
+                    fallback = "You can also ask:\n" + "\n".join(f"• {s}" for s in suggestions[:3])
+                    try:
+                        await client.send_text_message(
+                            platform=platform,
+                            page_id=send_page_id,
+                            access_token=access_token,
+                            recipient_id=sender_id,
+                            text=fallback,
+                        )
+                    except Exception:
+                        pass
 
             # Log outbound message
             outbound_log = ChatbotMessageLog(

@@ -182,6 +182,56 @@ class MetaMessagingClient:
             logger.error("Meta Send API error (quick_replies): %s %s", resp.status_code, result)
         return result
 
+    async def send_suggestion_cards(
+        self,
+        platform: str,
+        page_id: str,
+        access_token: str,
+        recipient_id: str,
+        suggestions: list[str],
+    ) -> dict:
+        """Send suggestions as a horizontally scrollable Generic Template carousel."""
+        if platform == "whatsapp":
+            # WhatsApp doesn't support generic templates; send as text
+            combined = "You can also ask:\n" + "\n".join(f"- {s}" for s in suggestions)
+            return await self._send_whatsapp_text(page_id, access_token, recipient_id, combined)
+
+        url = SEND_API_URLS[platform].format(page_id=page_id)
+        elements = [
+            {
+                "title": s[:80],
+                "buttons": [
+                    {
+                        "type": "postback",
+                        "title": "Ask this",
+                        "payload": s[:1000],
+                    }
+                ],
+            }
+            for s in suggestions[:10]  # Meta allows max 10 carousel elements
+        ]
+        payload = {
+            "recipient": {"id": recipient_id},
+            "message": {
+                "attachment": {
+                    "type": "template",
+                    "payload": {
+                        "template_type": "generic",
+                        "elements": elements,
+                    },
+                }
+            },
+        }
+        resp = await self._http.post(
+            url,
+            json=payload,
+            params={"access_token": access_token},
+        )
+        result = resp.json()
+        if resp.status_code != 200:
+            logger.error("Meta Send API error (suggestion_cards): %s %s", resp.status_code, result)
+        return result
+
     async def _send_whatsapp_text(
         self, phone_number_id: str, access_token: str, recipient_id: str, text: str,
     ) -> dict:
