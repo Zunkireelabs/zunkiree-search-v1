@@ -203,7 +203,7 @@ class MetaMessagingClient:
                 "buttons": [
                     {
                         "type": "postback",
-                        "title": "▶",
+                        "title": "Ask",
                         "payload": s[:1000],
                     }
                 ],
