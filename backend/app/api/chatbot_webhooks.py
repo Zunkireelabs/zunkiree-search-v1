@@ -357,27 +357,57 @@ async def _handle_incoming_message(
                     text=message_text,
                 )
 
-            # Send answer
-            await client.send_text_message(
-                platform=platform,
-                page_id=send_page_id,
-                access_token=access_token,
-                recipient_id=sender_id,
-                text=answer,
-            )
-
-            # Send suggestions as carousel cards with "Ask" button
+            # Send answer — attach quick replies if suggestions fit, otherwise send separately
             if suggestions and len(suggestions) > 0:
-                try:
-                    await client.send_suggestion_cards(
+                trimmed = suggestions[:3]
+                all_short = all(len(s) <= 20 for s in trimmed)
+
+                if all_short:
+                    # Quick replies: tappable, full text as user message
+                    try:
+                        await client.send_quick_replies(
+                            platform=platform,
+                            page_id=send_page_id,
+                            access_token=access_token,
+                            recipient_id=sender_id,
+                            text=answer,
+                            options=trimmed,
+                        )
+                    except Exception:
+                        await client.send_text_message(
+                            platform=platform,
+                            page_id=send_page_id,
+                            access_token=access_token,
+                            recipient_id=sender_id,
+                            text=answer,
+                        )
+                else:
+                    # Carousel cards for longer suggestions
+                    await client.send_text_message(
                         platform=platform,
                         page_id=send_page_id,
                         access_token=access_token,
                         recipient_id=sender_id,
-                        suggestions=suggestions[:3],
+                        text=answer,
                     )
-                except Exception as e:
-                    logger.warning("Suggestion cards failed: %s", e)
+                    try:
+                        await client.send_suggestion_cards(
+                            platform=platform,
+                            page_id=send_page_id,
+                            access_token=access_token,
+                            recipient_id=sender_id,
+                            suggestions=trimmed,
+                        )
+                    except Exception as e:
+                        logger.warning("Suggestion cards failed: %s", e)
+            else:
+                await client.send_text_message(
+                    platform=platform,
+                    page_id=send_page_id,
+                    access_token=access_token,
+                    recipient_id=sender_id,
+                    text=answer,
+                )
 
             # Log outbound message
             outbound_log = ChatbotMessageLog(

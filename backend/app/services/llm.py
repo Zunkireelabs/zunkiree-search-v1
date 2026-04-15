@@ -85,7 +85,7 @@ STYLE:
 
 RESPONSE FORMAT:
 - Give the direct answer first. Don't pad with unnecessary words.
-- After your answer, add a line with exactly "---SUGGESTIONS---" followed by 2 related follow-up questions, one per line. No numbering or bullets. Each suggestion should be a complete question. Suggestions should be about related products, services, or options — not restating what was already answered.
+- After your answer, add a line with exactly "---SUGGESTIONS---" followed by 2 related follow-up questions, one per line. No numbering or bullets. Keep each suggestion SHORT (under 20 characters) and complete. Use concise phrases like "Your pricing?" or "Other services?" or "How to book?" — never incomplete sentences. Only suggest if the topic relates to products or services.
 
 CONTEXT:
 {context}

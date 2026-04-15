@@ -446,38 +446,23 @@ class ChatbotQueryService:
     @staticmethod
     def _should_show_suggestions(query: str) -> bool:
         """
-        Determine if suggestions should be shown based on query intent.
-        Show suggestions when user is browsing/exploring products or services.
-        Skip for direct factual queries (location, hours, contact, maps).
+        Show suggestions ONLY when user is clearly browsing/exploring.
+        Default is False — suggestions are the exception, not the rule.
         """
         query_lower = query.lower().strip()
 
-        # Direct factual queries — user knows what they want, no suggestions needed
-        DIRECT_QUERY_PATTERNS = {
-            "location", "address", "where", "map", "google map", "direction",
-            "phone", "call", "contact", "email", "reach",
-            "hour", "timing", "open", "close", "time",
-            "parking",
-        }
-        for pattern in DIRECT_QUERY_PATTERNS:
-            if pattern in query_lower and len(query_lower.split()) <= 8:
-                return False
-
-        # Product/service exploration queries — show suggestions
+        # Only show for product/service exploration queries
         EXPLORE_SIGNALS = {
-            "show", "tell", "what", "which", "any", "best", "recommend",
-            "option", "alternative", "similar", "like", "compare",
-            "product", "service", "package", "plan", "offer",
-            "price", "cost", "rate", "how much",
-            "available", "stock", "collection", "menu", "list",
-            "book", "reserve", "order",
+            "show", "tell me about", "what do you", "which", "any",
+            "best", "recommend", "option", "alternative", "similar",
+            "compare", "product", "service", "package", "plan", "offer",
+            "menu", "list", "collection", "category",
         }
         for signal in EXPLORE_SIGNALS:
             if signal in query_lower:
                 return True
 
-        # Default: show suggestions for longer queries (likely exploring)
-        return len(query_lower.split()) >= 5
+        return False
 
     @staticmethod
     def _build_smart_fallback(
