@@ -399,7 +399,7 @@ class ChatbotQueryService:
                     answer = event.get("answer", "")
                     suggestions = event.get("suggestions", [])
         except Exception as e:
-            logger.error("Agent pipeline error for channel %s: %s", channel.id, e)
+            logger.error("Agent pipeline error for channel %s: %s", channel.id, e, exc_info=True)
             answer = "Sorry, I'm having trouble right now. Please try again."
 
         # Strip markdown for DM
