@@ -413,8 +413,17 @@ async def _handle_incoming_message(
                         if s not in available_sizes:
                             available_sizes.append(s)
 
+            # Decide what to attach to the answer message
+            quick_reply_options = None
             if size_question and available_sizes:
-                # Send answer with size quick replies
+                quick_reply_options = available_sizes[:13]
+            elif suggestions and len(suggestions) > 0 and not products:
+                trimmed = suggestions[:3]
+                if all(len(s) <= 20 for s in trimmed):
+                    quick_reply_options = trimmed
+
+            # Send answer — with quick replies attached if available
+            if quick_reply_options:
                 try:
                     await client.send_quick_replies(
                         platform=platform,
@@ -422,7 +431,7 @@ async def _handle_incoming_message(
                         access_token=access_token,
                         recipient_id=sender_id,
                         text=answer,
-                        options=available_sizes[:13],
+                        options=quick_reply_options,
                     )
                 except Exception:
                     await client.send_text_message(
@@ -433,7 +442,6 @@ async def _handle_incoming_message(
                         text=answer,
                     )
             else:
-                # Send answer as plain text
                 await client.send_text_message(
                     platform=platform,
                     page_id=send_page_id,
@@ -455,29 +463,16 @@ async def _handle_incoming_message(
                 except Exception as e:
                     logger.warning("Product cards failed: %s", e)
 
-            # Send suggestions (quick replies if short, carousel if long)
-            # Skip if already sent size quick replies
-            elif suggestions and len(suggestions) > 0 and not size_question:
-                trimmed = suggestions[:3]
-                all_short = all(len(s) <= 20 for s in trimmed)
+            # Carousel cards for longer suggestions (no separate emoji message)
+            elif suggestions and len(suggestions) > 0 and not quick_reply_options:
                 try:
-                    if all_short:
-                        await client.send_quick_replies(
-                            platform=platform,
-                            page_id=send_page_id,
-                            access_token=access_token,
-                            recipient_id=sender_id,
-                            text="💬",
-                            options=trimmed,
-                        )
-                    else:
-                        await client.send_suggestion_cards(
-                            platform=platform,
-                            page_id=send_page_id,
-                            access_token=access_token,
-                            recipient_id=sender_id,
-                            suggestions=trimmed,
-                        )
+                    await client.send_suggestion_cards(
+                        platform=platform,
+                        page_id=send_page_id,
+                        access_token=access_token,
+                        recipient_id=sender_id,
+                        suggestions=suggestions[:3],
+                    )
                 except Exception as e:
                     logger.warning("Suggestions failed: %s", e)
 
