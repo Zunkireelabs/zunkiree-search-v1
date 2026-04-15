@@ -28,6 +28,9 @@ GREETING_WORDS = {
     "hi", "hello", "hey", "yo", "sup",
     "good morning", "good afternoon", "good evening",
     "hola", "namaste", "namaskar", "नमस्ते", "नमस्कार",
+    # Romanized Nepali greetings
+    "k cha", "ke cha", "kasto cha", "kasto", "hajur",
+    "k ho", "ke ho", "kya cha",
 }
 
 GREETING_RESPONSES = {
@@ -482,15 +485,16 @@ class ChatbotQueryService:
         contact_email: str | None,
         contact_phone: str | None,
     ) -> str:
-        """Build a DM-ready fallback response with contact info."""
-        answer = fallback_message
+        """Build a concise fallback response with contact info."""
+        # Keep it short — no filler phrases
         contact_parts = []
         if contact_email:
-            contact_parts.append(f"email us at {contact_email}")
+            contact_parts.append(contact_email)
         if contact_phone:
-            contact_parts.append(f"call us at {contact_phone}")
+            contact_parts.append(contact_phone)
         if contact_parts:
-            answer += f" You can {' or '.join(contact_parts)} for direct assistance."
+            return f"I don't have that info yet. Contact us: {' / '.join(contact_parts)}"
+        return fallback_message
         return answer
 
     @staticmethod
