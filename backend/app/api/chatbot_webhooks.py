@@ -347,7 +347,17 @@ async def _handle_incoming_message(
             if feedback_signal and query_log_id is None:
                 await _update_feedback_from_signal(db, channel.id, sender_id, feedback_signal)
 
-            # Send answer as clean text
+            # For postback taps (carousel), echo the full suggestion as the question
+            if is_postback:
+                await client.send_text_message(
+                    platform=platform,
+                    page_id=send_page_id,
+                    access_token=access_token,
+                    recipient_id=sender_id,
+                    text=f'"{message_text}"',
+                )
+
+            # Send answer
             await client.send_text_message(
                 platform=platform,
                 page_id=send_page_id,
@@ -356,19 +366,18 @@ async def _handle_incoming_message(
                 text=answer,
             )
 
-            # Send suggestions as plain text (user can copy/type to ask)
+            # Send suggestions as scrollable carousel cards (clickable, full text)
             if suggestions and len(suggestions) > 0:
-                suggestion_text = "You can also ask:\n" + "\n".join(f"• {s}" for s in suggestions[:3])
                 try:
-                    await client.send_text_message(
+                    await client.send_suggestion_cards(
                         platform=platform,
                         page_id=send_page_id,
                         access_token=access_token,
                         recipient_id=sender_id,
-                        text=suggestion_text,
+                        suggestions=suggestions[:3],
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Suggestion cards failed: %s", e)
 
             # Log outbound message
             outbound_log = ChatbotMessageLog(
