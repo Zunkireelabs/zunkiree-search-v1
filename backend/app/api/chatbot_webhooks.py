@@ -347,14 +347,15 @@ async def _handle_incoming_message(
             if feedback_signal and query_log_id is None:
                 await _update_feedback_from_signal(db, channel.id, sender_id, feedback_signal)
 
-            # For postback taps, echo the question so user sees what was asked
+            # For postback taps (suggestion cards), echo the question text
+            # so user sees what was asked — Meta only shows button title ("Tap to ask")
             if is_postback:
                 await client.send_text_message(
                     platform=platform,
                     page_id=send_page_id,
                     access_token=access_token,
                     recipient_id=sender_id,
-                    text=f"You asked: {message_text}",
+                    text=f'"{message_text}"',
                 )
 
             # Send answer as clean text

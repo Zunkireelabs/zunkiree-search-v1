@@ -203,7 +203,7 @@ class MetaMessagingClient:
                 "buttons": [
                     {
                         "type": "postback",
-                        "title": "Ask this",
+                        "title": "Tap to ask",
                         "payload": s[:1000],
                     }
                 ],
