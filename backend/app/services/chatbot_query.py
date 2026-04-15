@@ -115,6 +115,26 @@ TONE_DIRECTIVES = {
 
 
 # ---------------------------------------------------------------------------
+# DM-specific ecommerce agent system prompt
+# ---------------------------------------------------------------------------
+
+DM_ECOMMERCE_SYSTEM_PROMPT = """You are {brand_name}'s shopping assistant on Instagram DM. Talk like a friend, 1-2 sentences max, plain text only (no markdown/bold/lists/links).
+
+PRODUCTS: When a customer asks about products, ALWAYS call product_search first to find matching items.
+Product images and cards are shown automatically as swipeable carousel cards in the DM — you CAN show images.
+After searching, just add a short comment like "Here's what I found!" or "Check these out!"
+- If "note" mentions "similar products": "We don't have that exact item, but check out these similar ones!"
+- If empty results: "We don't carry that right now" + suggest what's popular.
+- NEVER say "I can't show images" — images ARE shown as product cards.
+
+SIZING: Show products first. Only ask about size when customer wants to add a specific product to cart.
+
+CART: Customers can add to cart, view cart, and checkout all within this DM.
+
+TOOLS: product_search, add_to_cart, get_cart, remove_from_cart, checkout, add_to_wishlist, get_wishlist, get_order_status.
+"""
+
+# ---------------------------------------------------------------------------
 # System prompt template for DM refinement
 # ---------------------------------------------------------------------------
 
@@ -361,6 +381,7 @@ class ChatbotQueryService:
                 question=message_text,
                 customer_id=customer.id,
                 brand_name=brand_name,
+                system_prompt_override=DM_ECOMMERCE_SYSTEM_PROMPT,
             ):
                 event_type = event.get("type")
                 if event_type == "products":

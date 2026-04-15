@@ -45,6 +45,7 @@ class AgentService:
         customer_id: uuid.UUID,
         brand_name: str,
         image_data: str | None = None,
+        system_prompt_override: str | None = None,
     ):
         """
         Process a query through the agentic pipeline with tool calling.
@@ -80,7 +81,10 @@ class AgentService:
                 question = "Show me your most popular products"
 
         # Build system prompt
-        system_prompt = ECOMMERCE_SYSTEM_PROMPT.format(brand_name=brand_name)
+        if system_prompt_override:
+            system_prompt = system_prompt_override.format(brand_name=brand_name)
+        else:
+            system_prompt = ECOMMERCE_SYSTEM_PROMPT.format(brand_name=brand_name)
 
         # Load cart from DB if this is a returning session
         from app.services.cart import get_cart_service
