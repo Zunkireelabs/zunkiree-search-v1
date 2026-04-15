@@ -129,16 +129,17 @@ KNOWLEDGE BASE ANSWER:
 
 Instructions:
 - Use the knowledge base answer as your primary source of truth. Do not fabricate information.
-- Respond in a {tone_adjective} tone — {tone_brief}.
-- Keep it concise and under 800 characters for DM readability.
+- BE DIRECT. Give the exact answer — no filler, no padding, no unnecessary words.
+- If the answer is a link, price, address, phone number, or any specific fact — just state it. Don't wrap it in extra sentences.
+- A 1-line answer is perfectly fine. Don't stretch a short answer into a paragraph.
+- Do NOT add introductions like "Sure!", "Of course!", "Great question!" or sign-offs like "Let me know if you need anything else."
 - Do not use markdown formatting (no **, no ##, no bullet points with *). Use plain text only.
-- Use short sentences. Break up information naturally.
+- Respond in a {tone_adjective} tone — {tone_brief}.
 {contact_instruction}
 {fallback_instruction}
 {language_instruction}
-- The customer may use informal language, abbreviations, or shorthand common in DMs. Interpret their intent generously.
-- Always respond in proper, complete language regardless of how the customer writes.
-- Don't start with "Sure!" or "Of course!" every time — vary your opening."""
+- The customer may use informal language, abbreviations, or shorthand. Interpret their intent generously.
+- Always respond in proper, complete language regardless of how the customer writes."""
 
 
 class ChatbotQueryService:
@@ -275,6 +276,7 @@ class ChatbotQueryService:
         if fallback_triggered:
             # Smart fallback: use tenant's custom message + contact info
             answer = self._build_smart_fallback(fallback_message, contact_email, contact_phone)
+            suggestions = []  # No suggestions for fallback
         else:
             # Refine through conversational LLM for DM-friendly tone
             answer = await self._refine_with_history(
@@ -295,6 +297,11 @@ class ChatbotQueryService:
         # Ensure DM character limit
         if len(answer) > 950:
             answer = answer[:947] + "..."
+
+        # Only show suggestions for product/service related queries
+        # Skip suggestions for simple factual queries (location, hours, contact info)
+        if suggestions and not self._should_show_suggestions(expanded_text):
+            suggestions = []
 
         # Persist the assistant reply
         await self.conversation_service.add_message(db, channel.id, sender_id, "assistant", answer)
@@ -432,6 +439,42 @@ class ChatbotQueryService:
             if cleaned.startswith(phrase) and len(cleaned) < len(phrase) + 10:
                 return "negative"
         return None
+
+    @staticmethod
+    def _should_show_suggestions(query: str) -> bool:
+        """
+        Determine if suggestions should be shown based on query intent.
+        Show suggestions when user is browsing/exploring products or services.
+        Skip for direct factual queries (location, hours, contact, maps).
+        """
+        query_lower = query.lower().strip()
+
+        # Direct factual queries — user knows what they want, no suggestions needed
+        DIRECT_QUERY_PATTERNS = {
+            "location", "address", "where", "map", "google map", "direction",
+            "phone", "call", "contact", "email", "reach",
+            "hour", "timing", "open", "close", "time",
+            "parking",
+        }
+        for pattern in DIRECT_QUERY_PATTERNS:
+            if pattern in query_lower and len(query_lower.split()) <= 8:
+                return False
+
+        # Product/service exploration queries — show suggestions
+        EXPLORE_SIGNALS = {
+            "show", "tell", "what", "which", "any", "best", "recommend",
+            "option", "alternative", "similar", "like", "compare",
+            "product", "service", "package", "plan", "offer",
+            "price", "cost", "rate", "how much",
+            "available", "stock", "collection", "menu", "list",
+            "book", "reserve", "order",
+        }
+        for signal in EXPLORE_SIGNALS:
+            if signal in query_lower:
+                return True
+
+        # Default: show suggestions for longer queries (likely exploring)
+        return len(query_lower.split()) >= 5
 
     @staticmethod
     def _build_smart_fallback(

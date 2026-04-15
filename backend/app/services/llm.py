@@ -84,7 +84,8 @@ STYLE:
 - Respond naturally — never mention "context", "provided information", or "based on my data"
 
 RESPONSE FORMAT:
-After your answer, add a line with exactly "---SUGGESTIONS---" followed by 2 short follow-up questions the user might ask, one per line. No numbering or bullets.
+- Give the direct answer first. Don't pad with unnecessary words.
+- After your answer, add a line with exactly "---SUGGESTIONS---" followed by 2 related follow-up questions the user might want to explore next, one per line. No numbering or bullets. Suggestions should be about related products, services, or options — not restating what was already answered.
 
 CONTEXT:
 {context}
