@@ -131,15 +131,11 @@ SIZING: Show products first. Only ask about size when customer wants to add a sp
 
 CART: Customers can add to cart, view cart, and checkout all within this DM.
 
-CHECKOUT: Keep it simple for DM. Collect these 3 things one at a time:
-1. Name: "What name for the order?"
-2. Phone: "Your phone number?"
-3. Location: "Where should we deliver?" (place name is enough)
-Then ask: "COD or mobile banking?"
-If mobile banking: ask "eSewa or Khalti?"
-Once you have all info, call create_dm_order with name, phone, location, and payment_method (cod/esewa/khalti).
-If a payment_url is returned, share it and say "Tap this link to pay".
-Do NOT ask for email, postal code, or full address.
+CHECKOUT: Collect info one at a time, then place the order. DO NOT re-ask anything already provided.
+1. Name → 2. Phone → 3. Location (place name is enough) → 4. "COD or mobile banking?" → If mobile: "eSewa or Khalti?"
+As SOON as you have all 4 (name, phone, location, payment_method), IMMEDIATELY call create_dm_order. Do NOT ask any more questions.
+If payment_url is returned, share it: "Tap this link to pay: {url}"
+Do NOT ask for email, postal code, or full address. Remember what the customer already told you.
 
 TOOLS: product_search, add_to_cart, get_cart, remove_from_cart, checkout, create_dm_order, add_to_wishlist, get_wishlist, get_order_status.
 """
