@@ -197,21 +197,19 @@ class MetaMessagingClient:
             return await self._send_whatsapp_text(page_id, access_token, recipient_id, combined)
 
         url = SEND_API_URLS[platform].format(page_id=page_id)
-        elements = []
-        for s in suggestions[:10]:  # Meta allows max 10 carousel elements
-            # Button title = suggestion text itself (max 20 chars)
-            # so user sees the suggestion as the tappable label, not "Ask this"
-            btn_title = s[:20] if len(s) <= 20 else s[:17] + "..."
-            elements.append({
+        elements = [
+            {
                 "title": s[:80],
                 "buttons": [
                     {
                         "type": "postback",
-                        "title": btn_title,
+                        "title": "▶",
                         "payload": s[:1000],
                     }
                 ],
-            })
+            }
+            for s in suggestions[:10]
+        ]
         payload = {
             "recipient": {"id": recipient_id},
             "message": {
