@@ -347,37 +347,34 @@ async def _handle_incoming_message(
             if feedback_signal and query_log_id is None:
                 await _update_feedback_from_signal(db, channel.id, sender_id, feedback_signal)
 
-            # For postback taps (carousel), echo the full suggestion as the question
-            if is_postback:
+            # Send answer — with quick reply suggestions attached if available
+            if suggestions and len(suggestions) > 0:
+                try:
+                    await client.send_quick_replies(
+                        platform=platform,
+                        page_id=send_page_id,
+                        access_token=access_token,
+                        recipient_id=sender_id,
+                        text=answer,
+                        options=suggestions[:3],
+                    )
+                except Exception as e:
+                    logger.warning("Quick replies failed, sending plain text: %s", e)
+                    await client.send_text_message(
+                        platform=platform,
+                        page_id=send_page_id,
+                        access_token=access_token,
+                        recipient_id=sender_id,
+                        text=answer,
+                    )
+            else:
                 await client.send_text_message(
                     platform=platform,
                     page_id=send_page_id,
                     access_token=access_token,
                     recipient_id=sender_id,
-                    text=f'"{message_text}"',
+                    text=answer,
                 )
-
-            # Send answer
-            await client.send_text_message(
-                platform=platform,
-                page_id=send_page_id,
-                access_token=access_token,
-                recipient_id=sender_id,
-                text=answer,
-            )
-
-            # Send suggestions as scrollable carousel cards (clickable, full text)
-            if suggestions and len(suggestions) > 0:
-                try:
-                    await client.send_suggestion_cards(
-                        platform=platform,
-                        page_id=send_page_id,
-                        access_token=access_token,
-                        recipient_id=sender_id,
-                        suggestions=suggestions[:3],
-                    )
-                except Exception as e:
-                    logger.warning("Suggestion cards failed: %s", e)
 
             # Log outbound message
             outbound_log = ChatbotMessageLog(

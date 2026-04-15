@@ -165,7 +165,7 @@ class MetaMessagingClient:
         truncated = text[:INSTAGRAM_CHAR_LIMIT - 50] if len(text) > INSTAGRAM_CHAR_LIMIT - 50 else text
         url = SEND_API_URLS[platform].format(page_id=page_id)
         quick_replies = [
-            {"content_type": "text", "title": opt[:20], "payload": opt[:1000]}
+            {"content_type": "text", "title": opt[:80], "payload": opt[:1000]}
             for opt in options[:13]  # Meta allows max 13 quick replies
         ]
         payload = {
