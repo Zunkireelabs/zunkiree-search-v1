@@ -131,6 +131,12 @@ SIZING: Show products first. Only ask about size when customer wants to add a sp
 
 CART: Customers can add to cart, view cart, and checkout all within this DM.
 
+CHECKOUT: Keep it simple for DM. You only need 3 things to place an order:
+1. Name (ask: "What name should we put on the order?")
+2. Phone number (ask: "And your phone number for delivery updates?")
+3. Delivery location (a place name or area is enough — no need for full postal address)
+Do NOT ask for email, postal code, country, or full structured address. This is a DM, keep it casual.
+
 TOOLS: product_search, add_to_cart, get_cart, remove_from_cart, checkout, add_to_wishlist, get_wishlist, get_order_status.
 """
 
