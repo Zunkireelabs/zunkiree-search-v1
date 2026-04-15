@@ -347,17 +347,6 @@ async def _handle_incoming_message(
             if feedback_signal and query_log_id is None:
                 await _update_feedback_from_signal(db, channel.id, sender_id, feedback_signal)
 
-            # For postback taps (suggestion cards), echo the question text
-            # so user sees what was asked — Meta only shows button title ("Tap to ask")
-            if is_postback:
-                await client.send_text_message(
-                    platform=platform,
-                    page_id=send_page_id,
-                    access_token=access_token,
-                    recipient_id=sender_id,
-                    text=f'"{message_text}"',
-                )
-
             # Send answer as clean text
             await client.send_text_message(
                 platform=platform,
@@ -367,32 +356,19 @@ async def _handle_incoming_message(
                 text=answer,
             )
 
-            # Send suggestions as a card carousel (Generic Template).
-            # Each card shows the full suggestion text (up to 80 chars) with
-            # an "Ask this" postback button. Cards scroll horizontally.
+            # Send suggestions as plain text (user can copy/type to ask)
             if suggestions and len(suggestions) > 0:
+                suggestion_text = "You can also ask:\n" + "\n".join(f"• {s}" for s in suggestions[:3])
                 try:
-                    await client.send_suggestion_cards(
+                    await client.send_text_message(
                         platform=platform,
                         page_id=send_page_id,
                         access_token=access_token,
                         recipient_id=sender_id,
-                        suggestions=suggestions[:3],
+                        text=suggestion_text,
                     )
-                except Exception as e:
-                    logger.warning("Suggestion cards failed, sending as text: %s", e)
-                    # Fallback: append suggestions as plain text
-                    fallback = "You can also ask:\n" + "\n".join(f"• {s}" for s in suggestions[:3])
-                    try:
-                        await client.send_text_message(
-                            platform=platform,
-                            page_id=send_page_id,
-                            access_token=access_token,
-                            recipient_id=sender_id,
-                            text=fallback,
-                        )
-                    except Exception:
-                        pass
+                except Exception:
+                    pass
 
             # Log outbound message
             outbound_log = ChatbotMessageLog(
