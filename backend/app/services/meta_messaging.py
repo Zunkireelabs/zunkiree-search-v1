@@ -265,20 +265,18 @@ class MetaMessagingClient:
             if p.get("url"):
                 element["default_action"] = {"type": "web_url", "url": p["url"]}
 
-            buttons = [
+            element["buttons"] = [
                 {
                     "type": "postback",
                     "title": "Add to Cart",
                     "payload": _json.dumps({"action": "add_to_cart", "product_id": p.get("id", "")}),
                 },
-            ]
-            if p.get("url"):
-                buttons.append({
-                    "type": "web_url",
+                {
+                    "type": "postback",
                     "title": "Details",
-                    "url": p["url"],
-                })
-            element["buttons"] = buttons
+                    "payload": _json.dumps({"action": "details", "product_id": p.get("id", ""), "name": p.get("name", "")[:80]}),
+                },
+            ]
             elements.append(element)
 
         payload = {

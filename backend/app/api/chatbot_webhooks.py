@@ -126,12 +126,18 @@ async def _process_instagram_entry(entry: dict):
             raw_payload = postback["payload"]
             message_id = None
 
-            # Check if payload is a JSON action (e.g. product card "Add to Cart")
+            # Check if payload is a JSON action (e.g. product card buttons)
             import json as _postback_json
             try:
                 action_data = _postback_json.loads(raw_payload)
-                if isinstance(action_data, dict) and action_data.get("action") == "add_to_cart":
-                    message_text = f"Add product {action_data['product_id']} to my cart"
+                if isinstance(action_data, dict):
+                    action = action_data.get("action")
+                    if action == "add_to_cart":
+                        message_text = f"Add product {action_data['product_id']} to my cart"
+                    elif action == "details":
+                        message_text = f"Tell me more about {action_data.get('name', 'this product')}"
+                    else:
+                        message_text = raw_payload
                 else:
                     message_text = raw_payload
             except (ValueError, KeyError):
@@ -202,8 +208,14 @@ async def _process_messenger_entry(entry: dict):
             import json as _postback_json
             try:
                 action_data = _postback_json.loads(raw_payload)
-                if isinstance(action_data, dict) and action_data.get("action") == "add_to_cart":
-                    message_text = f"Add product {action_data['product_id']} to my cart"
+                if isinstance(action_data, dict):
+                    action = action_data.get("action")
+                    if action == "add_to_cart":
+                        message_text = f"Add product {action_data['product_id']} to my cart"
+                    elif action == "details":
+                        message_text = f"Tell me more about {action_data.get('name', 'this product')}"
+                    else:
+                        message_text = raw_payload
                 else:
                     message_text = raw_payload
             except (ValueError, KeyError):
