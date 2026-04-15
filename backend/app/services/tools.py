@@ -586,7 +586,7 @@ async def _create_dm_order(
 
     order_service = get_order_service()
     try:
-        order = await order_service.create_order_from_cart(
+        order_result = await order_service.create_order_from_cart(
             db=db,
             session_id=session_id,
             customer_id=customer_id,
@@ -598,14 +598,18 @@ async def _create_dm_order(
         logger.error("DM order creation failed: %s", e)
         return {"error": f"Could not create order: {str(e)}"}
 
-    order_number = order.get("order_number", "")
-    order_id = order.get("id", "")
+    if "error" in order_result:
+        return order_result
+
+    order_data = order_result.get("order", {})
+    order_number = order_data.get("order_number", "")
+    order_id = order_data.get("id", "")
 
     if payment_method == "cod":
         return {
             "order_number": order_number,
-            "total": order.get("total"),
-            "currency": order.get("currency", "NPR"),
+            "total": order_data.get("total"),
+            "currency": order_data.get("currency", "NPR"),
             "payment": "Cash on Delivery",
             "message": f"Order {order_number} confirmed! Pay when it arrives.",
         }
@@ -617,8 +621,8 @@ async def _create_dm_order(
             order_id=uuid.UUID(order_id),
             customer_id=customer_id,
             gateway=payment_method,
-            amount=order.get("total", 0),
-            currency=order.get("currency", "NPR"),
+            amount=order_data.get("total", 0),
+            currency=order_data.get("currency", "NPR"),
             status="pending",
             gateway_ref=str(uuid.uuid4()),
         )
@@ -632,7 +636,7 @@ async def _create_dm_order(
         if payment_method == "esewa":
             from app.services.esewa import build_payment_form
             result = build_payment_form(
-                total_amount=order.get("total", 0),
+                total_amount=order_data.get("total", 0),
                 transaction_uuid=str(payment.id),
                 success_url=callback_url,
                 failure_url=f"{callback_url}&failed=1",
@@ -641,8 +645,8 @@ async def _create_dm_order(
             await db.commit()
             return {
                 "order_number": order_number,
-                "total": order.get("total"),
-                "currency": order.get("currency", "NPR"),
+                "total": order_data.get("total"),
+                "currency": order_data.get("currency", "NPR"),
                 "payment": "eSewa",
                 "payment_url": result["payment_url"],
                 "message": f"Order {order_number} created! Complete payment via eSewa.",
@@ -650,7 +654,7 @@ async def _create_dm_order(
         elif payment_method == "khalti":
             from app.services.khalti import initiate_payment as khalti_initiate
             result = await khalti_initiate(
-                amount_npr=order.get("total", 0),
+                amount_npr=order_data.get("total", 0),
                 purchase_order_id=order_id,
                 purchase_order_name=order_number,
                 return_url=callback_url,
@@ -661,8 +665,8 @@ async def _create_dm_order(
             await db.commit()
             return {
                 "order_number": order_number,
-                "total": order.get("total"),
-                "currency": order.get("currency", "NPR"),
+                "total": order_data.get("total"),
+                "currency": order_data.get("currency", "NPR"),
                 "payment": "Khalti",
                 "payment_url": result.get("payment_url", ""),
                 "message": f"Order {order_number} created! Complete payment via Khalti.",
