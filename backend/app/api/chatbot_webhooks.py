@@ -20,6 +20,10 @@ logger = logging.getLogger("zunkiree.chatbot.webhook")
 router = APIRouter(prefix="/webhooks/meta", tags=["chatbot-webhooks"])
 settings = get_settings()
 
+# In-memory store for pending suggestions (channel:sender → [suggestion1, suggestion2, ...])
+# Used to map "1", "2", "3" replies to the actual suggestion text
+_pending_suggestions: dict[str, list[str]] = {}
+
 
 @router.get("")
 async def verify_webhook(
@@ -305,6 +309,17 @@ async def _handle_incoming_message(
             except Exception:
                 pass  # Non-critical
 
+            # Check if user typed a number to select a suggestion
+            suggestion_key = f"{channel.id}:{sender_id}"
+            stripped = message_text.strip()
+            if stripped in ("1", "2", "3") and suggestion_key in _pending_suggestions:
+                idx = int(stripped) - 1
+                pending = _pending_suggestions[suggestion_key]
+                if 0 <= idx < len(pending):
+                    message_text = pending[idx]
+                    logger.info("User selected suggestion #%s: %s", stripped, message_text)
+                del _pending_suggestions[suggestion_key]
+
             # Deduplication check
             if message_id:
                 existing = await db.execute(
@@ -347,17 +362,6 @@ async def _handle_incoming_message(
             if feedback_signal and query_log_id is None:
                 await _update_feedback_from_signal(db, channel.id, sender_id, feedback_signal)
 
-            # For carousel card postback taps, echo the full question
-            # (Meta only shows "Ask" as user message, not the suggestion text)
-            if is_postback:
-                await client.send_text_message(
-                    platform=platform,
-                    page_id=send_page_id,
-                    access_token=access_token,
-                    recipient_id=sender_id,
-                    text=message_text,
-                )
-
             # Send answer
             await client.send_text_message(
                 platform=platform,
@@ -367,30 +371,24 @@ async def _handle_incoming_message(
                 text=answer,
             )
 
-            # Send suggestions — quick replies if short, carousel cards if long
+            # Send suggestions as numbered text list
             if suggestions and len(suggestions) > 0:
                 trimmed = suggestions[:3]
-                use_cards = any(len(s) > 20 for s in trimmed)
+                suggestion_text = "\n".join(
+                    f"{i+1}. {s}" for i, s in enumerate(trimmed)
+                )
                 try:
-                    if use_cards:
-                        await client.send_suggestion_cards(
-                            platform=platform,
-                            page_id=send_page_id,
-                            access_token=access_token,
-                            recipient_id=sender_id,
-                            suggestions=trimmed,
-                        )
-                    else:
-                        await client.send_quick_replies(
-                            platform=platform,
-                            page_id=send_page_id,
-                            access_token=access_token,
-                            recipient_id=sender_id,
-                            text="You can also ask:",
-                            options=trimmed,
-                        )
-                except Exception as e:
-                    logger.warning("Suggestions failed: %s", e)
+                    await client.send_text_message(
+                        platform=platform,
+                        page_id=send_page_id,
+                        access_token=access_token,
+                        recipient_id=sender_id,
+                        text=suggestion_text,
+                    )
+                    # Store suggestions so we can map "1"/"2"/"3" later
+                    _pending_suggestions[f"{channel.id}:{sender_id}"] = trimmed
+                except Exception:
+                    pass
 
             # Log outbound message
             outbound_log = ChatbotMessageLog(

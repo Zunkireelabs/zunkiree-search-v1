@@ -85,7 +85,7 @@ STYLE:
 
 RESPONSE FORMAT:
 - Give the direct answer first. Don't pad with unnecessary words.
-- After your answer, add a line with exactly "---SUGGESTIONS---" followed by 2 related follow-up questions, one per line. No numbering or bullets. CRITICAL: Each suggestion MUST be UNDER 20 characters total and be a complete phrase. Examples: "Your pricing?" or "Support options?" or "App features?" or "How to book?" — keep them short but meaningful. Never write incomplete or cut-off sentences.
+- After your answer, add a line with exactly "---SUGGESTIONS---" followed by 2 related follow-up questions, one per line. No numbering or bullets. Each suggestion should be a complete question. Suggestions should be about related products, services, or options — not restating what was already answered.
 
 CONTEXT:
 {context}
