@@ -192,6 +192,36 @@ ECOMMERCE_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_dm_order",
+            "description": "Create an order from the current cart for DM checkout. Call this after collecting customer name, phone, location, and payment method.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Customer's full name for the order",
+                    },
+                    "phone": {
+                        "type": "string",
+                        "description": "Customer's phone number",
+                    },
+                    "location": {
+                        "type": "string",
+                        "description": "Delivery location (place name or area)",
+                    },
+                    "payment_method": {
+                        "type": "string",
+                        "enum": ["cod", "esewa", "khalti"],
+                        "description": "Payment method: cod (cash on delivery), esewa, or khalti",
+                    },
+                },
+                "required": ["name", "phone", "location", "payment_method"],
+            },
+        },
+    },
 ]
 
 
@@ -222,6 +252,8 @@ async def execute_tool(
         return await _get_wishlist(db, session_id)
     elif tool_name == "get_order_status":
         return await _get_order_status(db, **tool_args)
+    elif tool_name == "create_dm_order":
+        return await _create_dm_order(db, session_id, customer_id, site_id, **tool_args)
     else:
         return {"error": f"Unknown tool: {tool_name}"}
 
@@ -519,6 +551,128 @@ async def _get_order_status(db: AsyncSession, order_number: str) -> dict:
     """Get order status by order number."""
     service = get_order_service()
     return await service.get_order_by_number(db, order_number)
+
+
+async def _create_dm_order(
+    db: AsyncSession,
+    session_id: str,
+    customer_id: uuid.UUID,
+    site_id: str,
+    name: str,
+    phone: str,
+    location: str,
+    payment_method: str,
+) -> dict:
+    """Create an order from DM checkout with simplified address."""
+    cart_service = get_cart_service()
+    cart = cart_service.get_cart(session_id)
+    if not cart or cart.item_count == 0:
+        await cart_service.load_from_db(db, session_id)
+        cart = cart_service.get_cart(session_id)
+        if not cart or cart.item_count == 0:
+            return {"error": "Your cart is empty. Add some items first!"}
+
+    # Build simplified address from DM info
+    address = {
+        "full_name": name,
+        "line1": location,
+        "line2": "",
+        "city": location,
+        "state": "",
+        "postal_code": "",
+        "country": "NP",
+        "phone": phone,
+    }
+
+    order_service = get_order_service()
+    try:
+        order = await order_service.create_order_from_cart(
+            db=db,
+            session_id=session_id,
+            customer_id=customer_id,
+            billing_address=address,
+            shipping_address=address,
+            payment_method="cod" if payment_method == "cod" else "online",
+        )
+    except Exception as e:
+        logger.error("DM order creation failed: %s", e)
+        return {"error": f"Could not create order: {str(e)}"}
+
+    order_number = order.get("order_number", "")
+    order_id = order.get("id", "")
+
+    if payment_method == "cod":
+        return {
+            "order_number": order_number,
+            "total": order.get("total"),
+            "currency": order.get("currency", "NPR"),
+            "payment": "Cash on Delivery",
+            "message": f"Order {order_number} confirmed! Pay when it arrives.",
+        }
+
+    # Generate payment link for eSewa or Khalti
+    try:
+        from app.models.payment import Payment
+        payment = Payment(
+            order_id=uuid.UUID(order_id),
+            customer_id=customer_id,
+            gateway=payment_method,
+            amount=order.get("total", 0),
+            currency=order.get("currency", "NPR"),
+            status="pending",
+            gateway_ref=str(uuid.uuid4()),
+        )
+        db.add(payment)
+        await db.commit()
+        await db.refresh(payment)
+
+        base_url = "https://api.zunkireelabs.com"
+        callback_url = f"{base_url}/api/v1/payments/{payment_method}/callback?payment_id={payment.id}"
+
+        if payment_method == "esewa":
+            from app.services.esewa import build_payment_form
+            result = build_payment_form(
+                total_amount=order.get("total", 0),
+                transaction_uuid=str(payment.id),
+                success_url=callback_url,
+                failure_url=f"{callback_url}&failed=1",
+            )
+            payment.gateway_ref = str(payment.id)
+            await db.commit()
+            return {
+                "order_number": order_number,
+                "total": order.get("total"),
+                "currency": order.get("currency", "NPR"),
+                "payment": "eSewa",
+                "payment_url": result["payment_url"],
+                "message": f"Order {order_number} created! Complete payment via eSewa.",
+            }
+        elif payment_method == "khalti":
+            from app.services.khalti import initiate_payment as khalti_initiate
+            result = await khalti_initiate(
+                amount_npr=order.get("total", 0),
+                purchase_order_id=order_id,
+                purchase_order_name=order_number,
+                return_url=callback_url,
+            )
+            if "error" in result:
+                return {"error": f"Khalti payment failed: {result['error']}"}
+            payment.gateway_ref = result.get("pidx", "")
+            await db.commit()
+            return {
+                "order_number": order_number,
+                "total": order.get("total"),
+                "currency": order.get("currency", "NPR"),
+                "payment": "Khalti",
+                "payment_url": result.get("payment_url", ""),
+                "message": f"Order {order_number} created! Complete payment via Khalti.",
+            }
+    except Exception as e:
+        logger.error("Payment initiation failed: %s", e)
+        return {
+            "order_number": order_number,
+            "error": f"Order created but payment link failed: {str(e)}. You can pay later.",
+        }
 
 
 def _product_to_dict(p: Product) -> dict:

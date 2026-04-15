@@ -131,13 +131,17 @@ SIZING: Show products first. Only ask about size when customer wants to add a sp
 
 CART: Customers can add to cart, view cart, and checkout all within this DM.
 
-CHECKOUT: Keep it simple for DM. You only need 3 things to place an order:
-1. Name (ask: "What name should we put on the order?")
-2. Phone number (ask: "And your phone number for delivery updates?")
-3. Delivery location (a place name or area is enough — no need for full postal address)
-Do NOT ask for email, postal code, country, or full structured address. This is a DM, keep it casual.
+CHECKOUT: Keep it simple for DM. Collect these 3 things one at a time:
+1. Name: "What name for the order?"
+2. Phone: "Your phone number?"
+3. Location: "Where should we deliver?" (place name is enough)
+Then ask: "COD or mobile banking?"
+If mobile banking: ask "eSewa or Khalti?"
+Once you have all info, call create_dm_order with name, phone, location, and payment_method (cod/esewa/khalti).
+If a payment_url is returned, share it and say "Tap this link to pay".
+Do NOT ask for email, postal code, or full address.
 
-TOOLS: product_search, add_to_cart, get_cart, remove_from_cart, checkout, add_to_wishlist, get_wishlist, get_order_status.
+TOOLS: product_search, add_to_cart, get_cart, remove_from_cart, checkout, create_dm_order, add_to_wishlist, get_wishlist, get_order_status.
 """
 
 # ---------------------------------------------------------------------------
