@@ -117,11 +117,23 @@ async def _process_instagram_entry(entry: dict):
 
         page_id = event.get("recipient", {}).get("id")
 
-        # Handle postback from suggestion card buttons (Generic Template)
+        # Handle postback from suggestion/product card buttons (Generic Template)
         postback = event.get("postback", {})
         if postback.get("payload"):
-            message_text = postback["payload"]
-            message_id = None  # Postbacks don't have message IDs
+            raw_payload = postback["payload"]
+            message_id = None
+
+            # Check if payload is a JSON action (e.g. product card "Add to Cart")
+            import json as _postback_json
+            try:
+                action_data = _postback_json.loads(raw_payload)
+                if isinstance(action_data, dict) and action_data.get("action") == "add_to_cart":
+                    message_text = f"Add product {action_data['product_id']} to my cart"
+                else:
+                    message_text = raw_payload
+            except (ValueError, KeyError):
+                message_text = raw_payload
+
             await _handle_incoming_message(
                 platform="instagram",
                 page_id=page_id,
@@ -179,11 +191,20 @@ async def _process_messenger_entry(entry: dict):
 
         page_id = event.get("recipient", {}).get("id")
 
-        # Handle postback from suggestion card buttons
+        # Handle postback from suggestion/product card buttons
         postback = event.get("postback", {})
         if postback.get("payload"):
-            message_text = postback["payload"]
+            raw_payload = postback["payload"]
             message_id = None
+            import json as _postback_json
+            try:
+                action_data = _postback_json.loads(raw_payload)
+                if isinstance(action_data, dict) and action_data.get("action") == "add_to_cart":
+                    message_text = f"Add product {action_data['product_id']} to my cart"
+                else:
+                    message_text = raw_payload
+            except (ValueError, KeyError):
+                message_text = raw_payload
             await _handle_incoming_message(
                 platform="messenger",
                 page_id=page_id,
@@ -339,6 +360,7 @@ async def _handle_incoming_message(
 
             answer = result["answer"]
             suggestions = result.get("suggestions", [])
+            products = result.get("products", [])
             response_time_ms = result.get("response_time_ms", 0)
             query_log_id = result.get("query_log_id")
             feedback_signal = result.get("feedback_signal")
@@ -357,40 +379,43 @@ async def _handle_incoming_message(
                     text=message_text,
                 )
 
-            # Send answer — attach quick replies if suggestions fit, otherwise send separately
-            if suggestions and len(suggestions) > 0:
+            # Send answer text
+            await client.send_text_message(
+                platform=platform,
+                page_id=send_page_id,
+                access_token=access_token,
+                recipient_id=sender_id,
+                text=answer,
+            )
+
+            # Send product cards if the agent returned products
+            if products:
+                try:
+                    await client.send_product_cards(
+                        platform=platform,
+                        page_id=send_page_id,
+                        access_token=access_token,
+                        recipient_id=sender_id,
+                        products=products[:5],
+                    )
+                except Exception as e:
+                    logger.warning("Product cards failed: %s", e)
+
+            # Send suggestions (quick replies if short, carousel if long)
+            elif suggestions and len(suggestions) > 0:
                 trimmed = suggestions[:3]
                 all_short = all(len(s) <= 20 for s in trimmed)
-
-                if all_short:
-                    # Quick replies: tappable, full text as user message
-                    try:
+                try:
+                    if all_short:
                         await client.send_quick_replies(
                             platform=platform,
                             page_id=send_page_id,
                             access_token=access_token,
                             recipient_id=sender_id,
-                            text=answer,
+                            text="You can also ask:",
                             options=trimmed,
                         )
-                    except Exception:
-                        await client.send_text_message(
-                            platform=platform,
-                            page_id=send_page_id,
-                            access_token=access_token,
-                            recipient_id=sender_id,
-                            text=answer,
-                        )
-                else:
-                    # Carousel cards for longer suggestions
-                    await client.send_text_message(
-                        platform=platform,
-                        page_id=send_page_id,
-                        access_token=access_token,
-                        recipient_id=sender_id,
-                        text=answer,
-                    )
-                    try:
+                    else:
                         await client.send_suggestion_cards(
                             platform=platform,
                             page_id=send_page_id,
@@ -398,16 +423,8 @@ async def _handle_incoming_message(
                             recipient_id=sender_id,
                             suggestions=trimmed,
                         )
-                    except Exception as e:
-                        logger.warning("Suggestion cards failed: %s", e)
-            else:
-                await client.send_text_message(
-                    platform=platform,
-                    page_id=send_page_id,
-                    access_token=access_token,
-                    recipient_id=sender_id,
-                    text=answer,
-                )
+                except Exception as e:
+                    logger.warning("Suggestions failed: %s", e)
 
             # Log outbound message
             outbound_log = ChatbotMessageLog(

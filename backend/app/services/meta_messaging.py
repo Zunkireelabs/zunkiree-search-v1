@@ -232,6 +232,66 @@ class MetaMessagingClient:
             logger.error("Meta Send API error (suggestion_cards): %s %s", resp.status_code, result)
         return result
 
+    async def send_product_cards(
+        self,
+        platform: str,
+        page_id: str,
+        access_token: str,
+        recipient_id: str,
+        products: list[dict],
+    ) -> dict:
+        """Send products as a carousel with images, name, price, and action button."""
+        if platform == "whatsapp":
+            lines = [f"• {p['name']} - {p.get('currency','')} {p.get('price','')}" for p in products[:5]]
+            return await self._send_whatsapp_text(page_id, access_token, recipient_id, "\n".join(lines))
+
+        import json as _json
+        url = SEND_API_URLS[platform].format(page_id=page_id)
+        elements = []
+        for p in products[:10]:
+            images = p.get("images", [])
+            price = p.get("price")
+            currency = p.get("currency", "")
+            subtitle = f"{currency} {price}" if price else ""
+            if p.get("original_price") and p["original_price"] > (price or 0):
+                subtitle = f"{currency} {price} (was {currency} {p['original_price']})"
+
+            element = {
+                "title": p.get("name", "")[:80],
+                "subtitle": subtitle[:80],
+            }
+            if images:
+                element["image_url"] = images[0]
+            if p.get("url"):
+                element["default_action"] = {"type": "web_url", "url": p["url"]}
+
+            element["buttons"] = [
+                {
+                    "type": "postback",
+                    "title": "Add to Cart",
+                    "payload": _json.dumps({"action": "add_to_cart", "product_id": p.get("id", "")}),
+                }
+            ]
+            elements.append(element)
+
+        payload = {
+            "recipient": {"id": recipient_id},
+            "message": {
+                "attachment": {
+                    "type": "template",
+                    "payload": {
+                        "template_type": "generic",
+                        "elements": elements,
+                    },
+                }
+            },
+        }
+        resp = await self._http.post(url, json=payload, params={"access_token": access_token})
+        result = resp.json()
+        if resp.status_code != 200:
+            logger.error("Meta Send API error (product_cards): %s %s", resp.status_code, result)
+        return result
+
     async def _send_whatsapp_text(
         self, phone_number_id: str, access_token: str, recipient_id: str, text: str,
     ) -> dict:

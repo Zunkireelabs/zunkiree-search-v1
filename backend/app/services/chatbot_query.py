@@ -151,6 +151,13 @@ class ChatbotQueryService:
         self.query_service = get_query_service()
         self.llm_service = get_llm_service()
         self.conversation_service = get_chatbot_conversation_service()
+        self._agent_service = None
+
+    def _get_agent_service(self):
+        if self._agent_service is None:
+            from app.services.agent import get_agent_service
+            self._agent_service = get_agent_service()
+        return self._agent_service
 
     async def process_message(
         self,
@@ -248,6 +255,18 @@ class ChatbotQueryService:
         # --- Expand abbreviations before sending to RAG ---
         expanded_text = self._expand_abbreviations(message_text, custom_abbreviations)
 
+        # --- Route ecommerce tenants through the agent pipeline ---
+        if website_type == "ecommerce":
+            return await self._process_ecommerce_message(
+                db=db,
+                customer=customer,
+                channel=channel,
+                sender_id=sender_id,
+                message_text=expanded_text,
+                brand_name=brand_name,
+                start=start,
+            )
+
         # Call existing RAG pipeline
         try:
             rag_result = await self.query_service.process_query(
@@ -259,7 +278,7 @@ class ChatbotQueryService:
             )
         except Exception as e:
             logger.error("RAG pipeline error for channel %s: %s", channel.id, e)
-            answer = f"Sorry, I'm having trouble finding an answer right now. Please try again later."
+            answer = "Sorry, I'm having trouble finding an answer right now. Please try again later."
             await self.conversation_service.add_message(db, channel.id, sender_id, "assistant", answer)
             return {
                 "answer": answer,
@@ -302,7 +321,6 @@ class ChatbotQueryService:
             answer = answer[:947] + "..."
 
         # Only show suggestions for product/service related queries
-        # Skip suggestions for simple factual queries (location, hours, contact info)
         if suggestions and not self._should_show_suggestions(expanded_text):
             suggestions = []
 
@@ -314,6 +332,63 @@ class ChatbotQueryService:
             "suggestions": suggestions,
             "response_time_ms": int((time.time() - start) * 1000),
             "query_log_id": query_log_id,
+        }
+
+    async def _process_ecommerce_message(
+        self,
+        db: AsyncSession,
+        customer,
+        channel: ChatbotChannel,
+        sender_id: str,
+        message_text: str,
+        brand_name: str,
+        start: float,
+    ) -> dict:
+        """Route ecommerce tenants through the agent pipeline (product search, cart, checkout)."""
+        agent = self._get_agent_service()
+        # Use sender_id as session_id for cart persistence across DM turns
+        session_id = f"dm:{channel.id}:{sender_id}"
+
+        answer = ""
+        suggestions = []
+        products = []
+
+        try:
+            async for event in agent.process_agent_stream(
+                db=db,
+                site_id=customer.site_id,
+                session_id=session_id,
+                question=message_text,
+                customer_id=customer.id,
+                brand_name=brand_name,
+            ):
+                event_type = event.get("type")
+                if event_type == "products":
+                    products = event.get("data", [])
+                elif event_type == "cart_update":
+                    # Cart was modified — include cart info in answer
+                    pass
+                elif event_type == "done":
+                    answer = event.get("answer", "")
+                    suggestions = event.get("suggestions", [])
+        except Exception as e:
+            logger.error("Agent pipeline error for channel %s: %s", channel.id, e)
+            answer = "Sorry, I'm having trouble right now. Please try again."
+
+        # Strip markdown for DM
+        answer = self._strip_markdown(answer)
+        if len(answer) > 950:
+            answer = answer[:947] + "..."
+
+        # Persist
+        await self.conversation_service.add_message(db, channel.id, sender_id, "assistant", answer)
+
+        return {
+            "answer": answer,
+            "suggestions": suggestions,
+            "products": products,  # Product cards for carousel display
+            "response_time_ms": int((time.time() - start) * 1000),
+            "query_log_id": None,
         }
 
     async def _refine_with_history(
