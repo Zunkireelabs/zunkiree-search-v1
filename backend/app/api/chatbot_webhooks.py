@@ -20,6 +20,9 @@ logger = logging.getLogger("zunkiree.chatbot.webhook")
 router = APIRouter(prefix="/webhooks/meta", tags=["chatbot-webhooks"])
 settings = get_settings()
 
+# Cache last product results per sender for size quick replies
+_last_products: dict[str, list[dict]] = {}
+
 
 @router.get("")
 async def verify_webhook(
@@ -379,14 +382,53 @@ async def _handle_incoming_message(
                     text=message_text,
                 )
 
-            # Send answer text
-            await client.send_text_message(
-                platform=platform,
-                page_id=send_page_id,
-                access_token=access_token,
-                recipient_id=sender_id,
-                text=answer,
-            )
+            # Cache products for size quick replies on follow-up turns
+            sender_key = f"{channel.id}:{sender_id}"
+            if products:
+                _last_products[sender_key] = products
+
+            # Detect if agent is asking about size — show sizes as quick replies
+            answer_lower = answer.lower()
+            size_question = any(phrase in answer_lower for phrase in [
+                "what size", "which size", "size do you", "size would you",
+                "size?", "pick a size", "choose a size", "select a size",
+            ])
+            available_sizes = []
+            size_source = products or _last_products.get(sender_key, [])
+            if size_question and size_source:
+                for p in size_source:
+                    for s in p.get("sizes", []):
+                        if s not in available_sizes:
+                            available_sizes.append(s)
+
+            if size_question and available_sizes:
+                # Send answer with size quick replies
+                try:
+                    await client.send_quick_replies(
+                        platform=platform,
+                        page_id=send_page_id,
+                        access_token=access_token,
+                        recipient_id=sender_id,
+                        text=answer,
+                        options=available_sizes[:13],
+                    )
+                except Exception:
+                    await client.send_text_message(
+                        platform=platform,
+                        page_id=send_page_id,
+                        access_token=access_token,
+                        recipient_id=sender_id,
+                        text=answer,
+                    )
+            else:
+                # Send answer as plain text
+                await client.send_text_message(
+                    platform=platform,
+                    page_id=send_page_id,
+                    access_token=access_token,
+                    recipient_id=sender_id,
+                    text=answer,
+                )
 
             # Send product cards if the agent returned products
             if products:
@@ -402,7 +444,8 @@ async def _handle_incoming_message(
                     logger.warning("Product cards failed: %s", e)
 
             # Send suggestions (quick replies if short, carousel if long)
-            elif suggestions and len(suggestions) > 0:
+            # Skip if already sent size quick replies
+            elif suggestions and len(suggestions) > 0 and not size_question:
                 trimmed = suggestions[:3]
                 all_short = all(len(s) <= 20 for s in trimmed)
                 try:
@@ -412,7 +455,7 @@ async def _handle_incoming_message(
                             page_id=send_page_id,
                             access_token=access_token,
                             recipient_id=sender_id,
-                            text="You can also ask:",
+                            text="💬",
                             options=trimmed,
                         )
                     else:
