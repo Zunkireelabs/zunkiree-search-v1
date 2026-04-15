@@ -128,6 +128,7 @@ async def _process_instagram_entry(entry: dict):
                 sender_id=sender_id,
                 message_text=message_text,
                 message_id=message_id,
+                is_postback=True,
             )
             continue
 
@@ -189,6 +190,7 @@ async def _process_messenger_entry(entry: dict):
                 sender_id=sender_id,
                 message_text=message_text,
                 message_id=message_id,
+                is_postback=True,
             )
             continue
 
@@ -252,6 +254,7 @@ async def _handle_incoming_message(
     sender_id: str,
     message_text: str,
     message_id: str | None,
+    is_postback: bool = False,
 ):
     """
     Core message handler. Runs with its own DB session since this may
@@ -343,6 +346,16 @@ async def _handle_incoming_message(
             # If this was a feedback signal, update the previous query log
             if feedback_signal and query_log_id is None:
                 await _update_feedback_from_signal(db, channel.id, sender_id, feedback_signal)
+
+            # For postback taps, echo the question so user sees what was asked
+            if is_postback:
+                await client.send_text_message(
+                    platform=platform,
+                    page_id=send_page_id,
+                    access_token=access_token,
+                    recipient_id=sender_id,
+                    text=f"You asked: {message_text}",
+                )
 
             # Send answer as clean text
             await client.send_text_message(
