@@ -582,7 +582,6 @@ class ChatbotQueryService:
         if contact_parts:
             return f"I don't have that info yet. Contact us: {' / '.join(contact_parts)}"
         return fallback_message
-        return answer
 
     @staticmethod
     def _strip_markdown(text: str) -> str:

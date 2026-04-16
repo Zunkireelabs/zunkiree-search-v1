@@ -50,6 +50,34 @@ services:
     profiles:
       - dev
 
+  # Staging (deploy any branch for testing chatbot/payments with public URL)
+  zunkiree-search-api-staging:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: zunkiree-search-api-staging
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env.staging
+    environment:
+      - ENVIRONMENT=staging
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.zunkiree-staging.rule=Host(`staging-api.zunkireelabs.com`)"
+      - "traefik.http.routers.zunkiree-staging.entrypoints=websecure"
+      - "traefik.http.routers.zunkiree-staging.tls.certresolver=letsencrypt"
+      - "traefik.http.services.zunkiree-staging.loadbalancer.server.port=8000"
+    networks:
+      - hosting
+    profiles:
+      - staging
+
   zunkiree-backup:
     image: postgres:16-alpine
     container_name: zunkiree-backup

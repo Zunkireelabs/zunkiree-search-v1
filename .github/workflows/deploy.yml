@@ -1,12 +1,25 @@
 name: Deploy to VPS
 
 on:
+  # Auto-deploy after merge to main
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'docker-compose.yml'
+      - 'scripts/**'
+  # Keep manual trigger as backup
   workflow_dispatch:
     inputs:
       skip_migrations:
         description: "Skip database migrations"
         required: false
         default: "false"
+
+# Prevent concurrent deploys
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -20,21 +33,44 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            set -e
             cd /home/zunkireelabs/devprojects/zunkiree-search-v1
+
+            echo "=== Pulling latest code ==="
             git pull origin main
 
-            # Run migrations unless skipped
+            echo "=== Running migrations ==="
             if [ "${{ inputs.skip_migrations }}" != "true" ]; then
-              DB_URL=$(docker compose exec zunkiree-search-api printenv DATABASE_URL 2>/dev/null | tr -d '\r' || true)
+              DB_URL=$(docker compose exec -T zunkiree-search-api printenv DATABASE_URL 2>/dev/null | tr -d '\r' || true)
               if [ -n "$DB_URL" ]; then
                 ./scripts/migrate.sh "$DB_URL"
+              else
+                echo "WARNING: Could not read DATABASE_URL, skipping migrations"
               fi
+            else
+              echo "Skipping migrations (manual override)"
             fi
 
-            # Rebuild and restart
+            echo "=== Building Docker image ==="
             docker compose build zunkiree-search-api
+
+            echo "=== Restarting service ==="
             docker compose up -d --force-recreate zunkiree-search-api
 
-            # Verify health
+            echo "=== Verifying health ==="
             sleep 5
-            curl -sf http://localhost:8000/health || echo "WARNING: Health check failed"
+            for i in 1 2 3; do
+              if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+                echo "Health check passed"
+                exit 0
+              fi
+              echo "Attempt $i failed, waiting 5s..."
+              sleep 5
+            done
+            echo "ERROR: Health check failed after 3 attempts"
+            docker logs zunkiree-search-api --tail 30
+            exit 1
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "::error::Deploy failed! Check VPS logs."

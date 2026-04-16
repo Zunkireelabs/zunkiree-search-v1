@@ -49,7 +49,7 @@ async def send_welcome_email(to_email: str, customer_name: str, site_id: str, ap
     dashboard_url = "https://zunkiree-search-panel.zunkireelabs.com"
 
     msg = EmailMessage()
-    msg["Subject"] = f"Welcome to Zunkiree Search — Your Dashboard Access"
+    msg["Subject"] = "Welcome to Zunkiree Search — Your Dashboard Access"
     msg["From"] = settings.smtp_from_email or settings.smtp_username
     msg["To"] = to_email
     msg.set_content(
