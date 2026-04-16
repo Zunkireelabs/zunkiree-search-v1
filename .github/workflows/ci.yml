@@ -32,6 +32,13 @@ jobs:
         run: find backend/app/ -name "*.py" -exec python -m py_compile {} +
 
       - name: Verify imports resolve
+        env:
+          # Dummy values so Pydantic Settings doesn't fail during import
+          OPENAI_API_KEY: "sk-test"
+          PINECONE_API_KEY: "test"
+          PINECONE_HOST: "https://test.svc.pinecone.io"
+          DATABASE_URL: "postgresql://test:test@localhost:5432/test"
+          API_SECRET_KEY: "test"
         run: |
           cd backend
           python -c "
