@@ -59,7 +59,7 @@ jobs:
             echo "=== Verifying health ==="
             sleep 10
             for i in 1 2 3 4 5; do
-              if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+              if docker exec zunkiree-search-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" 2>/dev/null; then
                 echo "Health check passed"
                 exit 0
               fi
