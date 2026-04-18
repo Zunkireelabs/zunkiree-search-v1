@@ -57,16 +57,16 @@ jobs:
             docker compose up -d --force-recreate zunkiree-search-api
 
             echo "=== Verifying health ==="
-            sleep 5
-            for i in 1 2 3; do
+            sleep 10
+            for i in 1 2 3 4 5; do
               if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
                 echo "Health check passed"
                 exit 0
               fi
-              echo "Attempt $i failed, waiting 5s..."
-              sleep 5
+              echo "Attempt $i failed, waiting 10s..."
+              sleep 10
             done
-            echo "ERROR: Health check failed after 3 attempts"
+            echo "ERROR: Health check failed after 5 attempts"
             docker logs zunkiree-search-api --tail 30
             exit 1
 
