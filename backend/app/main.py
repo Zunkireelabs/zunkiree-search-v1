@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Zunkiree Search API",
     description="AI-powered search widget backend",
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan,
 )
 
