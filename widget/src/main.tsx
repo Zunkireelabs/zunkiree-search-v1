@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { Widget } from './components/Widget'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 function initWidget() {
   // Get configuration from script tag
@@ -21,7 +22,9 @@ function initWidget() {
   const root = ReactDOM.createRoot(rootElement)
   root.render(
     <React.StrictMode>
-      <Widget siteId={siteId} apiUrl={apiUrl} widgetMode={mode || 'search'} />
+      <ErrorBoundary>
+        <Widget siteId={siteId} apiUrl={apiUrl} widgetMode={mode || 'search'} />
+      </ErrorBoundary>
     </React.StrictMode>
   )
 }

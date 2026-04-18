@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 
 interface FeedbackButtonsProps {
   queryLogId: string
   apiUrl: string
 }
 
-export function FeedbackButtons({ queryLogId, apiUrl }: FeedbackButtonsProps) {
+export const FeedbackButtons = React.memo(function FeedbackButtons({ queryLogId, apiUrl }: FeedbackButtonsProps) {
   const [voted, setVoted] = useState<1 | -1 | null>(null)
 
   const submitFeedback = async (vote: 1 | -1) => {
@@ -39,4 +39,4 @@ export function FeedbackButtons({ queryLogId, apiUrl }: FeedbackButtonsProps) {
       </button>
     </div>
   )
-}
+})

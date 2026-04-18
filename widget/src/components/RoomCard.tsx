@@ -1,3 +1,5 @@
+import React from 'react'
+
 export interface Room {
   id: string
   name: string
@@ -17,7 +19,7 @@ interface RoomCardProps {
   onBookRoom: (roomId: string) => void
 }
 
-export function RoomCard({ room, onBookRoom }: RoomCardProps) {
+export const RoomCard = React.memo(function RoomCard({ room, onBookRoom }: RoomCardProps) {
   const formatPrice = (price: number | null, currency: string) => {
     if (price === null) return ''
     const symbols: Record<string, string> = { USD: '$', EUR: '€', GBP: '£', NPR: 'Rs', INR: '₹' }
@@ -84,4 +86,4 @@ export function RoomCard({ room, onBookRoom }: RoomCardProps) {
       </div>
     </div>
   )
-}
+})

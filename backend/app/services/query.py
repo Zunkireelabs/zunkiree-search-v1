@@ -51,55 +51,31 @@ class QueryService:
             return "processing"
         return "empty"
 
-    async def process_query(
+    async def _retrieve_and_rank(
         self,
         db: AsyncSession,
+        customer: Customer,
+        config: WidgetConfig | None,
         site_id: str,
         question: str,
-        origin: str | None = None,
-        user_agent: str | None = None,
-        ip_address: str | None = None,
         user_email: str | None = None,
-        user_profile: dict | None = None,
-        language: str | None = None,
     ) -> dict:
         """
-        Process a user query end-to-end.
+        Shared retrieval pipeline used by both streaming and non-streaming paths.
 
-        Flow:
-        1. Validate customer + origin
-        2. Embed question via OpenAI
-        3. Retrieve top-k vector IDs from Pinecone (namespace = site_id)
-        4. Fetch full chunk content from PostgreSQL (filtered by customer_id)
-        5. Assemble token-capped context
-        6. Generate answer via LLM
-        7. Log query
+        Returns dict with keys:
+            chunks_for_llm, top_score, avg_score, threshold, rerank_triggered,
+            retrieval_mode, retrieval_empty, no_data_status (None | "processing" | "empty")
         """
-        start_time = time.time()
-
-        # Get customer and validate
-        customer = await self._get_customer(db, site_id)
-        if not customer:
-            raise ValueError("Invalid site_id")
-
-        # Validate origin domain
-        if origin and not await self._validate_origin(db, customer.id, origin):
-            raise PermissionError("Origin domain not allowed")
-
-        # Get widget config
-        config = await self._get_widget_config(db, customer.id)
-
         # Generate query embedding
         query_embedding = await self.embedding_service.create_embedding(question)
 
-        # --- Hybrid retrieval: vector + keyword ---
-        # Phase 4A: Fetch wider candidate set (8) for adaptive top_k and potential reranking
+        # Hybrid retrieval: vector + keyword
         initial_fetch_k = 8
 
-        # [TEMP-LOG] Log Pinecone query params
         logger.warning("[QUERY-TRACE] pinecone_namespace=%s site_id_filter=%s initial_fetch_k=%s embedding_dim=%d", site_id, site_id, initial_fetch_k, len(query_embedding))
 
-        # List A: Pinecone vector search (wide fetch for adaptive layer)
+        # List A: Pinecone vector search
         vector_matches = await self.vector_store.query_vectors(
             query_vector=query_embedding,
             namespace=site_id,
@@ -109,12 +85,12 @@ class QueryService:
         vector_ids = [match["id"] for match in vector_matches]
         logger.warning("[QUERY-TRACE] vector_results_ids=%s", vector_ids[:5])
 
-        # Compute retrieval score metrics from Pinecone results
+        # Compute retrieval score metrics
         vector_scores = [match["score"] for match in vector_matches]
         top_score = max(vector_scores) if vector_scores else None
         avg_score = sum(vector_scores) / len(vector_scores) if vector_scores else None
 
-        # --- Confidence threshold guard: skip LLM if top_score too low ---
+        # Confidence threshold
         threshold = (
             config.confidence_threshold
             if config and config.confidence_threshold is not None
@@ -127,7 +103,7 @@ class QueryService:
                 site_id, top_score, threshold,
             )
 
-        # --- Phase 4A: Adaptive top_k and reranking decisions ---
+        # Adaptive top_k based on score distribution
         if top_score is not None and top_score > 0.6:
             adaptive_top_k = 3
         elif top_score is not None and top_score >= 0.4:
@@ -135,11 +111,11 @@ class QueryService:
         else:
             adaptive_top_k = 8
 
-        # Reranking triggers only in the ambiguous zone
+        # Reranking triggers in the ambiguous zone (widened from 0.45 to 0.60)
         rerank_needed = (
             top_score is not None
             and top_score > threshold
-            and top_score < 0.45
+            and top_score < 0.60
         )
 
         # If reranking, fuse to 8 candidates first; otherwise fuse to adaptive_top_k
@@ -159,27 +135,25 @@ class QueryService:
         fused_ids = _reciprocal_rank_fusion(vector_ids, keyword_ids, k=60, top_n=fusion_top_n)
         logger.warning("[QUERY-TRACE] fused_results_ids=%s", fused_ids[:5])
 
-        # No-data detection: check ingestion status for helpful messages
+        # No-data detection
         if not fused_ids:
             status = await self._check_ingestion_status(db, customer.id)
-            if status == "processing":
+            if status in ("processing", "empty"):
                 return {
-                    "answer": "I'm still learning about this website. Content is being indexed — please check back in a few minutes!",
-                    "suggestions": [],
-                    "sources": [],
-                }
-            elif status == "empty":
-                return {
-                    "answer": "I'm still setting up and don't have information about this website yet. Please check back soon!",
-                    "suggestions": [],
-                    "sources": [],
+                    "chunks_for_llm": [],
+                    "top_score": top_score,
+                    "avg_score": avg_score,
+                    "threshold": threshold,
+                    "rerank_triggered": False,
+                    "retrieval_mode": "hybrid",
+                    "retrieval_empty": not vector_matches,
+                    "no_data_status": status,
                 }
             logger.info("[QUERY-TRACE] No fused matches, LLM will attempt general knowledge answer site_id=%s", site_id)
 
         # Fetch full chunk content from PostgreSQL (defense-in-depth: filter by customer_id)
         db_chunks = await self._fetch_chunks_by_vector_ids(db, fused_ids, customer.id)
 
-        # [TEMP-LOG] Log Postgres chunk fetch results
         logger.warning("[QUERY-TRACE] postgres_chunks=%d customer_id=%s vector_ids_requested=%d", len(db_chunks), customer.id, len(fused_ids))
         if len(db_chunks) < len(fused_ids):
             logger.warning("[QUERY-TRACE] CHUNK_MISMATCH missing_count=%d", len(fused_ids) - len(db_chunks))
@@ -194,31 +168,38 @@ class QueryService:
                 "source_title": chunk.source_title or "Source",
                 "score": len(fused_ids) - fused_rank.get(chunk.vector_id, len(fused_ids)),
             })
-
-        # Sort by fusion rank (highest score = best rank)
         chunks_for_llm.sort(key=lambda c: c["score"], reverse=True)
 
-        # --- Phase 4A: Adaptive reranking for ambiguous queries ---
+        # Adaptive reranking for ambiguous queries (dynamic top_n based on adaptive_top_k)
         rerank_triggered = False
+        retrieval_mode = "hybrid"
         if rerank_needed and len(chunks_for_llm) > 1:
+            rerank_top_n = min(adaptive_top_k, len(chunks_for_llm))
             chunks_for_llm = await self.llm_service.rerank_chunks(
                 question=question,
                 chunks=chunks_for_llm,
-                top_n=5,
+                top_n=rerank_top_n,
             )
             rerank_triggered = True
             retrieval_mode = "hybrid_rerank"
             logger.info(
-                "[ADAPTIVE] site_id=%s rerank_triggered=True chunks_after_rerank=%d",
-                site_id, len(chunks_for_llm),
+                "[ADAPTIVE] site_id=%s rerank_triggered=True rerank_top_n=%d chunks_after_rerank=%d",
+                site_id, rerank_top_n, len(chunks_for_llm),
             )
-        else:
-            retrieval_mode = "hybrid"
 
-        # Determine if suggestions should be generated
-        show_suggestions = config.show_suggestions if config else True
+        return {
+            "chunks_for_llm": chunks_for_llm,
+            "top_score": top_score,
+            "avg_score": avg_score,
+            "threshold": threshold,
+            "rerank_triggered": rerank_triggered,
+            "retrieval_mode": retrieval_mode,
+            "retrieval_empty": not vector_matches,
+            "no_data_status": None,
+        }
 
-        # Build contact info string for LLM
+    def _build_llm_params(self, config: WidgetConfig | None, customer: Customer) -> dict:
+        """Build shared LLM parameters from config and customer."""
         contact_info = None
         if config:
             parts = []
@@ -229,35 +210,88 @@ class QueryService:
             if parts:
                 contact_info = ", ".join(parts)
 
-        # Generate answer with token-capped context
+        return {
+            "brand_name": config.brand_name if config else customer.name,
+            "tone": config.tone if config else "neutral",
+            "fallback_message": config.fallback_message if config else "I don't have that information yet.",
+            "max_tokens": config.max_response_length if config else 500,
+            "show_suggestions": config.show_suggestions if config else True,
+            "contact_info": contact_info,
+            "website_type": customer.website_type,
+        }
+
+    @staticmethod
+    def _build_sources(chunks_for_llm: list[dict], config: WidgetConfig | None) -> list[dict]:
+        """Build deduplicated sources list from chunks."""
+        if config and not config.show_sources:
+            return []
+        sources = []
+        seen_urls = set()
+        for chunk in chunks_for_llm:
+            url = chunk["source_url"]
+            title = chunk["source_title"]
+            if url and url not in seen_urls:
+                sources.append({"title": title, "url": url})
+                seen_urls.add(url)
+        return sources
+
+    async def process_query(
+        self,
+        db: AsyncSession,
+        site_id: str,
+        question: str,
+        origin: str | None = None,
+        user_agent: str | None = None,
+        ip_address: str | None = None,
+        user_email: str | None = None,
+        user_profile: dict | None = None,
+        language: str | None = None,
+    ) -> dict:
+        """
+        Process a user query end-to-end (non-streaming).
+        """
+        start_time = time.time()
+
+        customer = await self._get_customer(db, site_id)
+        if not customer:
+            raise ValueError("Invalid site_id")
+
+        if origin and not await self._validate_origin(db, customer.id, origin):
+            raise PermissionError("Origin domain not allowed")
+
+        config = await self._get_widget_config(db, customer.id)
+
+        # Shared retrieval pipeline
+        retrieval = await self._retrieve_and_rank(db, customer, config, site_id, question, user_email)
+
+        # Handle no-data status
+        if retrieval["no_data_status"]:
+            msg = (
+                "I'm still learning about this website. Content is being indexed — please check back in a few minutes!"
+                if retrieval["no_data_status"] == "processing"
+                else "I'm still setting up and don't have information about this website yet. Please check back soon!"
+            )
+            return {"answer": msg, "suggestions": [], "sources": []}
+
+        chunks_for_llm = retrieval["chunks_for_llm"]
+        llm_params = self._build_llm_params(config, customer)
+
+        # Generate answer
         result = await self.llm_service.generate_answer(
             question=question,
             context_chunks=chunks_for_llm,
-            brand_name=config.brand_name if config else customer.name,
-            tone=config.tone if config else "neutral",
-            fallback_message=config.fallback_message if config else "I don't have that information yet.",
-            max_tokens=config.max_response_length if config else 500,
-            show_suggestions=show_suggestions,
             user_email=user_email,
             user_profile=user_profile,
-            contact_info=contact_info,
             language=language,
-            website_type=customer.website_type,
+            **llm_params,
         )
 
-        # Calculate response time
+        # Calculate metrics
         response_time_ms = int((time.time() - start_time) * 1000)
-
-        # Compute fallback breakdown
-        fallback_message = config.fallback_message if config else "I don't have that information yet."
+        fallback_message = llm_params["fallback_message"]
         context_tokens = result.get("context_tokens", 0)
-
-        retrieval_empty_flag = not vector_matches
-        llm_declined = (
-            result["answer"] == fallback_message
-            and context_tokens > 0
-        )
-        fallback_triggered = retrieval_empty_flag or llm_declined
+        llm_declined = result["answer"] == fallback_message and context_tokens > 0
+        fallback_triggered = retrieval["retrieval_empty"] or llm_declined
 
         # Log query
         query_log_id = await self._log_query(
@@ -270,38 +304,30 @@ class QueryService:
             origin=origin,
             user_agent=user_agent,
             ip_address=ip_address,
-            top_score=top_score,
-            avg_score=avg_score,
+            top_score=retrieval["top_score"],
+            avg_score=retrieval["avg_score"],
             fallback_triggered=fallback_triggered,
-            retrieval_mode=retrieval_mode,
+            retrieval_mode=retrieval["retrieval_mode"],
             context_tokens=context_tokens,
-            confidence_threshold=threshold,
-            rerank_triggered=rerank_triggered,
-            retrieval_empty=retrieval_empty_flag,
+            confidence_threshold=retrieval["threshold"],
+            rerank_triggered=retrieval["rerank_triggered"],
+            retrieval_empty=retrieval["retrieval_empty"],
             llm_declined=llm_declined,
         )
 
         logger.info(
-            "[RAG-METRICS] site_id=%s top_score=%.3f avg_score=%.3f fallback=%s mode=%s rerank=%s blocked=%s llm_declined=%s empty=%s context_tokens=%s",
-            site_id, top_score or 0, avg_score or 0, fallback_triggered, retrieval_mode, rerank_triggered, False, llm_declined, retrieval_empty_flag, context_tokens,
+            "[RAG-METRICS] site_id=%s top_score=%.3f avg_score=%.3f fallback=%s mode=%s rerank=%s llm_declined=%s empty=%s context_tokens=%s",
+            site_id, retrieval["top_score"] or 0, retrieval["avg_score"] or 0, fallback_triggered,
+            retrieval["retrieval_mode"], retrieval["rerank_triggered"], llm_declined,
+            retrieval["retrieval_empty"], context_tokens,
         )
-
-        # Build deduplicated sources list
-        sources = []
-        seen_urls = set()
-        for chunk in chunks_for_llm:
-            url = chunk["source_url"]
-            title = chunk["source_title"]
-            if url and url not in seen_urls:
-                sources.append({"title": title, "url": url})
-                seen_urls.add(url)
 
         return {
             "answer": result["answer"],
-            "suggestions": result["suggestions"] if show_suggestions else [],
-            "sources": sources if config and config.show_sources else [],
+            "suggestions": result["suggestions"] if llm_params["show_suggestions"] else [],
+            "sources": self._build_sources(chunks_for_llm, config),
             "_meta": {
-                "top_score": top_score,
+                "top_score": retrieval["top_score"],
                 "fallback_triggered": fallback_triggered,
                 "llm_declined": llm_declined,
                 "chunks_used": len(chunks_for_llm),
@@ -326,8 +352,7 @@ class QueryService:
         - {"type": "token", "data": "..."} for each text token
         - {"type": "done", "answer": "...", "suggestions": [...], "sources": [...]} at end
         """
-        import time as _time
-        start_time = _time.time()
+        start_time = time.time()
 
         customer = await self._get_customer(db, site_id)
         if not customer:
@@ -340,80 +365,22 @@ class QueryService:
 
         config = await self._get_widget_config(db, customer.id)
 
-        # Embed + retrieve (same as process_query)
-        query_embedding = await self.embedding_service.create_embedding(question)
-        initial_fetch_k = 8
+        # Shared retrieval pipeline
+        retrieval = await self._retrieve_and_rank(db, customer, config, site_id, question, user_email)
 
-        vector_matches = await self.vector_store.query_vectors(
-            query_vector=query_embedding, namespace=site_id,
-            top_k=initial_fetch_k, site_id=site_id,
-        )
-        vector_ids = [m["id"] for m in vector_matches]
-        vector_scores = [m["score"] for m in vector_matches]
-        top_score = max(vector_scores) if vector_scores else None
+        # Handle no-data status
+        if retrieval["no_data_status"]:
+            msg = (
+                "I'm still learning about this website. Content is being indexed — please check back in a few minutes!"
+                if retrieval["no_data_status"] == "processing"
+                else "I'm still setting up and don't have information about this website yet. Please check back soon!"
+            )
+            yield {"type": "token", "data": msg}
+            yield {"type": "done", "answer": msg, "suggestions": [], "sources": []}
+            return
 
-        threshold = (
-            config.confidence_threshold
-            if config and config.confidence_threshold is not None
-            else settings.confidence_threshold
-        )
-
-        if top_score is not None and top_score > 0.6:
-            adaptive_top_k = 3
-        elif top_score is not None and top_score >= 0.4:
-            adaptive_top_k = 5
-        else:
-            adaptive_top_k = 8
-
-        rerank_needed = (top_score is not None and top_score > threshold and top_score < 0.45)
-        fusion_top_n = 8 if rerank_needed else adaptive_top_k
-
-        keyword_query = f"{question} {user_email}" if user_email else question
-        keyword_ids = await self._keyword_search(db, customer.id, keyword_query, limit=initial_fetch_k)
-
-        fused_ids = _reciprocal_rank_fusion(vector_ids, keyword_ids, k=60, top_n=fusion_top_n)
-
-        # No-data detection: check ingestion status for helpful messages
-        if not fused_ids:
-            status = await self._check_ingestion_status(db, customer.id)
-            if status == "processing":
-                msg = "I'm still learning about this website. Content is being indexed — please check back in a few minutes!"
-                yield {"type": "token", "data": msg}
-                yield {"type": "done", "answer": msg, "suggestions": [], "sources": []}
-                return
-            elif status == "empty":
-                msg = "I'm still setting up and don't have information about this website yet. Please check back soon!"
-                yield {"type": "token", "data": msg}
-                yield {"type": "done", "answer": msg, "suggestions": [], "sources": []}
-                return
-
-        db_chunks = await self._fetch_chunks_by_vector_ids(db, fused_ids, customer.id)
-
-        fused_rank = {vid: idx for idx, vid in enumerate(fused_ids)}
-        chunks_for_llm = []
-        for chunk in db_chunks:
-            chunks_for_llm.append({
-                "content": chunk.content,
-                "source_url": chunk.source_url or "",
-                "source_title": chunk.source_title or "Source",
-                "score": len(fused_ids) - fused_rank.get(chunk.vector_id, len(fused_ids)),
-            })
-        chunks_for_llm.sort(key=lambda c: c["score"], reverse=True)
-
-        if rerank_needed and len(chunks_for_llm) > 1:
-            chunks_for_llm = await self.llm_service.rerank_chunks(question=question, chunks=chunks_for_llm, top_n=5)
-
-        show_suggestions = config.show_suggestions if config else True
-
-        contact_info = None
-        if config:
-            parts = []
-            if config.contact_email:
-                parts.append(config.contact_email)
-            if config.contact_phone:
-                parts.append(config.contact_phone)
-            if parts:
-                contact_info = ", ".join(parts)
+        chunks_for_llm = retrieval["chunks_for_llm"]
+        llm_params = self._build_llm_params(config, customer)
 
         # Stream the LLM response
         full_answer = ""
@@ -421,16 +388,10 @@ class QueryService:
         async for event in self.llm_service.generate_answer_stream(
             question=question,
             context_chunks=chunks_for_llm,
-            brand_name=config.brand_name if config else customer.name,
-            tone=config.tone if config else "neutral",
-            fallback_message=config.fallback_message if config else "I don't have that information yet.",
-            max_tokens=config.max_response_length if config else 500,
-            show_suggestions=show_suggestions,
             user_email=user_email,
             user_profile=user_profile,
-            contact_info=contact_info,
             language=language,
-            website_type=customer.website_type,
+            **llm_params,
         ):
             if event["type"] == "token":
                 yield event
@@ -438,30 +399,20 @@ class QueryService:
                 full_answer = event["answer"]
                 suggestions = event["suggestions"]
 
-        # Build sources
-        sources = []
-        seen_urls = set()
-        for chunk in chunks_for_llm:
-            url = chunk["source_url"]
-            title = chunk["source_title"]
-            if url and url not in seen_urls:
-                sources.append({"title": title, "url": url})
-                seen_urls.add(url)
-
         # Log query
-        response_time_ms = int((_time.time() - start_time) * 1000)
+        response_time_ms = int((time.time() - start_time) * 1000)
         log_id = await self._log_query(
             db=db, customer_id=customer.id, question=question, answer=full_answer,
             chunks_used=len(chunks_for_llm), response_time_ms=response_time_ms,
             origin=origin, user_agent=user_agent, ip_address=ip_address,
-            top_score=top_score,
+            top_score=retrieval["top_score"],
         )
 
         yield {
             "type": "done",
             "answer": full_answer,
-            "suggestions": suggestions if show_suggestions else [],
-            "sources": sources if config and config.show_sources else [],
+            "suggestions": suggestions if llm_params["show_suggestions"] else [],
+            "sources": self._build_sources(chunks_for_llm, config),
             "query_log_id": log_id,
         }
 

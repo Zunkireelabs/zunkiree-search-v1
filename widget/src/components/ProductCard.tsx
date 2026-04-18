@@ -1,3 +1,5 @@
+import React from 'react'
+
 export interface Product {
   id: string
   name: string
@@ -20,7 +22,7 @@ interface ProductCardProps {
   onAddToWishlist?: (productId: string) => void
 }
 
-export function ProductCard({ product, onAddToCart, onAddToWishlist }: ProductCardProps) {
+export const ProductCard = React.memo(function ProductCard({ product, onAddToCart, onAddToWishlist }: ProductCardProps) {
   const formatPrice = (price: number | null, currency: string) => {
     if (price === null) return ''
     const symbols: Record<string, string> = { USD: '$', EUR: '€', GBP: '£', NPR: 'Rs', INR: '₹' }
@@ -98,4 +100,4 @@ export function ProductCard({ product, onAddToCart, onAddToWishlist }: ProductCa
       </div>
     </div>
   )
-}
+})
