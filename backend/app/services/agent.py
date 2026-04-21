@@ -46,6 +46,7 @@ class AgentService:
         brand_name: str,
         image_data: str | None = None,
         system_prompt_override: str | None = None,
+        conversation_history: list[dict] | None = None,
     ):
         """
         Process a query through the agentic pipeline with tool calling.
@@ -90,10 +91,13 @@ class AgentService:
         from app.services.cart import get_cart_service
         await get_cart_service().load_from_db(db, session_id)
 
-        # Get conversation history
-        history = self.conversation_store.get_messages(session_id)
+        # Get conversation history — prefer DB-backed history when provided (e.g., from DM flow)
+        if conversation_history is not None:
+            history = conversation_history
+        else:
+            history = self.conversation_store.get_messages(session_id)
 
-        # Add user message
+        # Add user message to in-memory store (for widget sessions)
         self.conversation_store.add_message(session_id, "user", question)
 
         # Build messages for OpenAI — keep last 10 messages to reduce latency

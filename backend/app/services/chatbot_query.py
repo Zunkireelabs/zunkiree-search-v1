@@ -380,6 +380,9 @@ class ChatbotQueryService:
         products = []
 
         try:
+            # Load DB-backed conversation history so the agent has full context
+            dm_history = await self.conversation_service.get_history(db, channel.id, sender_id)
+
             async for event in agent.process_agent_stream(
                 db=db,
                 site_id=customer.site_id,
@@ -388,6 +391,7 @@ class ChatbotQueryService:
                 customer_id=customer.id,
                 brand_name=brand_name,
                 system_prompt_override=DM_ECOMMERCE_SYSTEM_PROMPT,
+                conversation_history=dm_history,
             ):
                 event_type = event.get("type")
                 if event_type == "products":

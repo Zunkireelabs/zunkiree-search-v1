@@ -17,6 +17,15 @@ from app.services.order import get_order_service
 
 logger = logging.getLogger("zunkiree.tools")
 
+
+def _is_valid_uuid(val: str) -> bool:
+    try:
+        uuid.UUID(val)
+        return True
+    except (ValueError, AttributeError):
+        return False
+
+
 # OpenAI function-calling tool definitions
 ECOMMERCE_TOOLS = [
     {
@@ -308,7 +317,7 @@ async def _product_search(
     result = await db.execute(
         select(Product).where(
             Product.customer_id == customer_id,
-            Product.id.in_([uuid.UUID(pid) for pid in product_ids]),
+            Product.id.in_([uuid.UUID(pid) for pid in product_ids if _is_valid_uuid(pid)]),
         )
     )
     products = result.scalars().all()
@@ -422,10 +431,16 @@ async def _add_to_cart(
     color: str = "",
 ) -> dict:
     """Add a product to the cart."""
+    # Validate product_id format
+    try:
+        parsed_product_id = uuid.UUID(product_id)
+    except (ValueError, AttributeError):
+        return {"error": f"Invalid product ID: {product_id}"}
+
     # Validate product exists
     result = await db.execute(
         select(Product).where(
-            Product.id == uuid.UUID(product_id),
+            Product.id == parsed_product_id,
             Product.customer_id == customer_id,
         )
     )
@@ -618,7 +633,7 @@ async def _create_dm_order(
     try:
         from app.models.payment import Payment
         payment = Payment(
-            order_id=uuid.UUID(order_id),
+            order_id=uuid.UUID(order_id) if _is_valid_uuid(order_id) else uuid.uuid4(),
             customer_id=customer_id,
             gateway=payment_method,
             amount=order_data.get("total", 0),
