@@ -97,6 +97,9 @@ class ProfileBuilderService:
             db.add(profile)
             await db.commit()
             await db.refresh(profile)
+        elif profile.profile_locked:
+            logger.info("[PROFILE] Skipping — profile is locked (cloned from template) customer_id=%s", customer_id)
+            return profile
         else:
             profile.status = "building"
             profile.updated_at = datetime.utcnow()

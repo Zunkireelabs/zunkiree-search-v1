@@ -47,6 +47,7 @@ class BusinessProfile(Base):
 
     # Status tracking
     status: Mapped[str] = mapped_column(String(20), default="pending")  # pending / building / completed / failed
+    profile_locked: Mapped[bool] = mapped_column(Boolean, default=False)  # True = cloned from template, skip auto-build
     llm_tokens_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

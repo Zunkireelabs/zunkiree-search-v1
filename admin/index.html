@@ -706,6 +706,14 @@
           </div>
           <button type="submit">Create Customer</button>
         </form>
+
+        <!-- Similar Clients Panel (shown after customer creation) -->
+        <div id="similarClientsPanel" style="display:none; margin-top:20px; padding-top:20px; border-top:1px solid #e5e7eb;">
+          <h3 style="font-size:14px; color:#374151; margin-bottom:8px;">Similar Clients Found</h3>
+          <p style="font-size:13px; color:#6b7280; margin-bottom:12px;">These existing clients share the same website type. Clone their settings to get started faster.</p>
+          <div id="similarClientsList"></div>
+          <a href="#" onclick="dismissSimilarClients(); return false;" style="display:inline-block; margin-top:10px; font-size:13px; color:#6b7280; text-decoration:underline;">Skip — use auto-detected settings</a>
+        </div>
       </div>
 
       <!-- Ingest Data -->
@@ -910,7 +918,13 @@
         const data = await res.json();
         if (res.ok) {
           showAlert(`Customer created! Site ID: ${data.site_id} | API Key: ${data.api_key}`, 'success');
+          const websiteType = document.getElementById('websiteType').value;
+          const newSiteId = document.getElementById('siteId').value;
           e.target.reset();
+          // Auto-fetch similar clients if website_type was selected
+          if (websiteType) {
+            fetchSimilarClients(websiteType, newSiteId);
+          }
         } else {
           showAlert(data.detail?.message || 'Failed to create customer', 'error');
         }
@@ -920,6 +934,70 @@
         btn.disabled = false;
       }
     });
+
+    // Similar clients functions
+    let _newSiteId = '';
+
+    async function fetchSimilarClients(websiteType, newSiteId) {
+      _newSiteId = newSiteId;
+      try {
+        const res = await fetch(`${API_URL}/api/v1/admin/similar-clients?website_type=${websiteType}`, {
+          headers: { 'X-Admin-Key': ADMIN_KEY },
+        });
+        const data = await res.json();
+        if (res.ok && data.matches && data.matches.length > 0) {
+          // Filter out the just-created customer
+          const matches = data.matches.filter(m => m.site_id !== newSiteId);
+          if (matches.length > 0) {
+            renderSimilarClients(matches);
+            document.getElementById('similarClientsPanel').style.display = '';
+          }
+        }
+      } catch (err) {
+        // Silent fail — similar clients is optional
+      }
+    }
+
+    function renderSimilarClients(matches) {
+      const list = document.getElementById('similarClientsList');
+      list.innerHTML = matches.map(m => `
+        <div style="border:1px solid #e5e7eb; border-radius:8px; padding:12px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <div style="font-weight:600; font-size:14px; color:#333;">${m.name} <span style="color:#6b7280; font-weight:400;">(${m.site_id})</span></div>
+            <div style="font-size:12px; color:#6b7280; margin-top:4px;">
+              ${m.business_category || m.website_type}
+              ${m.business_model ? ' · ' + m.business_model : ''}
+              ${m.detected_tone ? ' · ' + m.detected_tone : ''}
+              ${m.enable_shopping ? ' · Shopping enabled' : ''}
+            </div>
+          </div>
+          <button onclick="cloneFromTemplate('${m.site_id}')" style="padding:6px 14px; background:#2563eb; color:white; border:none; border-radius:6px; font-size:13px; cursor:pointer; white-space:nowrap;">Use as Template</button>
+        </div>
+      `).join('');
+    }
+
+    async function cloneFromTemplate(templateSiteId) {
+      try {
+        const res = await fetch(`${API_URL}/api/v1/admin/customers/${_newSiteId}/clone-from/${templateSiteId}`, {
+          method: 'POST',
+          headers: { 'X-Admin-Key': ADMIN_KEY },
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showAlert(`Configuration cloned from "${templateSiteId}" — widget config and business profile applied.`, 'success');
+          dismissSimilarClients();
+        } else {
+          showAlert(data.detail?.message || 'Clone failed', 'error');
+        }
+      } catch (err) {
+        showAlert('Network error during clone', 'error');
+      }
+    }
+
+    function dismissSimilarClients() {
+      document.getElementById('similarClientsPanel').style.display = 'none';
+      _newSiteId = '';
+    }
 
     // Ingest URL
     document.getElementById('ingestUrlForm').addEventListener('submit', async (e) => {

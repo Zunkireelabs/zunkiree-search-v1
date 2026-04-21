@@ -1711,6 +1711,155 @@ async def get_profile(
         "content_gaps": _safe_json(profile.content_gaps),
         "system_prompt_block": profile.system_prompt_block,
         "llm_tokens_used": profile.llm_tokens_used,
+        "profile_locked": profile.profile_locked,
         "created_at": profile.created_at.isoformat() if profile.created_at else None,
         "updated_at": profile.updated_at.isoformat() if profile.updated_at else None,
+    }
+
+
+# ===== Similar Clients & Clone Endpoints =====
+
+@router.get("/similar-clients")
+async def get_similar_clients(
+    website_type: str,
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """Find existing clients with matching website_type for template-based onboarding."""
+    from app.models.business_profile import BusinessProfile
+
+    result = await db.execute(
+        select(Customer, BusinessProfile, WidgetConfig)
+        .join(BusinessProfile, Customer.id == BusinessProfile.customer_id)
+        .join(WidgetConfig, Customer.id == WidgetConfig.customer_id)
+        .where(
+            Customer.website_type == website_type,
+            Customer.is_active == True,
+            BusinessProfile.status == "completed",
+        )
+        .limit(limit)
+    )
+    rows = result.all()
+
+    matches = []
+    for customer, profile, config in rows:
+        matches.append({
+            "site_id": customer.site_id,
+            "name": customer.name,
+            "website_type": customer.website_type,
+            "business_category": profile.business_category,
+            "business_model": profile.business_model,
+            "sales_approach": profile.sales_approach,
+            "detected_tone": profile.detected_tone,
+            "business_description": profile.business_description,
+            "enable_shopping": config.enable_shopping,
+            "checkout_mode": config.checkout_mode,
+        })
+
+    return {"matches": matches}
+
+
+@router.post("/customers/{site_id}/clone-from/{template_site_id}")
+async def clone_from_template(
+    site_id: str,
+    template_site_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """Clone widget config and business profile from an existing template client."""
+    from app.models.business_profile import BusinessProfile
+    from datetime import datetime
+
+    # Load both customers
+    new_result = await db.execute(select(Customer).where(Customer.site_id == site_id))
+    new_customer = new_result.scalar_one_or_none()
+    if not new_customer:
+        raise HTTPException(status_code=404, detail={"code": "CUSTOMER_NOT_FOUND", "message": f"Customer '{site_id}' not found"})
+
+    tmpl_result = await db.execute(select(Customer).where(Customer.site_id == template_site_id))
+    tmpl_customer = tmpl_result.scalar_one_or_none()
+    if not tmpl_customer:
+        raise HTTPException(status_code=404, detail={"code": "TEMPLATE_NOT_FOUND", "message": f"Template customer '{template_site_id}' not found"})
+
+    # Clone WidgetConfig
+    tmpl_config_result = await db.execute(select(WidgetConfig).where(WidgetConfig.customer_id == tmpl_customer.id))
+    tmpl_config = tmpl_config_result.scalar_one_or_none()
+
+    new_config_result = await db.execute(select(WidgetConfig).where(WidgetConfig.customer_id == new_customer.id))
+    new_config = new_config_result.scalar_one_or_none()
+
+    widget_cloned = False
+    if tmpl_config and new_config:
+        # Copy all config fields except identity-specific ones
+        new_config.tone = tmpl_config.tone
+        new_config.primary_color = tmpl_config.primary_color
+        new_config.placeholder_text = tmpl_config.placeholder_text
+        new_config.welcome_message = tmpl_config.welcome_message
+        new_config.fallback_message = tmpl_config.fallback_message
+        new_config.allowed_topics = tmpl_config.allowed_topics
+        new_config.max_response_length = tmpl_config.max_response_length
+        new_config.show_sources = tmpl_config.show_sources
+        new_config.show_suggestions = tmpl_config.show_suggestions
+        new_config.quick_actions = tmpl_config.quick_actions
+        new_config.confidence_threshold = tmpl_config.confidence_threshold
+        new_config.enable_identity_verification = tmpl_config.enable_identity_verification
+        new_config.identity_custom_fields = tmpl_config.identity_custom_fields
+        new_config.lead_intents = tmpl_config.lead_intents
+        new_config.contact_email = tmpl_config.contact_email
+        new_config.contact_phone = tmpl_config.contact_phone
+        new_config.supported_languages = tmpl_config.supported_languages
+        new_config.enable_shopping = tmpl_config.enable_shopping
+        new_config.checkout_mode = tmpl_config.checkout_mode
+        new_config.shipping_countries = tmpl_config.shipping_countries
+        # NOT cloned: brand_name (keep new customer's name), stripe_account_id, payment_enabled
+        new_config.updated_at = datetime.utcnow()
+        widget_cloned = True
+
+    # Clone BusinessProfile
+    tmpl_profile_result = await db.execute(
+        select(BusinessProfile).where(BusinessProfile.customer_id == tmpl_customer.id, BusinessProfile.status == "completed")
+    )
+    tmpl_profile = tmpl_profile_result.scalar_one_or_none()
+
+    profile_cloned = False
+    if tmpl_profile:
+        new_profile_result = await db.execute(
+            select(BusinessProfile).where(BusinessProfile.customer_id == new_customer.id)
+        )
+        new_profile = new_profile_result.scalar_one_or_none()
+
+        if not new_profile:
+            new_profile = BusinessProfile(customer_id=new_customer.id)
+            db.add(new_profile)
+
+        new_profile.business_description = tmpl_profile.business_description
+        new_profile.business_category = tmpl_profile.business_category
+        new_profile.business_model = tmpl_profile.business_model
+        new_profile.sales_approach = tmpl_profile.sales_approach
+        new_profile.services_products = tmpl_profile.services_products
+        new_profile.pricing_info = tmpl_profile.pricing_info
+        new_profile.policies = tmpl_profile.policies
+        new_profile.unique_selling_points = tmpl_profile.unique_selling_points
+        new_profile.target_audience = tmpl_profile.target_audience
+        new_profile.business_hours = tmpl_profile.business_hours
+        new_profile.location_info = tmpl_profile.location_info
+        new_profile.team_info = tmpl_profile.team_info
+        new_profile.detected_tone = tmpl_profile.detected_tone
+        new_profile.content_gaps = tmpl_profile.content_gaps
+        new_profile.system_prompt_block = tmpl_profile.system_prompt_block
+        new_profile.status = "completed"
+        new_profile.profile_locked = True
+        new_profile.updated_at = datetime.utcnow()
+        profile_cloned = True
+
+    await db.commit()
+
+    return {
+        "message": f"Configuration cloned from '{template_site_id}' to '{site_id}'",
+        "cloned": {
+            "widget_config": widget_cloned,
+            "business_profile": profile_cloned,
+            "profile_locked": profile_cloned,
+        },
     }
