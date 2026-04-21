@@ -56,4 +56,13 @@ async def run_auto_ingestion(
     except Exception as e:
         logger.error("[AUTO-INGEST] Site classification failed for site_id=%s: %s", site_id, e)
 
+    # Build business profile (non-blocking — failure doesn't affect ingestion)
+    try:
+        from app.services.profile_builder import get_profile_builder_service
+        async with async_session_maker() as db:
+            service = get_profile_builder_service()
+            await service.build_profile(db, customer_id, site_id)
+    except Exception as e:
+        logger.error("[AUTO-INGEST] Profile building failed for site_id=%s: %s", site_id, e)
+
     logger.info("[AUTO-INGEST] Finished all domains for site_id=%s", site_id)

@@ -61,6 +61,7 @@ WEBSITE_TYPE_PROMPTS = {
 }
 
 SYSTEM_PROMPT_TEMPLATE = """You are a knowledgeable assistant for {brand_name}.
+{business_context}
 
 YOUR #1 RULE: Answer helpfully if the question relates to what {brand_name} does. Never refuse a relevant question.
 
@@ -205,6 +206,7 @@ class LLMService:
         contact_info: str | None = None,
         language: str | None = None,
         website_type: str | None = None,
+        business_context: str | None = None,
     ) -> dict:
         """
         Generate an answer using the LLM.
@@ -258,6 +260,7 @@ class LLMService:
         # Build system prompt
         system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
             brand_name=brand_name,
+            business_context=business_context or "",
             tone=tone,
             fallback_message=fallback_message,
             context=context,
@@ -338,6 +341,7 @@ class LLMService:
         contact_info: str | None = None,
         language: str | None = None,
         website_type: str | None = None,
+        business_context: str | None = None,
     ):
         """
         Stream the LLM answer. Yields text chunks.
@@ -375,6 +379,7 @@ class LLMService:
 
         system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
             brand_name=brand_name,
+            business_context=business_context or "",
             tone=tone,
             fallback_message=fallback_message,
             context=context,

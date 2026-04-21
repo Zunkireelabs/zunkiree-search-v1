@@ -29,6 +29,7 @@ class Customer(Base):
     user_profiles: Mapped[list["UserProfile"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
     products: Mapped[list["Product"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
     chatbot_channels: Mapped[list["ChatbotChannel"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
+    business_profile: Mapped["BusinessProfile | None"] = relationship(back_populates="customer", uselist=False, cascade="all, delete-orphan")
 
 
 # Import at bottom to avoid circular imports
@@ -39,3 +40,4 @@ from app.models.query_log import QueryLog
 from app.models.user_profile import UserProfile
 from app.models.product import Product
 from app.models.chatbot import ChatbotChannel
+from app.models.business_profile import BusinessProfile

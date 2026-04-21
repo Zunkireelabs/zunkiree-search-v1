@@ -1597,3 +1597,120 @@ async def get_query_analytics(
         "failed_queries": failed_queries,
         "negative_feedback_queries": negative_queries,
     }
+
+
+# ===== Business Profile Endpoints =====
+
+@router.post("/build-profile/{site_id}")
+async def build_profile(
+    site_id: str,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """Trigger business profile build for a single tenant (runs in background)."""
+    result = await db.execute(select(Customer).where(Customer.site_id == site_id))
+    customer = result.scalar_one_or_none()
+    if not customer:
+        raise HTTPException(status_code=404, detail={"code": "CUSTOMER_NOT_FOUND", "message": "Customer not found"})
+
+    async def _build():
+        from app.services.profile_builder import get_profile_builder_service
+        from app.database import async_session_maker
+        async with async_session_maker() as session:
+            service = get_profile_builder_service()
+            await service.build_profile(session, customer.id, site_id)
+
+    background_tasks.add_task(_build)
+    return {"message": f"Profile build started for {site_id}", "site_id": site_id}
+
+
+@router.post("/build-profiles/all")
+async def build_profiles_all(
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """Backfill business profiles for all active customers (runs in background)."""
+    result = await db.execute(select(Customer).where(Customer.is_active == True))
+    customers = result.scalars().all()
+
+    if not customers:
+        return {"message": "No active customers found", "total": 0}
+
+    async def _build_all():
+        from app.services.profile_builder import get_profile_builder_service
+        from app.database import async_session_maker
+        import logging
+        logger = logging.getLogger("zunkiree.admin")
+
+        service = get_profile_builder_service()
+        for cust in customers:
+            try:
+                async with async_session_maker() as session:
+                    await service.build_profile(session, cust.id, cust.site_id)
+                logger.info("[BACKFILL] Profile built for %s", cust.site_id)
+            except Exception as e:
+                logger.error("[BACKFILL] Failed for %s: %s", cust.site_id, e)
+
+    background_tasks.add_task(_build_all)
+    return {"message": f"Profile build started for {len(customers)} customers", "total": len(customers)}
+
+
+@router.get("/profile/{site_id}")
+async def get_profile(
+    site_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_admin_key),
+):
+    """View business profile status and extracted data for a tenant."""
+    import json as json_mod
+    from app.models.business_profile import BusinessProfile
+
+    result = await db.execute(select(Customer).where(Customer.site_id == site_id))
+    customer = result.scalar_one_or_none()
+    if not customer:
+        raise HTTPException(status_code=404, detail={"code": "CUSTOMER_NOT_FOUND", "message": "Customer not found"})
+
+    profile_result = await db.execute(
+        select(BusinessProfile).where(BusinessProfile.customer_id == customer.id)
+    )
+    profile = profile_result.scalar_one_or_none()
+
+    if not profile:
+        return {
+            "site_id": site_id,
+            "status": "not_built",
+            "message": "No business profile exists. Use POST /admin/build-profile/{site_id} to create one.",
+        }
+
+    def _safe_json(val):
+        if not val:
+            return None
+        try:
+            return json_mod.loads(val)
+        except (json_mod.JSONDecodeError, TypeError):
+            return val
+
+    return {
+        "site_id": site_id,
+        "status": profile.status,
+        "business_description": profile.business_description,
+        "business_category": profile.business_category,
+        "business_model": profile.business_model,
+        "sales_approach": profile.sales_approach,
+        "services_products": _safe_json(profile.services_products),
+        "pricing_info": profile.pricing_info,
+        "policies": _safe_json(profile.policies),
+        "unique_selling_points": _safe_json(profile.unique_selling_points),
+        "target_audience": profile.target_audience,
+        "business_hours": profile.business_hours,
+        "location_info": profile.location_info,
+        "team_info": profile.team_info,
+        "detected_tone": profile.detected_tone,
+        "content_gaps": _safe_json(profile.content_gaps),
+        "system_prompt_block": profile.system_prompt_block,
+        "llm_tokens_used": profile.llm_tokens_used,
+        "created_at": profile.created_at.isoformat() if profile.created_at else None,
+        "updated_at": profile.updated_at.isoformat() if profile.updated_at else None,
+    }

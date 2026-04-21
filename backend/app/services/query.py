@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 
 from app.models import Customer, WidgetConfig, Domain, QueryLog, DocumentChunk, IngestionJob
+from app.models.business_profile import BusinessProfile
 from app.services.embeddings import get_embedding_service
 from app.services.vector_store import get_vector_store_service
 from app.services.llm import get_llm_service
@@ -198,8 +199,13 @@ class QueryService:
             "no_data_status": None,
         }
 
-    def _build_llm_params(self, config: WidgetConfig | None, customer: Customer) -> dict:
-        """Build shared LLM parameters from config and customer."""
+    def _build_llm_params(
+        self,
+        config: WidgetConfig | None,
+        customer: Customer,
+        business_profile: BusinessProfile | None = None,
+    ) -> dict:
+        """Build shared LLM parameters from config, customer, and business profile."""
         contact_info = None
         if config:
             parts = []
@@ -218,6 +224,7 @@ class QueryService:
             "show_suggestions": config.show_suggestions if config else True,
             "contact_info": contact_info,
             "website_type": customer.website_type,
+            "business_context": business_profile.system_prompt_block if business_profile and business_profile.system_prompt_block else None,
         }
 
     @staticmethod
@@ -260,6 +267,7 @@ class QueryService:
             raise PermissionError("Origin domain not allowed")
 
         config = await self._get_widget_config(db, customer.id)
+        profile = await self._get_business_profile(db, customer.id)
 
         # Shared retrieval pipeline
         retrieval = await self._retrieve_and_rank(db, customer, config, site_id, question, user_email)
@@ -274,7 +282,7 @@ class QueryService:
             return {"answer": msg, "suggestions": [], "sources": []}
 
         chunks_for_llm = retrieval["chunks_for_llm"]
-        llm_params = self._build_llm_params(config, customer)
+        llm_params = self._build_llm_params(config, customer, profile)
 
         # Generate answer
         result = await self.llm_service.generate_answer(
@@ -364,6 +372,7 @@ class QueryService:
             return
 
         config = await self._get_widget_config(db, customer.id)
+        profile = await self._get_business_profile(db, customer.id)
 
         # Shared retrieval pipeline
         retrieval = await self._retrieve_and_rank(db, customer, config, site_id, question, user_email)
@@ -380,7 +389,7 @@ class QueryService:
             return
 
         chunks_for_llm = retrieval["chunks_for_llm"]
-        llm_params = self._build_llm_params(config, customer)
+        llm_params = self._build_llm_params(config, customer, profile)
 
         # Stream the LLM response
         full_answer = ""
@@ -476,6 +485,16 @@ class QueryService:
         """Get widget config for customer."""
         result = await db.execute(
             select(WidgetConfig).where(WidgetConfig.customer_id == customer_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def _get_business_profile(self, db: AsyncSession, customer_id) -> BusinessProfile | None:
+        """Get completed business profile for customer."""
+        result = await db.execute(
+            select(BusinessProfile).where(
+                BusinessProfile.customer_id == customer_id,
+                BusinessProfile.status == "completed",
+            )
         )
         return result.scalar_one_or_none()
 

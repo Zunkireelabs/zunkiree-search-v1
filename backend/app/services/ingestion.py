@@ -465,6 +465,7 @@ class IngestionService:
         site_id: str,
         question: str,
         answer: str,
+        source_prefix: str = "QA",
     ) -> IngestionJob:
         """
         Ingest a Q&A seed pair as a knowledge chunk.
@@ -475,6 +476,7 @@ class IngestionService:
             site_id: Customer site ID (Pinecone namespace)
             question: The question
             answer: The answer
+            source_prefix: Prefix for source_filename (default "QA", use "Auto-FAQ" for auto-generated)
 
         Returns:
             IngestionJob record
@@ -482,7 +484,7 @@ class IngestionService:
         job = IngestionJob(
             customer_id=customer_id,
             source_type="qa_seed",
-            source_filename=f"QA: {question[:80]}",
+            source_filename=f"{source_prefix}: {question[:80]}",
             status="processing",
             started_at=datetime.utcnow(),
         )
@@ -497,7 +499,7 @@ class IngestionService:
             # Chunk normally (most QA pairs will be a single chunk)
             chunks = chunk_text(text)
             for chunk in chunks:
-                chunk["source_title"] = f"QA: {question[:80]}"
+                chunk["source_title"] = f"{source_prefix}: {question[:80]}"
 
             if chunks:
                 await self._process_chunks(

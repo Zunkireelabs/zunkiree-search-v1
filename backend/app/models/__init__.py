@@ -12,6 +12,7 @@ from app.models.order import Order
 from app.models.payment import Payment
 from app.models.room import Room
 from app.models.chatbot import ChatbotChannel, ChatbotConversation, ChatbotMessageLog
+from app.models.business_profile import BusinessProfile
 
 __all__ = [
     "Customer",
@@ -31,4 +32,5 @@ __all__ = [
     "ChatbotChannel",
     "ChatbotConversation",
     "ChatbotMessageLog",
+    "BusinessProfile",
 ]
