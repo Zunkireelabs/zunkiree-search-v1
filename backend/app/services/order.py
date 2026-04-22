@@ -148,7 +148,12 @@ class OrderService:
         items = order_dict.get("items", [])
         line_items = []
         for item in items:
-            li: dict = {"quantity": item.get("quantity", 1)}
+            li: dict = {
+                "quantity": item.get("quantity", 1),
+                "name": item.get("name", "Unknown product"),
+                "price": item.get("price", 0),
+                "image_url": item.get("image", ""),
+            }
             if item.get("product_id"):
                 li["product_id"] = item["product_id"]
             if item.get("size"):
@@ -181,6 +186,9 @@ class OrderService:
             "payment_method": order_dict.get("payment_method", "online"),
             "payment_intent_id": order_dict.get("payment_intent_id"),
             "note": f"Synced from Zunkiree widget. Order #{order_dict.get('order_number', '')}",
+            "subtotal": order_dict.get("subtotal"),
+            "total": order_dict.get("total"),
+            "currency": order_dict.get("currency"),
         }
 
         async with httpx.AsyncClient(timeout=10.0) as client:
