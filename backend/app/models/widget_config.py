@@ -39,6 +39,8 @@ class WidgetConfig(Base):
     contact_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     supported_languages: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array e.g. '["en", "ne"]'
     enable_shopping: Mapped[bool] = mapped_column(Boolean, default=False)
+    product_source: Mapped[str] = mapped_column(String(20), default="scraped")  # scraped | storefront
+    storefront_fetch_mode: Mapped[str] = mapped_column(String(20), default="synced")  # realtime | synced
     checkout_mode: Mapped[str] = mapped_column(String(20), default="redirect")  # redirect, in-app
     stripe_account_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     payment_enabled: Mapped[bool] = mapped_column(Boolean, default=False)

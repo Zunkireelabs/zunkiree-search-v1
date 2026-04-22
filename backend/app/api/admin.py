@@ -108,6 +108,10 @@ class UpdateConfigRequest(BaseModel):
     contact_email: str | None = None
     contact_phone: str | None = None
     supported_languages: str | None = None  # JSON array e.g. '["en", "ne"]'
+    enable_shopping: bool | None = None
+    product_source: str | None = Field(None, pattern="^(scraped|storefront)$")
+    storefront_fetch_mode: str | None = Field(None, pattern="^(realtime|synced)$")
+    checkout_mode: str | None = Field(None, pattern="^(redirect|in-app|inquiry)$")
 
 
 class JobInfo(BaseModel):

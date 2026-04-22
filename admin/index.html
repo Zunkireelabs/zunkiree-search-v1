@@ -810,6 +810,29 @@
             <input type="number" id="confidenceThreshold" min="0.1" max="0.5" step="0.05" placeholder="0.25">
             <span style="font-size:12px; color:#6b7280;">Queries below this score skip the LLM and return fallback.</span>
           </div>
+
+          <div style="border-top:1px solid #e5e7eb; padding-top:16px; margin-top:16px;">
+            <h3 style="font-size:14px; font-weight:600; color:#333; margin-bottom:12px;">E-Commerce Settings</h3>
+            <div class="form-group">
+              <label>Product Source</label>
+              <select id="productSource" onchange="toggleStorefrontOptions()">
+                <option value="scraped">Scraped (from website)</option>
+                <option value="storefront">Storefront (Stella)</option>
+              </select>
+              <span style="font-size:12px; color:#6b7280;">Where the chatbot fetches product data from.</span>
+            </div>
+            <div id="storefrontOptions" style="display:none;">
+              <div class="form-group">
+                <label>Fetch Mode</label>
+                <select id="storefrontFetchMode">
+                  <option value="synced">Synced (cached locally — faster)</option>
+                  <option value="realtime">Real-time (from Stella API — always fresh)</option>
+                </select>
+                <span style="font-size:12px; color:#6b7280;">Real-time queries Stella on every search. Synced uses cached products.</span>
+              </div>
+            </div>
+          </div>
+
           <button type="submit">Update Config</button>
         </form>
       </div>
@@ -884,6 +907,11 @@
     }
 
     // Show alert
+    function toggleStorefrontOptions() {
+      const source = document.getElementById('productSource').value;
+      document.getElementById('storefrontOptions').style.display = source === 'storefront' ? '' : 'none';
+    }
+
     function showAlert(message, type = 'info') {
       const alerts = document.getElementById('alerts');
       const alert = document.createElement('div');
@@ -1208,6 +1236,13 @@
       if (primaryColor) body.primary_color = primaryColor;
       if (welcomeMessage) body.welcome_message = welcomeMessage;
       if (confidenceThreshold) body.confidence_threshold = parseFloat(confidenceThreshold);
+
+      const productSource = document.getElementById('productSource').value;
+      const storefrontFetchMode = document.getElementById('storefrontFetchMode').value;
+      body.product_source = productSource;
+      if (productSource === 'storefront') {
+        body.storefront_fetch_mode = storefrontFetchMode;
+      }
 
       try {
         const res = await fetch(`${API_URL}/api/v1/admin/config/${customerId}`, {
