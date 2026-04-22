@@ -11,6 +11,7 @@ from sqlalchemy import select, func
 
 from app.models.order import Order
 from app.services.cart import get_cart_service
+from app.config import get_settings
 
 logger = logging.getLogger("zunkiree.order")
 
@@ -69,7 +70,19 @@ class OrderService:
         cart_service.clear_cart(session_id)
         await cart_service.save_to_db(db, session_id, customer_id)
 
-        return {"order": self._order_to_dict(order)}
+        # Sync order to Agenticom (non-blocking)
+        order_dict = self._order_to_dict(order)
+        try:
+            # Get site_id from customer
+            from app.models import Customer
+            cust_result = await db.execute(select(Customer).where(Customer.id == customer_id))
+            customer = cust_result.scalar_one_or_none()
+            if customer and customer.website_type == "ecommerce":
+                await self._sync_to_agenticom(order_dict, customer.site_id)
+        except Exception as e:
+            logger.error("[ORDER-SYNC] Failed to sync order %s to Agenticom: %s", order.order_number, e)
+
+        return {"order": order_dict}
 
     async def get_order(self, db: AsyncSession, order_id: uuid.UUID) -> dict:
         """Get order by ID."""
@@ -122,6 +135,68 @@ class OrderService:
 
         await db.commit()
         return {"order": self._order_to_dict(order)}
+
+    async def _sync_to_agenticom(self, order_dict: dict, site_id: str) -> None:
+        """Send order to Agenticom merchant dashboard (non-blocking, best-effort)."""
+        import httpx
+
+        settings = get_settings()
+        if not settings.agenticom_api_url or not settings.agenticom_sync_secret:
+            logger.debug("[ORDER-SYNC] Agenticom sync not configured, skipping")
+            return
+
+        items = order_dict.get("items", [])
+        line_items = []
+        for item in items:
+            li: dict = {"quantity": item.get("quantity", 1)}
+            if item.get("product_id"):
+                li["product_id"] = item["product_id"]
+            if item.get("size"):
+                li["size"] = item["size"]
+            if item.get("color"):
+                li["color"] = item["color"]
+            line_items.append(li)
+
+        if not line_items:
+            return
+
+        # Parse address
+        shipping = order_dict.get("shipping_address") or {}
+        if isinstance(shipping, str):
+            shipping = json.loads(shipping)
+
+        address = {
+            "first_name": shipping.get("name", shipping.get("first_name")),
+            "address1": shipping.get("location", shipping.get("address1", "")),
+            "city": shipping.get("city", ""),
+            "country": shipping.get("country", "NP"),
+            "phone": shipping.get("phone", order_dict.get("shopper_email", "")),
+        }
+
+        payload = {
+            "email": order_dict.get("shopper_email") or f"{site_id}@orders.zunkireelabs.com",
+            "phone": shipping.get("phone"),
+            "line_items": line_items,
+            "shipping_address": address,
+            "payment_method": order_dict.get("payment_method", "online"),
+            "payment_intent_id": order_dict.get("payment_intent_id"),
+            "note": f"Synced from Zunkiree widget. Order #{order_dict.get('order_number', '')}",
+        }
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{settings.agenticom_api_url}/api/sync/orders",
+                json=payload,
+                headers={
+                    "X-Sync-Secret": settings.agenticom_sync_secret,
+                    "X-Site-ID": site_id,
+                    "Content-Type": "application/json",
+                },
+            )
+            if resp.status_code == 201:
+                logger.info("[ORDER-SYNC] Order %s synced to Agenticom: %s", order_dict.get("order_number"), resp.json().get("order_number"))
+            else:
+                logger.warning("[ORDER-SYNC] Agenticom returned %d: %s", resp.status_code, resp.text[:200])
 
     def _order_to_dict(self, order: Order) -> dict:
         """Convert Order model to API dict."""

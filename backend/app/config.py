@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-3-large"
     embedding_dimensions: int = 3072
 
+    # Agenticom Sync
+    agenticom_api_url: str = ""  # e.g., https://api-agenticom.zunkireelabs.com
+    agenticom_sync_secret: str = ""  # Shared secret for X-Sync-Secret header
+
     # Meta Messaging / Chatbot
     meta_app_secret: str = ""
     meta_verify_token: str = ""
