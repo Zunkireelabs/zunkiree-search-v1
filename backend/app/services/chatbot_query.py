@@ -256,9 +256,10 @@ class ChatbotQueryService:
         # --- Check for greetings (skip RAG) ---
         cleaned = message_text.strip().lower()
         if cleaned in GREETING_WORDS:
-            greeting = f"Hi there! I'm {brand_name}'s assistant. How can I help you today?"
             if welcome_message:
-                greeting = f"Hi there! {welcome_message}"
+                greeting = welcome_message
+            else:
+                greeting = f"Hi there! I'm {brand_name}'s assistant. How can I help you today?"
 
             # Check if user's message is in Nepali/Hindi
             for lang_code, response_template in GREETING_RESPONSES.items():
