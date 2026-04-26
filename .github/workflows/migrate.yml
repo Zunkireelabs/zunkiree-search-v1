@@ -14,17 +14,24 @@ jobs:
     if: ${{ inputs.confirm == 'yes' }}
     steps:
       - name: Run migrations via SSH
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            set -e
             cd /home/zunkireelabs/devprojects/zunkiree-search-v1
-            git pull origin main
-            DB_URL=$(docker compose exec zunkiree-search-api printenv DATABASE_URL 2>/dev/null | tr -d '\r')
+
+            # Stateless deploy: match the contract from deploy.yml. VPS code
+            # state always equals origin/main; anything edited on the VPS gets
+            # blown away on the next migration / deploy run.
+            git fetch origin main
+            git reset --hard origin/main
+
+            DB_URL=$(docker compose exec -T zunkiree-search-api printenv DATABASE_URL 2>/dev/null | tr -d '\r')
             if [ -z "$DB_URL" ]; then
-              echo "ERROR: Could not read DATABASE_URL"
+              echo "::error::Could not read DATABASE_URL from container — cannot run migrations"
               exit 1
             fi
             ./scripts/migrate.sh "$DB_URL"

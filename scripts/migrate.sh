@@ -4,6 +4,13 @@
 #
 # If DATABASE_URL is not passed as argument, reads from backend/.env
 # Tracks applied migrations in a _migrations table.
+#
+# CONTRACT: this script must exit non-zero on any failure. The caller
+# (.github/workflows/deploy.yml and migrate.yml) treats a non-zero exit as
+# a deploy abort. Do not swallow errors. set -euo pipefail enforces this:
+# -e exit on any unhandled non-zero, -u error on unset vars, -o pipefail
+# propagates pipe failures. The for-loop also explicitly `exit 1` on the
+# first failed migration.
 
 set -euo pipefail
 
