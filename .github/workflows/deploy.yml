@@ -8,10 +8,6 @@ on:
       - 'backend/**'
       - 'docker-compose.yml'
       - 'scripts/**'
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-      - '.github/**.md'
   # Keep manual trigger as backup
   workflow_dispatch:
     inputs:
