@@ -138,7 +138,8 @@ class OrderService:
 
     async def _sync_to_agenticom(self, order_dict: dict, site_id: str) -> None:
         """Send order to Agenticom merchant dashboard (non-blocking, best-effort)."""
-        import httpx
+        from app.services.connectors import ConnectorOrderDraft, ConnectorOrderLineItem, get_connector
+        from app.services.connectors.agenticom_connector import ConnectorRequestError
 
         settings = get_settings()
         if not settings.agenticom_api_url or not settings.agenticom_sync_secret:
@@ -146,26 +147,24 @@ class OrderService:
             return
 
         items = order_dict.get("items", [])
-        line_items = []
+        line_items: list[ConnectorOrderLineItem] = []
         for item in items:
-            li: dict = {
-                "quantity": item.get("quantity", 1),
-                "name": item.get("name", "Unknown product"),
-                "price": item.get("price", 0),
-                "image_url": item.get("image", ""),
-            }
-            if item.get("product_id"):
-                li["product_id"] = item["product_id"]
-            if item.get("size"):
-                li["size"] = item["size"]
-            if item.get("color"):
-                li["color"] = item["color"]
-            line_items.append(li)
+            line_items.append(
+                ConnectorOrderLineItem(
+                    external_variant_id=None,
+                    external_product_id=item.get("product_id"),
+                    name=item.get("name", "Unknown product"),
+                    quantity=item.get("quantity", 1),
+                    unit_price=item.get("price", 0),
+                    option1=item.get("size") or None,
+                    option2=item.get("color") or None,
+                    image_url=item.get("image") or "",
+                )
+            )
 
         if not line_items:
             return
 
-        # Parse address
         shipping = order_dict.get("shipping_address") or {}
         if isinstance(shipping, str):
             shipping = json.loads(shipping)
@@ -178,33 +177,43 @@ class OrderService:
             "phone": shipping.get("phone", order_dict.get("shopper_email", "")),
         }
 
-        payload = {
-            "email": order_dict.get("shopper_email") or f"{site_id}@orders.zunkireelabs.com",
-            "phone": shipping.get("phone"),
-            "line_items": line_items,
-            "shipping_address": address,
-            "payment_method": order_dict.get("payment_method", "online"),
-            "payment_intent_id": order_dict.get("payment_intent_id"),
-            "note": f"Synced from Zunkiree widget. Order #{order_dict.get('order_number', '')}",
-            "subtotal": order_dict.get("subtotal"),
-            "total": order_dict.get("total"),
-            "currency": order_dict.get("currency"),
-        }
+        draft = ConnectorOrderDraft(
+            email=order_dict.get("shopper_email") or f"{site_id}@orders.zunkireelabs.com",
+            phone=shipping.get("phone"),
+            line_items=line_items,
+            subtotal=order_dict.get("subtotal") or 0,
+            total=order_dict.get("total") or 0,
+            currency=order_dict.get("currency") or "NPR",
+            payment_method=order_dict.get("payment_method", "online"),
+            payment_intent_id=order_dict.get("payment_intent_id"),
+            shipping_address=address,
+            billing_address=None,
+            note=f"Synced from Zunkiree widget. Order #{order_dict.get('order_number', '')}",
+        )
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                f"{settings.agenticom_api_url}/api/sync/orders",
-                json=payload,
-                headers={
-                    "X-Sync-Secret": settings.agenticom_sync_secret,
-                    "X-Site-ID": site_id,
-                    "Content-Type": "application/json",
-                },
+        connector = get_connector(
+            "stella",
+            {
+                "api_url": settings.agenticom_api_url,
+                "legacy_shared_secret": settings.agenticom_sync_secret,
+                "remote_site_id": site_id,
+            },
+        )
+
+        try:
+            receipt = await connector.create_order(
+                draft,
+                idempotency_key=f"zkr_order_{order_dict.get('id', '')}",
             )
-            if resp.status_code == 201:
-                logger.info("[ORDER-SYNC] Order %s synced to Agenticom: %s", order_dict.get("order_number"), resp.json().get("order_number"))
-            else:
-                logger.warning("[ORDER-SYNC] Agenticom returned %d: %s", resp.status_code, resp.text[:200])
+        except ConnectorRequestError as e:
+            logger.warning("[ORDER-SYNC] Agenticom returned %d: %s", e.status_code, (e.body or "")[:200])
+            return
+
+        logger.info(
+            "[ORDER-SYNC] Order %s synced to Agenticom: %s",
+            order_dict.get("order_number"),
+            receipt.external_order_number,
+        )
 
     def _order_to_dict(self, order: Order) -> dict:
         """Convert Order model to API dict."""
