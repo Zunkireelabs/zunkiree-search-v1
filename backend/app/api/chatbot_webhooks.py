@@ -412,6 +412,9 @@ async def _handle_incoming_message(
                     for s in p.get("sizes", []):
                         if s not in available_sizes:
                             available_sizes.append(s)
+            # Fallback to standard sizes if asking about size but no sizes found
+            if size_question and not available_sizes:
+                available_sizes = ["S", "M", "L", "XL"]
 
             # Decide what to attach to the answer message
             quick_reply_options = None
@@ -458,7 +461,7 @@ async def _handle_incoming_message(
                         page_id=send_page_id,
                         access_token=access_token,
                         recipient_id=sender_id,
-                        products=products[:5],
+                        products=products[:10],
                     )
                 except Exception as e:
                     logger.warning("Product cards failed: %s", e)

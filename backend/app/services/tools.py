@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from app.models.product import Product
 from app.models.widget_config import WidgetConfig
+from app.models.customer import Customer
 from app.services.cart import get_cart_service
 from app.services.embeddings import get_embedding_service
 from app.services.vector_store import get_vector_store_service
@@ -436,6 +437,16 @@ async def _storefront_realtime_search(
                     continue
                 if max_price and price and price > max_price:
                     continue
+                # Extract sizes/colors from options (Agenticom uses options, not flat sizes/colors)
+                sizes = p.get("sizes") or []
+                colors = p.get("colors") or []
+                for opt in (p.get("options") or []):
+                    opt_name = (opt.get("name") or "").lower()
+                    if opt_name == "size" and not sizes:
+                        sizes = opt.get("values", [])
+                    elif opt_name == "color" and not colors:
+                        colors = opt.get("values", [])
+
                 filtered.append({
                     "id": p.get("id"),
                     "name": p.get("name", ""),
@@ -445,12 +456,12 @@ async def _storefront_realtime_search(
                     "images": [img.get("url", "") for img in (p.get("images") or [])],
                     "url": p.get("url", ""),
                     "in_stock": p.get("in_stock", True),
-                    "sizes": p.get("sizes", []),
-                    "colors": p.get("colors", []),
+                    "sizes": sizes,
+                    "colors": colors,
                     "slug": p.get("slug", ""),
                 })
 
-            return {"products": filtered[:5]}
+            return {"products": filtered[:10]}
     except Exception as e:
         logger.error("[STOREFRONT] Real-time search failed: %s", e)
         return {"products": [], "message": "Storefront search temporarily unavailable."}
@@ -515,7 +526,19 @@ async def _add_to_cart(
     except (ValueError, AttributeError):
         return {"error": f"Invalid product ID: {product_id}"}
 
-    # Validate product exists
+    # Check if this tenant uses storefront (Agenticom) products
+    wc_result = await db.execute(
+        select(WidgetConfig).where(WidgetConfig.customer_id == customer_id)
+    )
+    widget_config = wc_result.scalar_one_or_none()
+    product_source = getattr(widget_config, "product_source", "scraped") if widget_config else "scraped"
+
+    if product_source == "storefront":
+        return await _add_storefront_product_to_cart(
+            db, session_id, customer_id, product_id, quantity, size, color,
+        )
+
+    # Default: local DB product lookup
     result = await db.execute(
         select(Product).where(
             Product.id == parsed_product_id,
@@ -548,6 +571,112 @@ async def _add_to_cart(
     await cart_service.save_to_db(db, session_id, customer_id)
 
     return {"cart": cart.to_dict(), "message": f"Added {product.name} to your cart!"}
+
+
+async def _add_storefront_product_to_cart(
+    db: AsyncSession,
+    session_id: str,
+    customer_id: uuid.UUID,
+    product_id: str,
+    quantity: int = 1,
+    size: str = "",
+    color: str = "",
+) -> dict:
+    """Add a storefront (Agenticom) product to cart via availability API."""
+    import httpx
+    from app.config import get_settings
+
+    settings = get_settings()
+    if not settings.agenticom_api_url or not settings.agenticom_sync_secret:
+        return {"error": "Storefront not configured"}
+
+    # Get site_id from customer
+    cust_result = await db.execute(
+        select(Customer).where(Customer.id == customer_id)
+    )
+    customer = cust_result.scalar_one_or_none()
+    if not customer:
+        return {"error": "Customer not found"}
+
+    # Check availability via Agenticom
+    try:
+        params = {"product_id": product_id}
+        if size:
+            params["option1"] = size
+        if color:
+            params["option2"] = color
+
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(
+                f"{settings.agenticom_api_url}/api/sync/availability",
+                params=params,
+                headers={
+                    "X-Sync-Secret": settings.agenticom_sync_secret,
+                    "X-Site-ID": customer.site_id,
+                },
+            )
+
+            if resp.status_code == 404:
+                return {"error": "Product not found or variant not available"}
+            if resp.status_code != 200:
+                logger.warning("[STOREFRONT] Availability check returned %d: %s", resp.status_code, resp.text[:200])
+                return {"error": "Could not verify product availability"}
+
+            avail = resp.json()
+
+        if not avail.get("available"):
+            return {"error": f"{avail.get('product_name', 'Product')} is currently out of stock"}
+
+        # Also fetch product details for cart (images, url)
+        product_details = await _fetch_storefront_product(settings, customer.site_id, product_id)
+
+        cart_service = get_cart_service()
+        cart = cart_service.add_item(
+            session_id=session_id,
+            product_id=product_id,
+            name=avail.get("product_name", "Product"),
+            price=float(avail.get("price", 0)),
+            currency=product_details.get("currency", "NPR"),
+            quantity=quantity,
+            size=size,
+            color=color,
+            image=product_details.get("image", ""),
+            url=product_details.get("url", ""),
+        )
+
+        await cart_service.save_to_db(db, session_id, customer_id)
+
+        return {"cart": cart.to_dict(), "message": f"Added {avail.get('product_name', 'Product')} to your cart!"}
+
+    except Exception as e:
+        logger.error("[STOREFRONT] Add to cart failed: %s", e)
+        return {"error": "Could not add product to cart. Please try again."}
+
+
+async def _fetch_storefront_product(settings, site_id: str, product_id: str) -> dict:
+    """Fetch product details from Agenticom for cart display."""
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(
+                f"{settings.agenticom_api_url}/api/sync/products/{product_id}",
+                headers={
+                    "X-Sync-Secret": settings.agenticom_sync_secret,
+                    "X-Site-ID": site_id,
+                },
+            )
+            if resp.status_code == 200:
+                p = resp.json()
+                images = p.get("images", [])
+                return {
+                    "currency": p.get("currency", "NPR"),
+                    "image": images[0].get("url", "") if images else "",
+                    "url": p.get("url", ""),
+                }
+    except Exception:
+        pass
+    return {}
 
 
 async def _get_cart(db: AsyncSession, session_id: str) -> dict:

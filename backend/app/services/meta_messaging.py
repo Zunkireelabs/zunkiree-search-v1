@@ -261,7 +261,12 @@ class MetaMessagingClient:
                 "subtitle": subtitle[:80],
             }
             if images:
-                element["image_url"] = images[0]
+                img_url = images[0]
+                # Instagram doesn't render .webp in templates — proxy to convert to jpg
+                if img_url.endswith(".webp"):
+                    from urllib.parse import quote
+                    img_url = f"https://images.weserv.nl/?url={quote(img_url, safe='')}&output=jpg"
+                element["image_url"] = img_url
             if p.get("url"):
                 element["default_action"] = {"type": "web_url", "url": p["url"]}
 
@@ -294,7 +299,53 @@ class MetaMessagingClient:
         resp = await self._http.post(url, json=payload, params={"access_token": access_token})
         result = resp.json()
         if resp.status_code != 200:
-            logger.error("Meta Send API error (product_cards): %s %s", resp.status_code, result)
+            logger.warning("Meta Send API carousel failed (%s), falling back to text+images: %s", resp.status_code, result)
+            return await self._send_product_fallback(platform, page_id, access_token, recipient_id, products)
+        return result
+
+    async def _send_product_fallback(
+        self,
+        platform: str,
+        page_id: str,
+        access_token: str,
+        recipient_id: str,
+        products: list[dict],
+    ) -> dict:
+        """Fallback: send products as individual image messages with text overlay."""
+        url = SEND_API_URLS[platform].format(page_id=page_id)
+        result = {}
+
+        for p in products[:3]:
+            images = p.get("images", [])
+            price = p.get("price", "")
+            currency = p.get("currency", "")
+            name = p.get("name", "")
+
+            # Send image if available
+            if images and images[0]:
+                img_url = images[0]
+                if img_url.endswith(".webp"):
+                    from urllib.parse import quote
+                    img_url = f"https://images.weserv.nl/?url={quote(img_url, safe='')}&output=jpg"
+                img_payload = {
+                    "recipient": {"id": recipient_id},
+                    "message": {
+                        "attachment": {
+                            "type": "image",
+                            "payload": {"url": img_url, "is_reusable": True},
+                        }
+                    },
+                }
+                resp = await self._http.post(url, json=img_payload, params={"access_token": access_token})
+                if resp.status_code != 200:
+                    logger.warning("Image send failed for %s: %s", name, resp.json())
+
+            # Send product info as text
+            text = f"{name}\n{currency} {price}"
+            if p.get("url"):
+                text += f"\n{p['url']}"
+            await self.send_text_message(platform, page_id, access_token, recipient_id, text)
+
         return result
 
     async def _send_whatsapp_text(

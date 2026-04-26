@@ -398,7 +398,6 @@ class ChatbotQueryService:
                 if event_type == "products":
                     products = event.get("data", [])
                 elif event_type == "cart_update":
-                    # Cart was modified — include cart info in answer
                     pass
                 elif event_type == "done":
                     answer = event.get("answer", "")
