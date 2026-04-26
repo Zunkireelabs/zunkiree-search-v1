@@ -61,6 +61,24 @@ jobs:
             git fetch origin stage
             git checkout -B stage origin/stage
 
+            # Bootstrap backend/.env.staging from prod path on first run.
+            # The file is gitignored (.env* pattern), so `git clone` doesn't
+            # bring it into the new staging dir. We copy it once from the
+            # prod repo's path. Subsequent deploys are no-ops (file already
+            # exists). Transitional — B5 will replace this with .env
+            # rendering from GitHub secrets at deploy time, removing the
+            # dependency on the prod path entirely.
+            if [ ! -f backend/.env.staging ]; then
+              PROD_STAGING_ENV="/home/zunkireelabs/devprojects/zunkiree-search-v1/backend/.env.staging"
+              if [ -f "$PROD_STAGING_ENV" ]; then
+                echo "=== Bootstrapping backend/.env.staging from prod path (first run) ==="
+                cp "$PROD_STAGING_ENV" backend/.env.staging
+              else
+                echo "::error::backend/.env.staging missing from staging dir AND prod path. Cannot bootstrap. Add it manually to either path before retrying."
+                exit 1
+              fi
+            fi
+
             echo "=== Running migrations ==="
             if [ "${{ inputs.skip_migrations }}" != "true" ]; then
               # First-time bootstrap: container won't exist yet, so DB_URL
