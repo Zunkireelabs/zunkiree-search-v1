@@ -400,60 +400,59 @@ async def _storefront_realtime_search(
     in_stock_only: bool = True,
 ) -> dict:
     """Search products from Agenticom storefront API in real-time."""
-    import httpx
     from app.config import get_settings
+    from app.services.connectors import get_connector
+    from app.services.connectors.agenticom_connector import ConnectorRequestError
 
     settings = get_settings()
     if not settings.agenticom_api_url or not settings.agenticom_sync_secret:
         return {"products": [], "message": "Storefront not configured."}
 
+    connector = get_connector(
+        "stella",
+        {
+            "api_url": settings.agenticom_api_url,
+            "legacy_shared_secret": settings.agenticom_sync_secret,
+            "remote_site_id": site_id,
+        },
+    )
+
     try:
-        params: dict = {"search": query, "limit": 10}
-        if in_stock_only:
-            params["in_stock"] = "true"
-
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            resp = await client.get(
-                f"{settings.agenticom_api_url}/api/sync/products",
-                params=params,
-                headers={
-                    "X-Sync-Secret": settings.agenticom_sync_secret,
-                    "X-Site-ID": site_id,
-                },
-            )
-            if resp.status_code != 200:
-                logger.warning("[STOREFRONT] API returned %d: %s", resp.status_code, resp.text[:200])
-                return {"products": [], "message": "Could not reach storefront."}
-
-            data = resp.json()
-            products = data.get("products", [])
-
-            # Apply price filters
-            filtered = []
-            for p in products:
-                price = p.get("price") or p.get("variants", [{}])[0].get("price")
-                if min_price and price and price < min_price:
-                    continue
-                if max_price and price and price > max_price:
-                    continue
-                filtered.append({
-                    "id": p.get("id"),
-                    "name": p.get("name", ""),
-                    "description": p.get("description", ""),
-                    "price": price,
-                    "currency": p.get("currency", "NPR"),
-                    "images": [img.get("url", "") for img in (p.get("images") or [])],
-                    "url": p.get("url", ""),
-                    "in_stock": p.get("in_stock", True),
-                    "sizes": p.get("sizes", []),
-                    "colors": p.get("colors", []),
-                    "slug": p.get("slug", ""),
-                })
-
-            return {"products": filtered[:5]}
+        products = await connector.search_products(query, limit=10, in_stock_only=in_stock_only)
+    except ConnectorRequestError as e:
+        logger.warning("[STOREFRONT] API returned %d: %s", e.status_code, (e.body or "")[:200])
+        return {"products": [], "message": "Could not reach storefront."}
     except Exception as e:
         logger.error("[STOREFRONT] Real-time search failed: %s", e)
         return {"products": [], "message": "Storefront search temporarily unavailable."}
+
+    # Adapter: flatten ConnectorProduct dataclasses back to the existing dict
+    # shape that this tool's downstream consumers expect (sizes, colors, slug
+    # at top level). Kept at the call site, not in the connector — future
+    # connectors will want different output shapes.
+    filtered = []
+    for product in products:
+        price = product.price
+        if min_price and price and price < min_price:
+            continue
+        if max_price and price and price > max_price:
+            continue
+        raw = product.raw or {}
+        filtered.append({
+            "id": product.external_id,
+            "name": product.name,
+            "description": product.description or "",
+            "price": price,
+            "currency": product.currency,
+            "images": product.images,
+            "url": product.url or "",
+            "in_stock": product.in_stock,
+            "sizes": raw.get("sizes", []),
+            "colors": raw.get("colors", []),
+            "slug": raw.get("slug", ""),
+        })
+
+    return {"products": filtered[:5]}
 
 
 async def _fallback_product_search(
