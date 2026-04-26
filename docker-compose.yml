@@ -50,12 +50,15 @@ services:
     profiles:
       - dev
 
-  # Staging (deploy any branch for testing chatbot/payments with public URL)
-  zunkiree-search-api-staging:
+  # Staging — runs the `stage` branch via deploy-staging.yml workflow.
+  # Container lives at /home/zunkireelabs/devprojects/zunkiree-search-v1-stage
+  # on the VPS; reads its env from backend/.env.staging in that dir.
+  # Single-DB until Phase C — points at same Supabase as prod.
+  zunkiree-search-api-stage:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: zunkiree-search-api-staging
+    container_name: zunkiree-search-api-stage
     restart: unless-stopped
     env_file:
       - ./backend/.env.staging
@@ -69,10 +72,10 @@ services:
       start_period: 15s
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.zunkiree-staging.rule=Host(`staging-api.zunkireelabs.com`)"
-      - "traefik.http.routers.zunkiree-staging.entrypoints=websecure"
-      - "traefik.http.routers.zunkiree-staging.tls.certresolver=letsencrypt"
-      - "traefik.http.services.zunkiree-staging.loadbalancer.server.port=8000"
+      - "traefik.http.routers.zunkiree-stage.rule=Host(`staging-api.zunkireelabs.com`)"
+      - "traefik.http.routers.zunkiree-stage.entrypoints=websecure"
+      - "traefik.http.routers.zunkiree-stage.tls.certresolver=letsencrypt"
+      - "traefik.http.services.zunkiree-stage.loadbalancer.server.port=8000"
     networks:
       - hosting
     profiles:

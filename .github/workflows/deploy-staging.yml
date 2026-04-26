@@ -1,0 +1,107 @@
+# Branch flow:
+#   feature/* → PR → stage → deploy-staging.yml → staging-api.zunkireelabs.com
+#   stage → fast-forward → main → deploy.yml → api.zunkireelabs.com
+#
+# Single-DB scope (until Phase C):
+#   Both stage and prod containers share the same Supabase project (Mumbai,
+#   qzgcowcrtggmttfczbdo). Migrations merged to stage run against shared
+#   prod DB. Stage = code-preview, NOT data-isolation. Discipline: every
+#   migration must be additive / reversible by construction.
+
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [stage]
+    paths:
+      - 'backend/**'
+      - 'docker-compose.yml'
+      - 'scripts/**'
+  workflow_dispatch:
+    inputs:
+      skip_migrations:
+        description: "Skip database migrations"
+        required: false
+        default: "false"
+
+# Prevent concurrent staging deploys
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+
+            STAGE_DIR="/home/zunkireelabs/devprojects/zunkiree-search-v1-stage"
+
+            # Self-bootstrap: clone the repo into the staging dir on first run.
+            if [ ! -d "$STAGE_DIR/.git" ]; then
+              echo "=== First-time staging bootstrap: cloning repo ==="
+              mkdir -p "$STAGE_DIR"
+              git clone https://github.com/Zunkireelabs/zunkiree-search-v1.git "$STAGE_DIR"
+            fi
+            cd "$STAGE_DIR"
+
+            echo "=== Resetting staging working tree to origin/stage ==="
+            # Same stateless contract as prod (deploy.yml). Anything edited
+            # directly on the VPS gets blown away by the next deploy.
+            # `git checkout -B stage origin/stage` is robust against the VPS
+            # being on any branch.
+            git fetch origin stage
+            git checkout -B stage origin/stage
+
+            echo "=== Running migrations ==="
+            if [ "${{ inputs.skip_migrations }}" != "true" ]; then
+              # First-time bootstrap: container won't exist yet, so DB_URL
+              # extraction has to fall back to reading backend/.env.staging
+              # directly. Once the staging container is running, future
+              # deploys read from the running container as the source of
+              # truth (matches deploy.yml's pattern).
+              DB_URL=$(docker compose exec -T zunkiree-search-api-stage printenv DATABASE_URL 2>/dev/null | tr -d '\r' || true)
+              if [ -z "$DB_URL" ] && [ -f backend/.env.staging ]; then
+                echo "Staging container not running yet — reading DATABASE_URL from backend/.env.staging for bootstrap"
+                DB_URL=$(grep -E '^DATABASE_URL=' backend/.env.staging | head -1 | cut -d'=' -f2-)
+              fi
+              if [ -z "$DB_URL" ]; then
+                echo "::error::Could not read DATABASE_URL — refusing to deploy staging code without verifying migrations ran"
+                exit 1
+              fi
+              ./scripts/migrate.sh "$DB_URL"
+            else
+              echo "Skipping migrations (manual override)"
+            fi
+
+            echo "=== Building staging Docker image ==="
+            docker compose --profile staging build zunkiree-search-api-stage
+
+            echo "=== Restarting staging service ==="
+            docker compose --profile staging up -d --force-recreate zunkiree-search-api-stage
+
+            echo "=== Verifying health ==="
+            sleep 10
+            for i in 1 2 3 4 5; do
+              if docker exec zunkiree-search-api-stage python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" 2>/dev/null; then
+                echo "Staging health check passed"
+                exit 0
+              fi
+              echo "Attempt $i failed, waiting 10s..."
+              sleep 10
+            done
+            echo "ERROR: Staging health check failed after 5 attempts"
+            docker logs zunkiree-search-api-stage --tail 30
+            exit 1
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "::error::Staging deploy failed! Check VPS logs."
