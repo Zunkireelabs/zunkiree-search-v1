@@ -64,9 +64,12 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-3-large"
     embedding_dimensions: int = 3072
 
-    # Agenticom Sync
+    # Agenticom Sync (legacy global secret; per-tenant credentials in tenant_backend_credentials)
     agenticom_api_url: str = ""  # e.g., https://api-agenticom.zunkireelabs.com
-    agenticom_sync_secret: str = ""  # Shared secret for X-Sync-Secret header
+    agenticom_sync_secret: str = ""  # Shared secret for X-Sync-Secret header (legacy fallback only)
+
+    # Per-tenant backend credentials encryption (Z2)
+    backend_credentials_encryption_key: str = ""  # Fernet key, required before any per-tenant credential row is created
 
     # Meta Messaging / Chatbot
     meta_app_secret: str = ""
