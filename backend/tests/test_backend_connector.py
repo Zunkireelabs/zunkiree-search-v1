@@ -179,3 +179,151 @@ def test_agenticom_connector_health_check_requires_full_config():
     import asyncio
     assert asyncio.run(not_configured.health_check()) is False
     assert asyncio.run(fully_configured.health_check()) is True
+
+
+# ---------- Z2: dual-path mode detection ----------
+
+def test_connector_mode_v1_when_sync_key_pair_present():
+    conn = AgenticomConnector(
+        {
+            "api_url": "https://example.test",
+            "sync_key_id": "ssk_live_abc",
+            "sync_key_secret": "ssk_sec_def",
+            "remote_site_id": "kasa",
+        }
+    )
+    assert conn.mode == "v1"
+
+
+def test_connector_mode_legacy_when_only_shared_secret_present():
+    conn = AgenticomConnector(
+        {"api_url": "https://example.test", "legacy_shared_secret": "shared", "remote_site_id": "kasa"},
+    )
+    assert conn.mode == "legacy"
+
+
+def test_connector_mode_unconfigured_when_nothing_present():
+    conn = AgenticomConnector({})
+    assert conn.mode == "unconfigured"
+
+
+def test_connector_v1_creds_take_precedence_over_legacy():
+    conn = AgenticomConnector(
+        {
+            "api_url": "https://example.test",
+            "sync_key_id": "ssk_live_abc",
+            "sync_key_secret": "ssk_sec_def",
+            "legacy_shared_secret": "shared-should-be-ignored",
+            "remote_site_id": "kasa",
+        }
+    )
+    assert conn.mode == "v1"
+
+
+# ---------- Z2: wire fidelity tests (respx-mocked httpx) ----------
+# These two tests are the regression guarantee that the connector dual-path
+# does not change observable wire output for legacy-mode tenants AND that v1
+# mode hits the right URL with the right auth.
+
+import respx  # noqa: E402
+import httpx  # noqa: E402
+
+
+@respx.mock
+async def test_legacy_mode_search_wire_is_byte_identical_to_z1():
+    """Asserts headers + URL + path of legacy-mode HTTP request exactly match
+    what Z1's inline httpx block sent. Any drift here breaks unmigrated tenants."""
+    route = respx.get("https://example.test/api/sync/products").mock(
+        return_value=httpx.Response(200, json={"products": []}),
+    )
+
+    conn = AgenticomConnector(
+        {"api_url": "https://example.test", "legacy_shared_secret": "shared", "remote_site_id": "kasa"},
+    )
+    await conn.search_products("tee", limit=10, in_stock_only=True)
+
+    assert route.called
+    sent = route.calls[0].request
+
+    # URL: legacy path, no /v1/
+    assert sent.url.path == "/api/sync/products"
+    # Headers: legacy pair, no Bearer
+    assert sent.headers.get("X-Sync-Secret") == "shared"
+    assert sent.headers.get("X-Site-ID") == "kasa"
+    assert "Authorization" not in sent.headers
+    assert "X-Stella-Site-Id" not in sent.headers
+    # Query params: search + limit + in_stock=true
+    assert sent.url.params.get("search") == "tee"
+    assert sent.url.params.get("limit") == "10"
+    assert sent.url.params.get("in_stock") == "true"
+
+
+@respx.mock
+async def test_v1_mode_search_uses_bearer_and_versioned_path():
+    """Asserts v1-mode hits /api/sync/v1/* with Bearer auth + X-Stella-Site-Id
+    per SHARED-CONTRACT.md §4."""
+    route = respx.get("https://example.test/api/sync/v1/products").mock(
+        return_value=httpx.Response(200, json={"products": []}),
+    )
+
+    conn = AgenticomConnector(
+        {
+            "api_url": "https://example.test",
+            "sync_key_id": "ssk_live_abc",
+            "sync_key_secret": "ssk_sec_def",
+            "remote_site_id": "kasa-stella",
+        }
+    )
+    await conn.search_products("tee", limit=10, in_stock_only=True)
+
+    assert route.called
+    sent = route.calls[0].request
+
+    assert sent.url.path == "/api/sync/v1/products"
+    assert sent.headers.get("Authorization") == "Bearer ssk_sec_def"
+    assert sent.headers.get("X-Stella-Site-Id") == "kasa-stella"
+    assert "X-Sync-Secret" not in sent.headers
+    assert "X-Site-ID" not in sent.headers
+
+
+@respx.mock
+async def test_legacy_mode_create_order_post_byte_identical():
+    route = respx.post("https://example.test/api/sync/orders").mock(
+        return_value=httpx.Response(201, json={"order_number": "STELLA-001"}),
+    )
+
+    conn = AgenticomConnector(
+        {"api_url": "https://example.test", "legacy_shared_secret": "shared", "remote_site_id": "kasa"},
+    )
+    draft = ConnectorOrderDraft(
+        email="s@e.com",
+        phone="9800",
+        line_items=[
+            ConnectorOrderLineItem(
+                external_variant_id=None,
+                external_product_id="p1",
+                name="Tee",
+                quantity=1,
+                unit_price=1499.0,
+            )
+        ],
+        subtotal=1499.0,
+        total=1499.0,
+        currency="NPR",
+        payment_method="cod",
+        payment_intent_id=None,
+        shipping_address={"city": "Kathmandu"},
+        billing_address=None,
+        note="from widget",
+    )
+    receipt = await conn.create_order(draft, idempotency_key="zkr_order_xyz")
+
+    assert receipt.external_order_number == "STELLA-001"
+    sent = route.calls[0].request
+    assert sent.url.path == "/api/sync/orders"
+    assert sent.headers.get("X-Sync-Secret") == "shared"
+    assert sent.headers.get("X-Site-ID") == "kasa"
+    assert sent.headers.get("Content-Type") == "application/json"
+    # Z2 must NOT yet send Idempotency-Key or X-Correlation-Id (those are Z3).
+    assert "Idempotency-Key" not in sent.headers
+    assert "X-Correlation-Id" not in sent.headers

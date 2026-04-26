@@ -13,6 +13,7 @@ from app.models.payment import Payment
 from app.models.room import Room
 from app.models.chatbot import ChatbotChannel, ChatbotConversation, ChatbotMessageLog
 from app.models.business_profile import BusinessProfile
+from app.models.tenant_backend_credentials import TenantBackendCredentials
 
 __all__ = [
     "Customer",
@@ -33,4 +34,5 @@ __all__ = [
     "ChatbotConversation",
     "ChatbotMessageLog",
     "BusinessProfile",
+    "TenantBackendCredentials",
 ]

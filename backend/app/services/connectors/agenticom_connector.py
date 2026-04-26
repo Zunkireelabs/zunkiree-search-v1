@@ -1,11 +1,21 @@
 """
 AgenticomConnector — Stella backend implementation of BackendConnector.
 
-Z1 wraps the existing Stella sync wire (legacy `/api/sync/*` endpoints with
-`X-Sync-Secret` + `X-Site-ID` headers) inside the BackendConnector
-abstraction. Wire behavior is unchanged from what previously lived inline in
-`order.py` and `tools.py`. The v1 wire migration (`/api/sync/v1/*` with
-per-tenant Bearer auth, idempotency keys, correlation IDs) lands in Z3.
+Two wire modes:
+
+- **legacy**: when only a global shared secret is available
+  (`AGENTICOM_SYNC_SECRET` from `Settings`). Headers `X-Sync-Secret` +
+  `X-Site-ID`, paths under `/api/sync/`. This is the Z1 wire — preserved
+  byte-identically for any tenant that hasn't been migrated to per-tenant
+  credentials. Zero-downtime migration depends on this.
+
+- **v1**: when per-tenant `sync_key_id` + `sync_key_secret` are present in
+  the config (issued by Stella per `SHARED-CONTRACT.md` §4). Headers
+  `Authorization: Bearer <secret>` + `X-Stella-Site-Id`, paths under
+  `/api/sync/v1/`.
+
+Z2 introduces the dispatching. Idempotency-Key and X-Correlation-Id headers
+arrive in Z3.
 """
 import logging
 from datetime import datetime, timezone
@@ -42,17 +52,44 @@ class AgenticomConnector(BackendConnector):
 
     def __init__(self, config: dict):
         self._api_url = (config.get("api_url") or "").rstrip("/")
-        self._sync_secret = config.get("legacy_shared_secret") or ""
         self._remote_site_id = config.get("remote_site_id") or ""
 
-    def _legacy_headers(self) -> dict:
+        sync_key_id = config.get("sync_key_id") or ""
+        sync_key_secret = config.get("sync_key_secret") or ""
+        legacy_secret = config.get("legacy_shared_secret") or ""
+
+        if sync_key_id and sync_key_secret:
+            self.mode = "v1"
+            self._sync_key_id = sync_key_id
+            self._sync_key_secret = sync_key_secret
+            self._legacy_secret = ""
+        elif legacy_secret:
+            self.mode = "legacy"
+            self._sync_key_id = ""
+            self._sync_key_secret = ""
+            self._legacy_secret = legacy_secret
+        else:
+            self.mode = "unconfigured"
+            self._sync_key_id = ""
+            self._sync_key_secret = ""
+            self._legacy_secret = ""
+
+    def _path_prefix(self) -> str:
+        return "/api/sync/v1" if self.mode == "v1" else "/api/sync"
+
+    def _auth_headers(self) -> dict:
+        if self.mode == "v1":
+            return {
+                "Authorization": f"Bearer {self._sync_key_secret}",
+                "X-Stella-Site-Id": self._remote_site_id,
+            }
         return {
-            "X-Sync-Secret": self._sync_secret,
+            "X-Sync-Secret": self._legacy_secret,
             "X-Site-ID": self._remote_site_id,
         }
 
     def _is_configured(self) -> bool:
-        return bool(self._api_url and self._sync_secret)
+        return self.mode != "unconfigured" and bool(self._api_url)
 
     async def health_check(self) -> bool:
         return self._is_configured() and bool(self._remote_site_id)
@@ -73,9 +110,9 @@ class AgenticomConnector(BackendConnector):
 
         async with httpx.AsyncClient(timeout=self._PRODUCT_TIMEOUT) as client:
             resp = await client.get(
-                f"{self._api_url}/api/sync/products",
+                f"{self._api_url}{self._path_prefix()}/products",
                 params=params,
-                headers=self._legacy_headers(),
+                headers=self._auth_headers(),
             )
             if resp.status_code != 200:
                 raise ConnectorRequestError(resp.status_code, resp.text)
@@ -115,9 +152,9 @@ class AgenticomConnector(BackendConnector):
 
         async with httpx.AsyncClient(timeout=self._PRODUCT_TIMEOUT) as client:
             resp = await client.get(
-                f"{self._api_url}/api/sync/products",
+                f"{self._api_url}{self._path_prefix()}/products",
                 params=params,
-                headers=self._legacy_headers(),
+                headers=self._auth_headers(),
             )
             if resp.status_code != 200:
                 raise ConnectorRequestError(resp.status_code, resp.text)
@@ -132,9 +169,8 @@ class AgenticomConnector(BackendConnector):
         idempotency_key: str,
         correlation_id: Optional[str] = None,
     ) -> ConnectorOrderReceipt:
-        # Z1 keeps the legacy wire shape verbatim; idempotency_key and
-        # correlation_id are accepted on the interface but not yet sent on
-        # headers (that's Z3's job, alongside the v1 endpoint switch).
+        # Z2 dispatches to the right wire per mode but does not yet send
+        # Idempotency-Key or X-Correlation-Id — those land in Z3.
         if not self._is_configured():
             raise ConnectorRequestError(0, "Agenticom sync not configured")
 
@@ -170,9 +206,9 @@ class AgenticomConnector(BackendConnector):
 
         async with httpx.AsyncClient(timeout=self._ORDER_TIMEOUT) as client:
             resp = await client.post(
-                f"{self._api_url}/api/sync/orders",
+                f"{self._api_url}{self._path_prefix()}/orders",
                 json=payload,
-                headers={**self._legacy_headers(), "Content-Type": "application/json"},
+                headers={**self._auth_headers(), "Content-Type": "application/json"},
             )
 
         if resp.status_code != 201:
