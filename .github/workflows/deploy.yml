@@ -41,12 +41,13 @@ jobs:
 
             echo "=== Resetting working tree to origin/main ==="
             # Stateless deploy: VPS code state always equals origin/main.
-            # Anything edited directly on the VPS gets blown away by the next
-            # deploy — that's the contract, post-Phase-B. Eliminates the
-            # dirty-tree footgun that caused Z1 + Z2 deploys to fail silently
-            # on 2026-04-26.
+            # `git checkout -B main origin/main` is robust against the VPS
+            # being on any branch — the exact failure mode that caused Z1 +
+            # Z2 deploys to fail silently on 2026-04-26. Plain `git reset
+            # --hard origin/main` would silently corrupt a non-main branch
+            # pointer instead of switching to main.
             git fetch origin main
-            git reset --hard origin/main
+            git checkout -B main origin/main
 
             echo "=== Running migrations ==="
             if [ "${{ inputs.skip_migrations }}" != "true" ]; then

@@ -23,11 +23,13 @@ jobs:
             set -e
             cd /home/zunkireelabs/devprojects/zunkiree-search-v1
 
-            # Stateless deploy: match the contract from deploy.yml. VPS code
-            # state always equals origin/main; anything edited on the VPS gets
-            # blown away on the next migration / deploy run.
+            # Stateless deploy: match the contract from deploy.yml.
+            # `git checkout -B main origin/main` switches to main and resets
+            # it to origin/main atomically, regardless of which branch the
+            # VPS happens to be on. Plain `git reset --hard origin/main`
+            # would corrupt a non-main branch pointer instead of switching.
             git fetch origin main
-            git reset --hard origin/main
+            git checkout -B main origin/main
 
             DB_URL=$(docker compose exec -T zunkiree-search-api printenv DATABASE_URL 2>/dev/null | tr -d '\r')
             if [ -z "$DB_URL" ]; then
