@@ -71,6 +71,10 @@ class Settings(BaseSettings):
     # Per-tenant backend credentials encryption (Z2)
     backend_credentials_encryption_key: str = ""  # Fernet key, required before any per-tenant credential row is created
 
+    # Z6 — per-tenant admin API for Stella callers
+    master_admin_key: str = ""  # Required for tenant create/delete; empty → master endpoints hard-fail 401 master_admin_key_not_configured
+    widget_script_base_url: str = ""  # Vercel CDN base for the embed bundle, e.g. https://zunkiree-search-v1.vercel.app
+
     # Meta Messaging / Chatbot
     meta_app_secret: str = ""
     meta_verify_token: str = ""

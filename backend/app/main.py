@@ -17,6 +17,7 @@ from app.api.chatbot_admin import router as chatbot_admin_router
 from app.api.admin_backend_credentials import router as admin_backend_credentials_router
 from app.api.hooks_stella import router as hooks_stella_router
 from app.api.admin_inbound_webhooks import router as admin_inbound_webhooks_router
+from app.api.admin_tenants import router as admin_tenants_router
 from app.middleware.correlation import CorrelationMiddleware
 from app.services.inbound_event_dispatcher import run_dispatcher_loop
 
@@ -106,6 +107,7 @@ app.include_router(chatbot_admin_router, prefix="/api/v1")
 app.include_router(admin_backend_credentials_router, prefix="/api/v1")
 app.include_router(hooks_stella_router, prefix="/api/v1")
 app.include_router(admin_inbound_webhooks_router, prefix="/api/v1")
+app.include_router(admin_tenants_router, prefix="/api/v1")
 
 
 @app.get("/")
