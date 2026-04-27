@@ -78,7 +78,7 @@ class OrderService:
             cust_result = await db.execute(select(Customer).where(Customer.id == customer_id))
             customer = cust_result.scalar_one_or_none()
             if customer and customer.website_type == "ecommerce":
-                await self._sync_to_agenticom(order_dict, customer.site_id)
+                await self._sync_to_agenticom(db, customer_id, order_dict, customer.site_id)
         except Exception as e:
             logger.error("[ORDER-SYNC] Failed to sync order %s to Agenticom: %s", order.order_number, e)
 
@@ -136,10 +136,17 @@ class OrderService:
         await db.commit()
         return {"order": self._order_to_dict(order)}
 
-    async def _sync_to_agenticom(self, order_dict: dict, site_id: str) -> None:
+    async def _sync_to_agenticom(
+        self,
+        db: AsyncSession,
+        customer_id: uuid.UUID,
+        order_dict: dict,
+        site_id: str,
+    ) -> None:
         """Send order to Agenticom merchant dashboard (non-blocking, best-effort)."""
-        from app.services.connectors import ConnectorOrderDraft, ConnectorOrderLineItem, get_connector
+        from app.services.connectors import ConnectorOrderDraft, ConnectorOrderLineItem
         from app.services.connectors.agenticom_connector import ConnectorRequestError
+        from app.services.connectors.resolver import ConnectorResolver
 
         settings = get_settings()
         if not settings.agenticom_api_url or not settings.agenticom_sync_secret:
@@ -191,14 +198,7 @@ class OrderService:
             note=f"Synced from Zunkiree widget. Order #{order_dict.get('order_number', '')}",
         )
 
-        connector = get_connector(
-            "stella",
-            {
-                "api_url": settings.agenticom_api_url,
-                "legacy_shared_secret": settings.agenticom_sync_secret,
-                "remote_site_id": site_id,
-            },
-        )
+        connector = await ConnectorResolver.for_tenant(db, customer_id, "stella")
 
         try:
             receipt = await connector.create_order(

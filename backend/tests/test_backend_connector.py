@@ -225,6 +225,7 @@ def test_connector_v1_creds_take_precedence_over_legacy():
 # does not change observable wire output for legacy-mode tenants AND that v1
 # mode hits the right URL with the right auth.
 
+import uuid  # noqa: E402
 import respx  # noqa: E402
 import httpx  # noqa: E402
 
@@ -324,6 +325,10 @@ async def test_legacy_mode_create_order_post_byte_identical():
     assert sent.headers.get("X-Sync-Secret") == "shared"
     assert sent.headers.get("X-Site-ID") == "kasa"
     assert sent.headers.get("Content-Type") == "application/json"
-    # Z2 must NOT yet send Idempotency-Key or X-Correlation-Id (those are Z3).
+    # Idempotency-Key is v1-only per SHARED-CONTRACT §6 — legacy /api/sync/orders
+    # never sends it. (Updated for Z3: X-Correlation-Id IS now stamped on every
+    # outbound call, both modes, per SHARED-CONTRACT §5. UUID v4 = 36 chars.)
     assert "Idempotency-Key" not in sent.headers
-    assert "X-Correlation-Id" not in sent.headers
+    assert "X-Correlation-Id" in sent.headers
+    assert len(sent.headers["X-Correlation-Id"]) == 36
+    uuid.UUID(sent.headers["X-Correlation-Id"])  # raises if not a valid UUID
