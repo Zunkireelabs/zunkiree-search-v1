@@ -14,6 +14,8 @@ from app.models.room import Room
 from app.models.chatbot import ChatbotChannel, ChatbotConversation, ChatbotMessageLog
 from app.models.business_profile import BusinessProfile
 from app.models.tenant_backend_credentials import TenantBackendCredentials
+from app.models.tenant_admin_token import TenantAdminToken
+from app.models.tenant_outbound_webhook import TenantOutboundWebhook
 from app.models.inbound_webhook_event import InboundWebhookEvent
 
 __all__ = [
@@ -36,5 +38,7 @@ __all__ = [
     "ChatbotMessageLog",
     "BusinessProfile",
     "TenantBackendCredentials",
+    "TenantAdminToken",
+    "TenantOutboundWebhook",
     "InboundWebhookEvent",
 ]

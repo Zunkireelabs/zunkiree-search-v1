@@ -17,6 +17,7 @@ class Customer(Base):
     api_key: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     website_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    stella_merchant_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -31,6 +32,8 @@ class Customer(Base):
     chatbot_channels: Mapped[list["ChatbotChannel"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
     business_profile: Mapped["BusinessProfile | None"] = relationship(back_populates="customer", uselist=False, cascade="all, delete-orphan")
     backend_credentials: Mapped[list["TenantBackendCredentials"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
+    admin_tokens: Mapped[list["TenantAdminToken"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
+    outbound_webhooks: Mapped[list["TenantOutboundWebhook"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
 
 
 # Import at bottom to avoid circular imports
@@ -43,3 +46,5 @@ from app.models.product import Product
 from app.models.chatbot import ChatbotChannel
 from app.models.business_profile import BusinessProfile
 from app.models.tenant_backend_credentials import TenantBackendCredentials
+from app.models.tenant_admin_token import TenantAdminToken
+from app.models.tenant_outbound_webhook import TenantOutboundWebhook
