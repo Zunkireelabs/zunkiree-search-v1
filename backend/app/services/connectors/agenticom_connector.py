@@ -14,12 +14,8 @@ Two wire modes:
   `Authorization: Bearer <secret>` + `X-Stella-Site-Id`, paths under
   `/api/sync/v1/`.
 
-Z3 contract additions:
-- Every outbound call carries `X-Correlation-Id` from the contextvar
-  (SHARED-CONTRACT §5).
-- v1-mode `create_order` carries `Idempotency-Key` (SHARED-CONTRACT §6).
-- v1-mode `search_products` falls back to legacy URL + `X-Sync-Secret`
-  because Stella v1 has no search surface (locked decision Z3 §1.2 (b)).
+Z2 introduces the dispatching. Idempotency-Key and X-Correlation-Id headers
+arrive in Z3.
 """
 import logging
 from datetime import datetime, timezone
@@ -27,7 +23,6 @@ from typing import AsyncIterator, Optional
 
 import httpx
 
-from app.config import get_settings
 from app.services.connectors.base import (
     BackendConnector,
     ConnectorAvailability,
@@ -36,7 +31,6 @@ from app.services.connectors.base import (
     ConnectorProduct,
     ConnectorVariant,
 )
-from app.services.correlation import get_correlation_id
 
 logger = logging.getLogger("zunkiree.connectors.agenticom")
 
@@ -94,25 +88,6 @@ class AgenticomConnector(BackendConnector):
             "X-Site-ID": self._remote_site_id,
         }
 
-    def _legacy_search_headers(self) -> dict:
-        """Legacy auth headers for the v1-mode `search_products` fallback.
-
-        Stella v1 has no search surface, so v1-credentialed tenants still hit
-        `/api/sync/products?search=...` with the global `X-Sync-Secret` for
-        this one method (locked Z3 §1.2 (b)). Reads `agenticom_sync_secret`
-        from settings rather than relying on the connector's stored
-        `_legacy_secret`, which is cleared in v1 mode by `__init__`.
-        """
-        settings = get_settings()
-        return {
-            "X-Sync-Secret": settings.agenticom_sync_secret or "",
-            "X-Site-ID": self._remote_site_id,
-        }
-
-    def _with_correlation(self, headers: dict) -> dict:
-        """Stamp X-Correlation-Id on every outbound request (SHARED-CONTRACT §5)."""
-        return {**headers, "X-Correlation-Id": get_correlation_id()}
-
     def _is_configured(self) -> bool:
         return self.mode != "unconfigured" and bool(self._api_url)
 
@@ -137,7 +112,7 @@ class AgenticomConnector(BackendConnector):
             resp = await client.get(
                 f"{self._api_url}{self._path_prefix()}/products",
                 params=params,
-                headers=self._with_correlation(self._auth_headers()),
+                headers=self._auth_headers(),
             )
             if resp.status_code != 200:
                 raise ConnectorRequestError(resp.status_code, resp.text)
@@ -168,29 +143,19 @@ class AgenticomConnector(BackendConnector):
         limit: int = 10,
         in_stock_only: bool = True,
     ) -> list[ConnectorProduct]:
-        """Search the Stella storefront in real-time. Used by the agent's tools.
-
-        v1-mode tenants fall back to the legacy URL + `X-Sync-Secret` because
-        Stella v1 has no search surface. All other v1-mode methods (get_product,
-        check_availability, create_order) use the v1 path + Bearer auth.
-        Locked decision Z3 §1.2 (b) — temporary until post-migration cleanup
-        retires the global secret per ZUNKIREE-IMPLEMENTATION §8.
-        """
+        """Search the Stella storefront in real-time. Used by the agent's tools."""
         if not self._is_configured():
             return []
         params: dict = {"search": query, "limit": limit}
         if in_stock_only:
             params["in_stock"] = "true"
 
-        if self.mode == "v1":
-            url = f"{self._api_url}/api/sync/products"
-            headers = self._with_correlation(self._legacy_search_headers())
-        else:
-            url = f"{self._api_url}{self._path_prefix()}/products"
-            headers = self._with_correlation(self._auth_headers())
-
         async with httpx.AsyncClient(timeout=self._PRODUCT_TIMEOUT) as client:
-            resp = await client.get(url, params=params, headers=headers)
+            resp = await client.get(
+                f"{self._api_url}{self._path_prefix()}/products",
+                params=params,
+                headers=self._auth_headers(),
+            )
             if resp.status_code != 200:
                 raise ConnectorRequestError(resp.status_code, resp.text)
             return [
@@ -204,6 +169,8 @@ class AgenticomConnector(BackendConnector):
         idempotency_key: str,
         correlation_id: Optional[str] = None,
     ) -> ConnectorOrderReceipt:
+        # Z2 dispatches to the right wire per mode but does not yet send
+        # Idempotency-Key or X-Correlation-Id — those land in Z3.
         if not self._is_configured():
             raise ConnectorRequestError(0, "Agenticom sync not configured")
 
@@ -237,20 +204,11 @@ class AgenticomConnector(BackendConnector):
             "currency": draft.currency,
         }
 
-        # Idempotency-Key is v1-only per SHARED-CONTRACT §6 — the legacy
-        # /api/sync/orders endpoint does not understand it.
-        order_headers: dict = {
-            **self._auth_headers(),
-            "Content-Type": "application/json",
-        }
-        if self.mode == "v1" and idempotency_key:
-            order_headers["Idempotency-Key"] = idempotency_key
-
         async with httpx.AsyncClient(timeout=self._ORDER_TIMEOUT) as client:
             resp = await client.post(
                 f"{self._api_url}{self._path_prefix()}/orders",
                 json=payload,
-                headers=self._with_correlation(order_headers),
+                headers={**self._auth_headers(), "Content-Type": "application/json"},
             )
 
         if resp.status_code != 201:
