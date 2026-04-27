@@ -28,6 +28,11 @@ class TenantBackendCredentials(Base):
     sync_key_secret_standby_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     webhook_signing_secret_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Public-safe diagnostics for webhook deliveries (Z4 §1.2): prefix is the
+    # first chars of the plaintext secret kept for log identification, webhook_id
+    # is Stella's registration id ("whk_...") returned at /api/sync/v1/webhooks.
+    webhook_signing_secret_prefix: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    webhook_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
 
     extra_config: Mapped[dict | None] = mapped_column(JSONB, default=dict)
 

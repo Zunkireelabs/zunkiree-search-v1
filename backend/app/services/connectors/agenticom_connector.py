@@ -145,10 +145,38 @@ class AgenticomConnector(BackendConnector):
                 yield self._product_from_raw(raw)
 
     async def get_product(self, external_id: str) -> ConnectorProduct:
-        raise NotImplementedError(
-            "AgenticomConnector.get_product not yet implemented "
-            "(Stella legacy /api/sync surface is search-based; arrives with v1 wire in Z3)"
-        )
+        """Fetch a single product by Stella's external id.
+
+        v1 mode only — uses `GET /api/sync/v1/products/{id}` (confirmed in
+        SHARED-CONTRACT.md §10 rate-limit table). Legacy mode raises: Stella's
+        legacy surface is search-based, no documented single-product GET, and
+        the only current consumer (Z4 inbound webhook handlers) only ever runs
+        for v1 tenants — webhooks can't be registered without v1 credentials.
+        Failing loudly here is safer than silently calling a wrong path.
+        """
+        if self.mode != "v1":
+            raise NotImplementedError(
+                "AgenticomConnector.get_product requires v1-mode credentials; "
+                f"current mode={self.mode}. Stella legacy /api/sync has no "
+                "single-product GET surface."
+            )
+        if not self._is_configured():
+            raise ConnectorRequestError(0, "Agenticom sync not configured")
+
+        async with httpx.AsyncClient(timeout=self._PRODUCT_TIMEOUT) as client:
+            resp = await client.get(
+                f"{self._api_url}{self._path_prefix()}/products/{external_id}",
+                headers=self._with_correlation(self._auth_headers()),
+            )
+        if resp.status_code != 200:
+            raise ConnectorRequestError(resp.status_code, resp.text)
+
+        body = resp.json() if resp.content else {}
+        # Stella may envelope the product as {"product": {...}} or return it
+        # bare; tolerate both since the contract only pins the rate limit and
+        # not the wrapper shape.
+        raw = body.get("product") if isinstance(body, dict) and "product" in body else body
+        return self._product_from_raw(raw or {})
 
     async def check_availability(
         self,
@@ -264,6 +292,50 @@ class AgenticomConnector(BackendConnector):
             payment_status=str(body.get("payment_status") or ""),
             created_at=str(body.get("created_at") or datetime.now(timezone.utc).isoformat()),
         )
+
+    async def register_webhook(self, url: str, events: list[str]) -> dict:
+        """Register an inbound webhook subscription on Stella (SHARED-CONTRACT §7.1).
+
+        v1 mode only — webhooks are a v1 feature. Returns the parsed Stella
+        response containing the registration `id` (`whk_...`) and the
+        `signing_secret` (`whsec_...`) shown once. Caller stores the secret
+        Fernet-encrypted, the prefix in plaintext for diagnostics, and the id
+        for later management.
+        """
+        if self.mode != "v1":
+            raise NotImplementedError(
+                "register_webhook requires v1-mode credentials; "
+                f"current mode={self.mode}."
+            )
+        if not self._is_configured():
+            raise ConnectorRequestError(0, "Agenticom sync not configured")
+
+        payload = {
+            "url": url,
+            "events": list(events),
+            "description": "Zunkiree Search inbound webhook",
+        }
+        headers = {
+            **self._auth_headers(),
+            "Content-Type": "application/json",
+        }
+        async with httpx.AsyncClient(timeout=self._ORDER_TIMEOUT) as client:
+            resp = await client.post(
+                f"{self._api_url}{self._path_prefix()}/webhooks",
+                json=payload,
+                headers=self._with_correlation(headers),
+            )
+        # Stella responds 201 on creation per its OpenAPI; tolerate 200 too in
+        # case the implementation chose 200.
+        if resp.status_code not in (200, 201):
+            raise ConnectorRequestError(resp.status_code, resp.text)
+        body = resp.json() if resp.content else {}
+        if not isinstance(body, dict) or not body.get("signing_secret"):
+            raise ConnectorRequestError(
+                resp.status_code,
+                f"register_webhook response missing signing_secret: {resp.text[:200]}",
+            )
+        return body
 
     @staticmethod
     def _product_from_raw(p: dict) -> ConnectorProduct:
