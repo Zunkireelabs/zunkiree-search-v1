@@ -17,6 +17,8 @@ on:
       - 'backend/**'
       - 'docker-compose.yml'
       - 'scripts/**'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/deploy-staging.yml'
   workflow_dispatch:
     inputs:
       skip_migrations:
@@ -29,17 +31,34 @@ concurrency:
   group: deploy-staging
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
+  release:
+    uses: ./.github/workflows/release.yml
+    permissions:
+      contents: read
+      packages: write
+
   deploy:
     runs-on: ubuntu-latest
     environment: staging
+    needs: release
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.5
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          IMAGE_TAG: ${{ github.sha }}
+          SKIP_MIGRATIONS: ${{ inputs.skip_migrations }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          envs: GHCR_TOKEN,GHCR_USER,IMAGE_TAG,SKIP_MIGRATIONS
           script: |
             set -e
 
@@ -79,8 +98,20 @@ jobs:
               fi
             fi
 
+            echo "=== Logging in to GHCR ==="
+            # --password-stdin avoids the password ever appearing in `ps` /
+            # process listings. $GHCR_TOKEN is the workflow GITHUB_TOKEN
+            # forwarded via the SSH action's `envs:` block, workflow-scoped
+            # (~1h lifetime), not stored on disk.
+            printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+            echo "=== Pulling image ghcr.io/zunkireelabs/zunkiree-search-api:$IMAGE_TAG ==="
+            # Pull BEFORE migrate so an image-pull failure aborts cleanly
+            # without touching the shared DB. Order: pull → migrate → restart.
+            docker pull "ghcr.io/zunkireelabs/zunkiree-search-api:$IMAGE_TAG"
+
             echo "=== Running migrations ==="
-            if [ "${{ inputs.skip_migrations }}" != "true" ]; then
+            if [ "$SKIP_MIGRATIONS" != "true" ]; then
               # First-time bootstrap: container won't exist yet, so DB_URL
               # extraction has to fall back to reading backend/.env.staging
               # directly. Once the staging container is running, future
@@ -100,17 +131,17 @@ jobs:
               echo "Skipping migrations (manual override)"
             fi
 
-            echo "=== Building staging Docker image ==="
-            docker compose --profile staging build zunkiree-search-api-stage
-
-            echo "=== Restarting staging service ==="
-            docker compose --profile staging up -d --force-recreate zunkiree-search-api-stage
+            echo "=== Restarting staging service with pulled image ==="
+            # --no-build: never fall back to building on the VPS. IMAGE_TAG
+            # is read by docker-compose.yml's image: directive.
+            IMAGE_TAG="$IMAGE_TAG" docker compose --profile staging up -d --no-build --force-recreate zunkiree-search-api-stage
 
             echo "=== Verifying health ==="
             sleep 10
             for i in 1 2 3 4 5; do
               if docker exec zunkiree-search-api-stage python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" 2>/dev/null; then
                 echo "Staging health check passed"
+                docker logout ghcr.io || true
                 exit 0
               fi
               echo "Attempt $i failed, waiting 10s..."
@@ -118,6 +149,7 @@ jobs:
             done
             echo "ERROR: Staging health check failed after 5 attempts"
             docker logs zunkiree-search-api-stage --tail 30
+            docker logout ghcr.io || true
             exit 1
 
       - name: Notify on failure

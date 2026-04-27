@@ -1,13 +1,17 @@
 # Zunkiree Search — Docker Compose
-# Production: docker compose up -d
-# Dev:        docker compose --profile dev up
+# Production: docker compose up -d              (CI passes IMAGE_TAG=<sha>)
+# Staging:    docker compose --profile staging up -d
+# Dev:        docker compose --profile dev up   (uses build: via override file)
 # Backup:     docker compose --profile backup run zunkiree-backup
+#
+# Image source: prod + staging services pull pre-built images from GHCR by
+# SHA tag. CI builds + pushes via release.yml; deploys pull + restart, never
+# rebuild on the VPS. Local dev restores `build:` via
+# docker-compose.override.yml (gitignored, see docker-compose.override.yml.example).
 
 services:
   zunkiree-search-api:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: ghcr.io/zunkireelabs/zunkiree-search-api:${IMAGE_TAG:?IMAGE_TAG must be set or use docker-compose.override.yml for local dev}
     container_name: zunkiree-search-api
     restart: unless-stopped
     env_file:
@@ -55,9 +59,7 @@ services:
   # on the VPS; reads its env from backend/.env.staging in that dir.
   # Single-DB until Phase C — points at same Supabase as prod.
   zunkiree-search-api-stage:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: ghcr.io/zunkireelabs/zunkiree-search-api:${IMAGE_TAG:?IMAGE_TAG must be set or use docker-compose.override.yml for local dev}
     container_name: zunkiree-search-api-stage
     restart: unless-stopped
     env_file:

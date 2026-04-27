@@ -1,7 +1,23 @@
+# Secrets — never bake these into the GHCR image.
 .env
 .env.*
+secrets/
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+
+# Python build artifacts + local virtualenv (massive bloat if copied).
 __pycache__
 *.pyc
+.venv
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Repo metadata + dev-only files.
 .git
 .gitignore
 *.md
