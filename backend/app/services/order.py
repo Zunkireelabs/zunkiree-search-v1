@@ -7,7 +7,7 @@ import secrets
 import logging
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 
 from app.models.order import Order
 from app.services.cart import get_cart_service
@@ -214,6 +214,34 @@ class OrderService:
             order_dict.get("order_number"),
             receipt.external_order_number,
         )
+
+        # Z5: persist Stella's external IDs onto the local order row so the
+        # two systems can be joined without string-matching order_number.
+        # Nested try/except — the upstream sync already succeeded, so a local
+        # write failure here must NOT propagate (the customer's checkout is
+        # done and the order is already persisted by create_order_from_cart).
+        # Empty-string -> None coercion keeps the columns clean for queries.
+        # Legacy Stella may return only `order_number`; the connector falls
+        # `external_id` back to it (see agenticom_connector.py create_order).
+        # Both fields holding the same value is intentional, not a bug.
+        try:
+            await db.execute(
+                update(Order)
+                .where(Order.id == order_dict.get("id"))
+                .values(
+                    external_backend_type="stella",
+                    external_order_id=(receipt.external_id or None),
+                    external_order_number=(receipt.external_order_number or None),
+                )
+            )
+            await db.commit()
+        except Exception as e:
+            logger.warning(
+                "[ORDER-SYNC] sync succeeded but persisting external IDs failed for order %s: %s",
+                order_dict.get("order_number"),
+                e,
+            )
+            # Don't re-raise — sync already succeeded; the customer's checkout is done.
 
     def _order_to_dict(self, order: Order) -> dict:
         """Convert Order model to API dict."""

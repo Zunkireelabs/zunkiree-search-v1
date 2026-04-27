@@ -32,5 +32,11 @@ class Order(Base):
     billing_address: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
     shipping_address: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # External IDs returned by the upstream backend's order-create endpoint
+    # (see services/order.py:_sync_to_agenticom). Z5 — populated for both v1
+    # and legacy Stella sync modes; NULL on pre-Z5 orders.
+    external_backend_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    external_order_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    external_order_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
