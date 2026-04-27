@@ -8,6 +8,8 @@ on:
       - 'backend/**'
       - 'docker-compose.yml'
       - 'scripts/**'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/deploy.yml'
   # Keep manual trigger as backup
   workflow_dispatch:
     inputs:
@@ -21,17 +23,34 @@ concurrency:
   group: deploy-production
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
+  release:
+    uses: ./.github/workflows/release.yml
+    permissions:
+      contents: read
+      packages: write
+
   deploy:
     runs-on: ubuntu-latest
     environment: production
+    needs: release
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.5
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          IMAGE_TAG: ${{ github.sha }}
+          SKIP_MIGRATIONS: ${{ inputs.skip_migrations }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          envs: GHCR_TOKEN,GHCR_USER,IMAGE_TAG,SKIP_MIGRATIONS
           script: |
             set -e
             cd /home/zunkireelabs/devprojects/zunkiree-search-v1
@@ -46,8 +65,20 @@ jobs:
             git fetch origin main
             git checkout -B main origin/main
 
+            echo "=== Logging in to GHCR ==="
+            # --password-stdin avoids the password ever appearing in `ps` /
+            # process listings. Use of $GHCR_TOKEN (the workflow GITHUB_TOKEN
+            # forwarded via the SSH action's `envs:` block) is workflow-scoped
+            # (~1h lifetime), not stored on disk.
+            printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+            echo "=== Pulling image ghcr.io/zunkireelabs/zunkiree-search-api:$IMAGE_TAG ==="
+            # Pull BEFORE migrate so an image-pull failure aborts cleanly
+            # without touching the DB. Order: pull → migrate → restart.
+            docker pull "ghcr.io/zunkireelabs/zunkiree-search-api:$IMAGE_TAG"
+
             echo "=== Running migrations ==="
-            if [ "${{ inputs.skip_migrations }}" != "true" ]; then
+            if [ "$SKIP_MIGRATIONS" != "true" ]; then
               DB_URL=$(docker compose exec -T zunkiree-search-api printenv DATABASE_URL 2>/dev/null | tr -d '\r' || true)
               if [ -z "$DB_URL" ]; then
                 echo "::error::Could not read DATABASE_URL from container — refusing to deploy code without verifying migrations ran"
@@ -58,17 +89,18 @@ jobs:
               echo "Skipping migrations (manual override)"
             fi
 
-            echo "=== Building Docker image ==="
-            docker compose build zunkiree-search-api
-
-            echo "=== Restarting service ==="
-            docker compose up -d --force-recreate zunkiree-search-api
+            echo "=== Restarting service with pulled image ==="
+            # --no-build: never fall back to building on the VPS. The image
+            # is the one CI already validated and pushed. IMAGE_TAG is read
+            # by docker-compose.yml's image: directive.
+            IMAGE_TAG="$IMAGE_TAG" docker compose up -d --no-build --force-recreate zunkiree-search-api
 
             echo "=== Verifying health ==="
             sleep 10
             for i in 1 2 3 4 5; do
               if docker exec zunkiree-search-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" 2>/dev/null; then
                 echo "Health check passed"
+                docker logout ghcr.io || true
                 exit 0
               fi
               echo "Attempt $i failed, waiting 10s..."
@@ -76,6 +108,7 @@ jobs:
             done
             echo "ERROR: Health check failed after 5 attempts"
             docker logs zunkiree-search-api --tail 30
+            docker logout ghcr.io || true
             exit 1
 
       - name: Notify on failure

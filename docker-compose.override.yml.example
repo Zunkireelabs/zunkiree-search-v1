@@ -1,0 +1,27 @@
+# Local dev override — copy to docker-compose.override.yml (gitignored).
+#
+# Why this exists: prod + staging services in docker-compose.yml use
+# `image: ghcr.io/...` with a fail-loud `${IMAGE_TAG:?...}` sentinel so that
+# accidentally running `docker compose up` in CI/VPS without a pinned tag
+# fails immediately instead of pulling a wrong image. Local devs don't have
+# (and shouldn't need) GHCR write access, so this file restores the
+# build-from-source behavior locally.
+#
+# Usage:
+#   cp docker-compose.override.yml.example docker-compose.override.yml
+#   docker compose up
+#
+# Compose loads docker-compose.override.yml automatically when present and
+# merges it with docker-compose.yml. The `build:` block here overrides the
+# `image:` directive in the base file for local builds.
+
+services:
+  zunkiree-search-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+
+  zunkiree-search-api-stage:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile

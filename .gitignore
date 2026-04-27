@@ -36,6 +36,9 @@ temp_ss/
 
 # Docker
 *.pid
+# Local-dev compose override (restores build: for local builds; see
+# docker-compose.override.yml.example for the template)
+docker-compose.override.yml
 
 # OS files
 .DS_Store

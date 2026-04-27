@@ -1,0 +1,125 @@
+# Manual rollback to a prior GHCR image SHA.
+#
+# Pull-an-old-tag, NOT rebuild-from-old-source. The whole point of B3 is that
+# rollback no longer rebuilds on the VPS — it just pulls a known-good image
+# from GHCR and restarts. Single workflow handles both environments via the
+# `environment` input.
+#
+# Migrations are NOT rolled back. If the bad release also ran a bad migration,
+# the recovery path is the pre-migration pg_dump (added in B4), restored
+# manually. Rollback here only reverts the running code.
+
+name: Rollback (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        default: production
+        options:
+          - production
+          - staging
+      commit_sha:
+        description: "Full commit SHA to roll back to (must already exist as a GHCR image tag)"
+        required: true
+      reason:
+        description: "Why rolling back (audit trail)"
+        required: true
+
+# One rollback at a time per env. Don't cancel — let an in-flight deploy or
+# rollback finish before starting another.
+concurrency:
+  group: rollback-${{ inputs.environment }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Resolve env-specific paths
+        id: env
+        run: |
+          if [ "${{ inputs.environment }}" = "production" ]; then
+            echo "vps_dir=/home/zunkireelabs/devprojects/zunkiree-search-v1" >> "$GITHUB_OUTPUT"
+            echo "service=zunkiree-search-api" >> "$GITHUB_OUTPUT"
+            echo "container=zunkiree-search-api" >> "$GITHUB_OUTPUT"
+            echo "compose_args=" >> "$GITHUB_OUTPUT"
+          else
+            echo "vps_dir=/home/zunkireelabs/devprojects/zunkiree-search-v1-stage" >> "$GITHUB_OUTPUT"
+            echo "service=zunkiree-search-api-stage" >> "$GITHUB_OUTPUT"
+            echo "container=zunkiree-search-api-stage" >> "$GITHUB_OUTPUT"
+            echo "compose_args=--profile staging" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log rollback intent
+        run: |
+          echo "Rollback target: ${{ inputs.environment }}"
+          echo "Image SHA:       ${{ inputs.commit_sha }}"
+          echo "Reason:          ${{ inputs.reason }}"
+          echo "Triggered by:    ${{ github.actor }}"
+
+      - name: Rollback via SSH
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          IMAGE_TAG: ${{ inputs.commit_sha }}
+          VPS_DIR: ${{ steps.env.outputs.vps_dir }}
+          SERVICE: ${{ steps.env.outputs.service }}
+          CONTAINER: ${{ steps.env.outputs.container }}
+          COMPOSE_ARGS: ${{ steps.env.outputs.compose_args }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: GHCR_TOKEN,GHCR_USER,IMAGE_TAG,VPS_DIR,SERVICE,CONTAINER,COMPOSE_ARGS
+          script: |
+            set -e
+
+            if [ ! -d "$VPS_DIR/.git" ]; then
+              echo "::error::VPS dir $VPS_DIR is not a git checkout. Cannot rollback into a non-bootstrapped environment."
+              exit 1
+            fi
+            cd "$VPS_DIR"
+
+            echo "=== Logging in to GHCR ==="
+            printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+            echo "=== Pulling rollback image ghcr.io/zunkireelabs/zunkiree-search-api:$IMAGE_TAG ==="
+            # If the SHA was never built/pushed, this fails fast — better
+            # than restarting with a stale local image.
+            docker pull "ghcr.io/zunkireelabs/zunkiree-search-api:$IMAGE_TAG"
+
+            echo "=== Restarting $SERVICE on rollback image ==="
+            # Migrations intentionally NOT rolled back. DB rollback is a
+            # separate operation (see B4 pg_dump path). docker-compose.yml's
+            # image: directive reads $IMAGE_TAG.
+            IMAGE_TAG="$IMAGE_TAG" docker compose $COMPOSE_ARGS up -d --no-build --force-recreate "$SERVICE"
+
+            echo "=== Verifying health ==="
+            sleep 10
+            for i in 1 2 3 4 5; do
+              if docker exec "$CONTAINER" python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" 2>/dev/null; then
+                echo "Rollback health check passed"
+                docker logout ghcr.io || true
+                exit 0
+              fi
+              echo "Attempt $i failed, waiting 10s..."
+              sleep 10
+            done
+            echo "::error::Rollback health check failed after 5 attempts"
+            docker logs "$CONTAINER" --tail 30
+            docker logout ghcr.io || true
+            exit 1
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "::error::Rollback to ${{ inputs.commit_sha }} on ${{ inputs.environment }} FAILED. Container may be in an inconsistent state — investigate before next deploy."
