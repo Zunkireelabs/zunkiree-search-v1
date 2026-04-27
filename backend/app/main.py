@@ -14,6 +14,7 @@ from app.api.payments import router as payments_router
 from app.api.chatbot_webhooks import router as chatbot_webhooks_router
 from app.api.chatbot_admin import router as chatbot_admin_router
 from app.api.admin_backend_credentials import router as admin_backend_credentials_router
+from app.middleware.correlation import CorrelationMiddleware
 
 # --- Logging configuration (before anything else) ---
 logging.basicConfig(
@@ -59,6 +60,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Registered AFTER CORS so it's the outermost layer (Starlette applies
+# middleware in reverse registration order; last-registered runs first on
+# the request). Sets the correlation contextvar before any handler runs so
+# downstream connector calls and logs can read it.
+app.add_middleware(CorrelationMiddleware)
 
 # Include routers
 app.include_router(query_router, prefix="/api/v1")

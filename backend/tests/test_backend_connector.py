@@ -225,6 +225,7 @@ def test_connector_v1_creds_take_precedence_over_legacy():
 # does not change observable wire output for legacy-mode tenants AND that v1
 # mode hits the right URL with the right auth.
 
+import uuid  # noqa: E402
 import respx  # noqa: E402
 import httpx  # noqa: E402
 
@@ -258,32 +259,10 @@ async def test_legacy_mode_search_wire_is_byte_identical_to_z1():
     assert sent.url.params.get("in_stock") == "true"
 
 
-@respx.mock
-async def test_v1_mode_search_uses_bearer_and_versioned_path():
-    """Asserts v1-mode hits /api/sync/v1/* with Bearer auth + X-Stella-Site-Id
-    per SHARED-CONTRACT.md §4."""
-    route = respx.get("https://example.test/api/sync/v1/products").mock(
-        return_value=httpx.Response(200, json={"products": []}),
-    )
-
-    conn = AgenticomConnector(
-        {
-            "api_url": "https://example.test",
-            "sync_key_id": "ssk_live_abc",
-            "sync_key_secret": "ssk_sec_def",
-            "remote_site_id": "kasa-stella",
-        }
-    )
-    await conn.search_products("tee", limit=10, in_stock_only=True)
-
-    assert route.called
-    sent = route.calls[0].request
-
-    assert sent.url.path == "/api/sync/v1/products"
-    assert sent.headers.get("Authorization") == "Bearer ssk_sec_def"
-    assert sent.headers.get("X-Stella-Site-Id") == "kasa-stella"
-    assert "X-Sync-Secret" not in sent.headers
-    assert "X-Site-ID" not in sent.headers
+# Z2's v1-mode-search-uses-bearer-and-versioned-path test removed in Z3:
+# locked decision §1.2 (b) routes v1-mode search_products to the legacy URL
+# + X-Sync-Secret. New behavior covered by
+# tests/test_z3_v1_wire.py::test_v1_mode_search_products_falls_back_to_legacy_url.
 
 
 @respx.mock
@@ -324,6 +303,10 @@ async def test_legacy_mode_create_order_post_byte_identical():
     assert sent.headers.get("X-Sync-Secret") == "shared"
     assert sent.headers.get("X-Site-ID") == "kasa"
     assert sent.headers.get("Content-Type") == "application/json"
-    # Z2 must NOT yet send Idempotency-Key or X-Correlation-Id (those are Z3).
+    # Idempotency-Key is v1-only per SHARED-CONTRACT §6 — legacy /api/sync/orders
+    # never sends it. (Updated for Z3: X-Correlation-Id IS now stamped on every
+    # outbound call, both modes, per SHARED-CONTRACT §5. UUID v4 = 36 chars.)
     assert "Idempotency-Key" not in sent.headers
-    assert "X-Correlation-Id" not in sent.headers
+    assert "X-Correlation-Id" in sent.headers
+    assert len(sent.headers["X-Correlation-Id"]) == 36
+    uuid.UUID(sent.headers["X-Correlation-Id"])  # raises if not a valid UUID

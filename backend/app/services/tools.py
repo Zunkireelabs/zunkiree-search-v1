@@ -291,7 +291,7 @@ async def _product_search(
     # Route to storefront search if configured
     if product_source == "storefront":
         if fetch_mode == "realtime":
-            return await _storefront_realtime_search(site_id, query, min_price, max_price, in_stock_only)
+            return await _storefront_realtime_search(db, customer_id, site_id, query, min_price, max_price, in_stock_only)
         # "synced" mode falls through to normal search (products already in local DB from sync)
 
     embedding_service = get_embedding_service()
@@ -393,6 +393,8 @@ async def _product_search(
 
 
 async def _storefront_realtime_search(
+    db: AsyncSession,
+    customer_id: uuid.UUID,
     site_id: str,
     query: str,
     min_price: float | None = None,
@@ -401,21 +403,14 @@ async def _storefront_realtime_search(
 ) -> dict:
     """Search products from Agenticom storefront API in real-time."""
     from app.config import get_settings
-    from app.services.connectors import get_connector
     from app.services.connectors.agenticom_connector import ConnectorRequestError
+    from app.services.connectors.resolver import ConnectorResolver
 
     settings = get_settings()
     if not settings.agenticom_api_url or not settings.agenticom_sync_secret:
         return {"products": [], "message": "Storefront not configured."}
 
-    connector = get_connector(
-        "stella",
-        {
-            "api_url": settings.agenticom_api_url,
-            "legacy_shared_secret": settings.agenticom_sync_secret,
-            "remote_site_id": site_id,
-        },
-    )
+    connector = await ConnectorResolver.for_tenant(db, customer_id, "stella")
 
     try:
         products = await connector.search_products(query, limit=10, in_stock_only=in_stock_only)
