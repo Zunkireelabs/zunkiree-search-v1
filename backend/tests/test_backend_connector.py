@@ -259,32 +259,10 @@ async def test_legacy_mode_search_wire_is_byte_identical_to_z1():
     assert sent.url.params.get("in_stock") == "true"
 
 
-@respx.mock
-async def test_v1_mode_search_uses_bearer_and_versioned_path():
-    """Asserts v1-mode hits /api/sync/v1/* with Bearer auth + X-Stella-Site-Id
-    per SHARED-CONTRACT.md §4."""
-    route = respx.get("https://example.test/api/sync/v1/products").mock(
-        return_value=httpx.Response(200, json={"products": []}),
-    )
-
-    conn = AgenticomConnector(
-        {
-            "api_url": "https://example.test",
-            "sync_key_id": "ssk_live_abc",
-            "sync_key_secret": "ssk_sec_def",
-            "remote_site_id": "kasa-stella",
-        }
-    )
-    await conn.search_products("tee", limit=10, in_stock_only=True)
-
-    assert route.called
-    sent = route.calls[0].request
-
-    assert sent.url.path == "/api/sync/v1/products"
-    assert sent.headers.get("Authorization") == "Bearer ssk_sec_def"
-    assert sent.headers.get("X-Stella-Site-Id") == "kasa-stella"
-    assert "X-Sync-Secret" not in sent.headers
-    assert "X-Site-ID" not in sent.headers
+# Z2's v1-mode-search-uses-bearer-and-versioned-path test removed in Z3:
+# locked decision §1.2 (b) routes v1-mode search_products to the legacy URL
+# + X-Sync-Secret. New behavior covered by
+# tests/test_z3_v1_wire.py::test_v1_mode_search_products_falls_back_to_legacy_url.
 
 
 @respx.mock
