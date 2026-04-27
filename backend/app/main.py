@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -14,7 +15,10 @@ from app.api.payments import router as payments_router
 from app.api.chatbot_webhooks import router as chatbot_webhooks_router
 from app.api.chatbot_admin import router as chatbot_admin_router
 from app.api.admin_backend_credentials import router as admin_backend_credentials_router
+from app.api.hooks_stella import router as hooks_stella_router
+from app.api.admin_inbound_webhooks import router as admin_inbound_webhooks_router
 from app.middleware.correlation import CorrelationMiddleware
+from app.services.inbound_event_dispatcher import run_dispatcher_loop
 
 # --- Logging configuration (before anything else) ---
 logging.basicConfig(
@@ -38,9 +42,29 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Warning: Database initialization failed: {e}")
         print("App will continue without database init - tables may already exist.")
+
+    # Z4 inbound webhook dispatcher — single asyncio task per container.
+    # Both stage and prod replicas run it; SELECT ... FOR UPDATE SKIP LOCKED
+    # in the dispatcher's batch picker prevents duplicate row processing
+    # against the shared Supabase (locked Z4 §1.5).
+    stop_event = asyncio.Event()
+    dispatcher_task = asyncio.create_task(run_dispatcher_loop(stop_event))
+    app.state.inbound_dispatcher_stop_event = stop_event
+    app.state.inbound_dispatcher_task = dispatcher_task
+
     yield
+
     # Shutdown
     print("Shutting down Zunkiree Search API...")
+    stop_event.set()
+    try:
+        await asyncio.wait_for(dispatcher_task, timeout=10)
+    except asyncio.TimeoutError:
+        dispatcher_task.cancel()
+        try:
+            await dispatcher_task
+        except (asyncio.CancelledError, Exception):
+            pass
 
 
 app = FastAPI(
@@ -80,6 +104,8 @@ app.include_router(payments_router, prefix="/api/v1")
 app.include_router(chatbot_webhooks_router, prefix="/api/v1")
 app.include_router(chatbot_admin_router, prefix="/api/v1")
 app.include_router(admin_backend_credentials_router, prefix="/api/v1")
+app.include_router(hooks_stella_router, prefix="/api/v1")
+app.include_router(admin_inbound_webhooks_router, prefix="/api/v1")
 
 
 @app.get("/")
