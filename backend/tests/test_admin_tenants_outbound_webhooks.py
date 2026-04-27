@@ -43,7 +43,9 @@ async def test_register_creates_row_and_returns_secret_once():
     added: list = []
 
     db = AsyncMock()
-    db.add.side_effect = added.append
+    # AsyncSession.add is sync in SQLAlchemy 2.x; AsyncMock would make it
+    # async and silently swallow the side_effect. Override with MagicMock.
+    db.add = MagicMock(side_effect=added.append)
 
     async def _refresh(row):
         row.id = uuid.uuid4()

@@ -32,9 +32,11 @@ async def test_push_creates_row_when_none_exists():
     db = AsyncMock()
     db.execute.return_value = creds_lookup
 
-    # Capture the row added via db.add
+    # Capture the row added via db.add. AsyncSession.add is sync in
+    # SQLAlchemy 2.x; AsyncMock would make it async and silently swallow
+    # the side_effect. Override with MagicMock to match the real API.
     added: list = []
-    db.add.side_effect = added.append
+    db.add = MagicMock(side_effect=added.append)
 
     # db.refresh is awaited; populate fields the response needs
     async def _refresh(row):
