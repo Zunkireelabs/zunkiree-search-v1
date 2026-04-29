@@ -3,7 +3,7 @@ Chatbot channel management — connect/disconnect messaging platforms per tenant
 Protected by X-Admin-Key header (same as other admin endpoints).
 """
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -11,6 +11,7 @@ from sqlalchemy import select, func
 from app.database import get_db
 from app.models import Customer
 from app.models.chatbot import ChatbotChannel, ChatbotConversation, ChatbotMessageLog
+from app.services.admin_audit import log_admin_action
 from app.services.meta_messaging import encrypt_token
 from app.config import get_settings
 
@@ -152,6 +153,7 @@ async def list_channels(
 @router.delete("/channels/{channel_id}", dependencies=[Depends(verify_admin_key)])
 async def disconnect_channel(
     channel_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Disconnect a channel (soft delete — sets is_active=False)."""
@@ -162,10 +164,34 @@ async def disconnect_channel(
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
 
+    customer_site_id = None
+    customer_result = await db.execute(
+        select(Customer.site_id).where(Customer.id == channel.customer_id)
+    )
+    customer_site_id = customer_result.scalar_one_or_none()
+
     channel.is_active = False
     await db.commit()
 
     logger.info("Disconnected channel %s (%s)", channel_id, channel.platform)
+
+    await log_admin_action(
+        db,
+        actor="legacy_admin",
+        action="chatbot_channel.disconnected",
+        target_table="chatbot_channels",
+        target_id=channel.id,
+        target_site_id=customer_site_id,
+        payload={
+            "channel_id": str(channel.id),
+            "platform": channel.platform,
+            "platform_page_id": channel.platform_page_id,
+            "customer_site_id": customer_site_id,
+            "soft_delete": True,
+        },
+        request=request,
+    )
+
     return {"status": "disconnected", "channel_id": channel_id}
 
 

@@ -25,7 +25,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import case, desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,6 +39,10 @@ from app.models.tenant_backend_credentials import TenantBackendCredentials
 from app.models.tenant_outbound_webhook import TenantOutboundWebhook
 from app.models.user_profile import UserProfile
 from app.models.widget_config import WidgetConfig
+from app.services.admin_audit import (
+    _resolve_actor_for_admin_tenant,
+    log_admin_action,
+)
 from app.services.connectors.encryption import (
     BackendCredentialsEncryptionError,
     encrypt,
@@ -48,6 +52,7 @@ from app.services.tenant_provisioning import (
     TenantProvisioningService,
     generate_webhook_signing_secret,
 )
+from app.services.vector_store import get_vector_store_service
 
 logger = logging.getLogger("zunkiree.admin.tenants")
 
@@ -333,6 +338,7 @@ async def patch_tenant(
 )
 async def delete_tenant(
     site_id: str,
+    request: Request,
     confirm: bool = Query(False, description="Must be true; guard against accidental deletes"),
     db: AsyncSession = Depends(get_db),
 ) -> None:
@@ -349,10 +355,42 @@ async def delete_tenant(
             status_code=404,
             detail={"code": "tenant_not_found", "message": f"No tenant with site_id={site_id}"},
         )
+    # Snapshot before delete so the audit row carries the deleted state.
+    snapshot = {
+        "customer_id": str(customer.id),
+        "site_id": customer.site_id,
+        "name": customer.name,
+        "stella_merchant_id": customer.stella_merchant_id,
+        "is_active": customer.is_active,
+        "website_type": customer.website_type,
+    }
+    customer_id = customer.id
+
     # Raw SQL DELETE so DB-level CASCADE handles every related table without
     # SQLAlchemy needing each relation registered. Mirrors admin.py's pattern.
-    await db.execute(text("DELETE FROM customers WHERE id = :cid"), {"cid": str(customer.id)})
+    await db.execute(text("DELETE FROM customers WHERE id = :cid"), {"cid": str(customer_id)})
     await db.commit()
+
+    # Pinecone namespace cleanup (Z-Ops hardening, #18). Idempotent.
+    try:
+        await get_vector_store_service().delete_namespace(site_id)
+        pinecone_cleanup_status = "ok"
+    except Exception as exc:
+        logger.error("Pinecone cleanup failed for %s: %s", site_id, exc)
+        pinecone_cleanup_status = f"failed:{type(exc).__name__}"
+
+    snapshot["pinecone_cleanup"] = pinecone_cleanup_status
+
+    await log_admin_action(
+        db,
+        actor="master_admin",
+        action="tenant.deleted",
+        target_table="customers",
+        target_id=customer_id,
+        target_site_id=site_id,
+        payload=snapshot,
+        request=request,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -705,6 +743,7 @@ async def revoke_webhook(
 )
 async def rotate_admin_token(
     site_id: str,
+    request: Request,
     customer: Customer = Depends(get_admin_tenant),
     db: AsyncSession = Depends(get_db),
 ) -> RotateAdminTokenResponse:
@@ -726,6 +765,22 @@ async def rotate_admin_token(
             )
         logger.exception("Admin token rotation failed for site_id=%s", site_id)
         raise
+
+    await log_admin_action(
+        db,
+        actor=_resolve_actor_for_admin_tenant(request),
+        action="admin_token.rotated",
+        target_table="tenant_admin_tokens",
+        target_id=customer.id,
+        target_site_id=customer.site_id,
+        payload={
+            "customer_id": str(customer.id),
+            "site_id": customer.site_id,
+            "new_token_id": result.new_token_id,
+            "revoked_token_ids": list(result.revoked_token_ids),
+        },
+        request=request,
+    )
 
     return RotateAdminTokenResponse(
         admin_token=result.new_token_secret,
