@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import UUID
 
@@ -39,7 +39,10 @@ from app.models.tenant_backend_credentials import TenantBackendCredentials
 from app.models.tenant_outbound_webhook import TenantOutboundWebhook
 from app.models.user_profile import UserProfile
 from app.models.widget_config import WidgetConfig
-from app.services.connectors.encryption import encrypt
+from app.services.connectors.encryption import (
+    BackendCredentialsEncryptionError,
+    encrypt,
+)
 from app.services.tenant_provisioning import (
     TenantAlreadyExistsError,
     TenantProvisioningService,
@@ -408,6 +411,18 @@ async def push_stella_credentials(
         )
     ).scalar_one_or_none()
 
+    try:
+        encrypted_secret = encrypt(body.sync_key_secret)
+    except BackendCredentialsEncryptionError as e:
+        logger.error("encryption helper unavailable: %s", e)
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "service_unavailable",
+                "message": "Tenant credential service temporarily unavailable",
+            },
+        )
+
     if creds is None:
         # First-time push: create the row outright. Stella may call this
         # before any prior /admin/tenants/{site_id}/backend-credentials POST
@@ -417,7 +432,7 @@ async def push_stella_credentials(
             backend_type="stella",
             remote_site_id=customer.site_id,
             sync_key_id=body.sync_key_id,
-            sync_key_secret_encrypted=encrypt(body.sync_key_secret),
+            sync_key_secret_encrypted=encrypted_secret,
             is_active=True,
         )
         db.add(creds)
@@ -428,7 +443,7 @@ async def push_stella_credentials(
         creds.sync_key_id_standby = creds.sync_key_id
         creds.sync_key_secret_standby_encrypted = creds.sync_key_secret_encrypted
         creds.sync_key_id = body.sync_key_id
-        creds.sync_key_secret_encrypted = encrypt(body.sync_key_secret)
+        creds.sync_key_secret_encrypted = encrypted_secret
         creds.updated_at = datetime.utcnow()
 
     await db.commit()
@@ -457,6 +472,17 @@ async def get_analytics(
     """Default window is the trailing 30 days when from/to aren't supplied —
     matches admin.py's existing analytics conventions so Stella's UI doesn't
     need a special-case for the unconfigured-merchant dashboard."""
+    # Z6.2: query_logs / user_profiles / orders.created_at columns are
+    # naive `DateTime` (not `DateTime(timezone=True)`). Comparing them to
+    # tz-aware Pydantic-parsed datetimes raises:
+    #   "can't compare offset-naive and offset-aware datetimes"
+    # Normalize to naive UTC at the boundary; columns store naive UTC
+    # already, so no semantic shift.
+    if from_ is not None and from_.tzinfo is not None:
+        from_ = from_.astimezone(timezone.utc).replace(tzinfo=None)
+    if to is not None and to.tzinfo is not None:
+        to = to.astimezone(timezone.utc).replace(tzinfo=None)
+
     if to is None:
         to = datetime.utcnow()
     if from_ is None:
@@ -596,11 +622,22 @@ async def register_webhook(
             },
         )
     signing_secret = generate_webhook_signing_secret()
+    try:
+        signing_secret_encrypted = encrypt(signing_secret)
+    except BackendCredentialsEncryptionError as e:
+        logger.error("encryption helper unavailable: %s", e)
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "service_unavailable",
+                "message": "Tenant credential service temporarily unavailable",
+            },
+        )
     row = TenantOutboundWebhook(
         customer_id=customer.id,
         url=body.url,
         events=list(body.events),
-        signing_secret_encrypted=encrypt(signing_secret),
+        signing_secret_encrypted=signing_secret_encrypted,
         signing_secret_prefix=signing_secret[:16],
     )
     db.add(row)

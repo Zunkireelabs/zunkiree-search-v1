@@ -74,6 +74,12 @@ class Settings(BaseSettings):
     # Z6 — per-tenant admin API for Stella callers
     master_admin_key: str = ""  # Required for tenant create/delete; empty → master endpoints hard-fail 401 master_admin_key_not_configured
     widget_script_base_url: str = ""  # Vercel CDN base for the embed bundle, e.g. https://zunkiree-search-v1.vercel.app
+    # Public API URL embedded into widget_script's data-api-url attribute so
+    # shopper widgets call the right backend. Stage VPS sets to
+    # https://staging-api.zunkireelabs.com; prod VPS sets to
+    # https://api.zunkireelabs.com. Empty falls back to prod URL with a logged
+    # warning (preserves Z6 behavior on misconfigured deploys).
+    widget_data_api_url: str = ""
 
     # Meta Messaging / Chatbot
     meta_app_secret: str = ""

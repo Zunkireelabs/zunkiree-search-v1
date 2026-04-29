@@ -19,6 +19,9 @@ from app.api.admin_tenants import (
     get_widget_config,
     patch_widget_config,
 )
+from app.config import get_settings
+from app.services import tenant_provisioning
+from app.services.tenant_provisioning import build_widget_script
 
 
 def _config_mock(quick_actions=None, lead_intents=None):
@@ -122,6 +125,62 @@ async def test_patch_widget_config_only_passes_explicit_fields(monkeypatch):
     await patch_widget_config(site_id="kasa", body=body, customer=customer, db=db)
     assert set(seen_fields.keys()) == {"tone"}
     assert seen_fields["tone"] == "friendly"
+
+
+# ---------------------------------------------------------------------------
+# Z6.3 — build_widget_script reads WIDGET_DATA_API_URL with prod-URL fallback
+
+
+def test_build_widget_script_uses_configured_data_api_url(monkeypatch):
+    """Stage VPS sets WIDGET_DATA_API_URL to staging-api.zunkireelabs.com;
+    build_widget_script must embed that value, not the hardcoded prod URL."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "widget_script_base_url", "https://zunkiree-search-v1.vercel.app")
+    monkeypatch.setattr(settings, "widget_data_api_url", "https://staging-api.zunkireelabs.com")
+    # Reset the once-warned guard so this test is order-independent
+    monkeypatch.setattr(tenant_provisioning, "_widget_data_api_url_missing_warned", False)
+
+    script = build_widget_script("kasa")
+
+    assert script is not None
+    assert 'data-site-id="kasa"' in script
+    assert 'data-api-url="https://staging-api.zunkireelabs.com"' in script
+    assert 'data-api-url="https://api.zunkireelabs.com"' not in script
+    assert "https://zunkiree-search-v1.vercel.app/zunkiree-widget.iife.js" in script
+
+
+def test_build_widget_script_falls_back_to_prod_url_with_warning_once(monkeypatch, caplog):
+    """Empty WIDGET_DATA_API_URL falls back to prod URL and logs a warning
+    exactly once across multiple calls (module-level guard)."""
+    import logging
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "widget_script_base_url", "https://zunkiree-search-v1.vercel.app")
+    monkeypatch.setattr(settings, "widget_data_api_url", "")
+    # Reset the once-warned guard — without this, prior tests in the same run
+    # may have already tripped it and caplog would be empty
+    monkeypatch.setattr(tenant_provisioning, "_widget_data_api_url_missing_warned", False)
+
+    with caplog.at_level(logging.WARNING, logger=tenant_provisioning.logger.name):
+        first = build_widget_script("kasa")
+        second = build_widget_script("nuad-thai")
+
+    assert first is not None and second is not None
+    assert 'data-api-url="https://api.zunkireelabs.com"' in first
+    assert 'data-api-url="https://api.zunkireelabs.com"' in second
+
+    warnings = [r for r in caplog.records if "WIDGET_DATA_API_URL not configured" in r.getMessage()]
+    assert len(warnings) == 1, f"Expected one warning, got {len(warnings)}: {warnings}"
+
+
+def test_build_widget_script_returns_none_when_base_url_missing(monkeypatch):
+    """Empty WIDGET_SCRIPT_BASE_URL → None (regression: Z6 contract field
+    must be null, not a broken <script> tag)."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "widget_script_base_url", "")
+    monkeypatch.setattr(settings, "widget_data_api_url", "https://staging-api.zunkireelabs.com")
+
+    assert build_widget_script("kasa") is None
 
 
 @pytest.mark.asyncio
