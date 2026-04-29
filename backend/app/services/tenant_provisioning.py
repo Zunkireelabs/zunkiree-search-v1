@@ -8,6 +8,7 @@ the trigger in migration 034.
 from __future__ import annotations
 
 import base64
+import logging
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -22,6 +23,8 @@ from app.models.customer import Customer
 from app.models.tenant_admin_token import TenantAdminToken
 from app.models.widget_config import WidgetConfig
 from app.services.admin_token_hash import hash_token
+
+logger = logging.getLogger(__name__)
 
 
 # Widget config defaults locked in Z6-BRIEF §3.7. Stella's S10 panel surfaces
@@ -79,19 +82,34 @@ def generate_webhook_signing_secret() -> str:
     return f"whsec_{secrets.token_urlsafe(32)}"
 
 
+# Module-level once-warned guard so a misconfigured deploy doesn't fill stage
+# logs with one warning per provisioning request. Reset on container restart.
+_widget_data_api_url_missing_warned = False
+
+
 def build_widget_script(site_id: str) -> Optional[str]:
-    """Compose the embed script. WIDGET_SCRIPT_BASE_URL is set on both VPS
-    .env files (prod + stage) — the guard returns None if it ever isn't, so a
-    misconfigured deploy yields a null field rather than a broken <script>
-    tag at the merchant's site.
+    """Compose the embed script. WIDGET_SCRIPT_BASE_URL provides the bundle
+    CDN; WIDGET_DATA_API_URL provides the backend the widget calls.
     """
-    base_url = (get_settings().widget_script_base_url or "").strip()
+    global _widget_data_api_url_missing_warned
+    settings = get_settings()
+    base_url = (settings.widget_script_base_url or "").strip()
     if not base_url:
         return None
+
+    api_url = (settings.widget_data_api_url or "").strip()
+    if not api_url:
+        api_url = "https://api.zunkireelabs.com"
+        if not _widget_data_api_url_missing_warned:
+            logger.warning(
+                "WIDGET_DATA_API_URL not configured; widget_script falling back to prod URL"
+            )
+            _widget_data_api_url_missing_warned = True
+
     return (
         f'<script src="{base_url.rstrip("/")}/zunkiree-widget.iife.js" '
         f'data-site-id="{site_id}" '
-        f'data-api-url="https://api.zunkireelabs.com"></script>'
+        f'data-api-url="{api_url}"></script>'
     )
 
 
