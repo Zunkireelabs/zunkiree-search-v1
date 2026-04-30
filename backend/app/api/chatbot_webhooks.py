@@ -3,7 +3,7 @@ Meta webhook handler — receives Instagram, Messenger, and WhatsApp DMs.
 Returns 200 OK immediately and processes messages in background.
 """
 import logging
-from fastapi import APIRouter, Request, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 
 from app.database import async_session_maker
@@ -75,12 +75,26 @@ async def receive_webhook(request: Request):
     """
     payload = await request.body()
 
-    # Verify HMAC signature
+    # Verify HMAC signature — fail closed (Z-Ops hardening, #16). Empty
+    # META_APP_SECRET is operator misconfiguration, returned as 503 so the
+    # caller (Meta retry queue) backs off rather than treating it as auth
+    # failure. Mismatch is 403 with a JSON envelope.
     signature = request.headers.get("X-Hub-Signature-256", "")
-    if settings.meta_app_secret and not verify_webhook_signature(payload, signature, settings.meta_app_secret):
-        logger.warning("Invalid webhook signature — bypassing for debug")
-        # TODO: re-enable after fixing app secret
-        # return {"status": "invalid_signature"}
+    if not settings.meta_app_secret:
+        logger.error("META_APP_SECRET not configured — webhook rejected (fail-closed)")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "service_unavailable",
+                "message": "Webhook signature verification is not configured",
+            },
+        )
+    if not verify_webhook_signature(payload, signature, settings.meta_app_secret):
+        logger.warning("Invalid webhook signature — rejecting")
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "invalid_signature"},
+        )
 
     # Parse the webhook payload
     import json

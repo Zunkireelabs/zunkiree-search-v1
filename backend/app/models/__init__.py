@@ -17,6 +17,7 @@ from app.models.tenant_backend_credentials import TenantBackendCredentials
 from app.models.tenant_admin_token import TenantAdminToken
 from app.models.tenant_outbound_webhook import TenantOutboundWebhook
 from app.models.inbound_webhook_event import InboundWebhookEvent
+from app.models.admin_audit_log import AdminAuditLog
 
 __all__ = [
     "Customer",
@@ -41,4 +42,5 @@ __all__ = [
     "TenantAdminToken",
     "TenantOutboundWebhook",
     "InboundWebhookEvent",
+    "AdminAuditLog",
 ]

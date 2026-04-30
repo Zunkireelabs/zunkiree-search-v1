@@ -1,8 +1,9 @@
+import logging
 import uuid
 import csv
 import io
 import secrets
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,8 +11,12 @@ from sqlalchemy import Integer, select, func, case, delete
 
 from app.database import get_db
 from app.models import Customer, Domain, WidgetConfig, IngestionJob, DocumentChunk, QueryLog, UserProfile, Product, Room
+from app.services.admin_audit import log_admin_action
 from app.services.ingestion import get_ingestion_service
+from app.services.vector_store import get_vector_store_service
 from app.config import get_settings
+
+logger = logging.getLogger("zunkiree.admin")
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 settings = get_settings()
@@ -334,6 +339,7 @@ async def get_customer_api_key(
 @router.post("/customers/{site_id}/rotate-key")
 async def rotate_customer_api_key(
     site_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(verify_admin_key),
 ):
@@ -350,6 +356,23 @@ async def rotate_customer_api_key(
     new_key = f"zk_live_{site_id}_{secrets.token_urlsafe(24)}"
     customer.api_key = new_key
     await db.commit()
+
+    await log_admin_action(
+        db,
+        actor="legacy_admin",
+        action="customer_api_key.rotated",
+        target_table="customers",
+        target_id=customer.id,
+        target_site_id=customer.site_id,
+        payload={
+            "customer_id": str(customer.id),
+            "site_id": customer.site_id,
+            # Never log the full secret. Prefix is enough to correlate.
+            "new_key_prefix": new_key[:18],
+        },
+        request=request,
+    )
+
     return {"api_key": new_key, "message": "API key rotated successfully"}
 
 
@@ -411,6 +434,7 @@ async def update_customer(
 @router.delete("/customers/{site_id}")
 async def delete_customer(
     site_id: str,
+    request: Request,
     confirm: bool = False,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(verify_admin_key),
@@ -424,10 +448,44 @@ async def delete_customer(
     if not customer:
         raise HTTPException(status_code=404, detail={"code": "CUSTOMER_NOT_FOUND", "message": "Customer not found"})
 
+    # Snapshot before delete so the audit row carries the deleted state.
+    snapshot = {
+        "customer_id": str(customer.id),
+        "site_id": customer.site_id,
+        "name": customer.name,
+        "is_active": customer.is_active,
+        "website_type": customer.website_type,
+    }
+    customer_id = customer.id
+
     # Use raw SQL DELETE to let database-level CASCADE handle all related records
     from sqlalchemy import text
-    await db.execute(text("DELETE FROM customers WHERE id = :cid"), {"cid": str(customer.id)})
+    await db.execute(text("DELETE FROM customers WHERE id = :cid"), {"cid": str(customer_id)})
     await db.commit()
+
+    # Pinecone namespace cleanup (Z-Ops hardening, #18). Idempotent — empty
+    # or missing namespaces are a no-op. Failure does not roll back the DB
+    # delete; status is captured in the audit payload for triage.
+    try:
+        await get_vector_store_service().delete_namespace(site_id)
+        pinecone_cleanup_status = "ok"
+    except Exception as exc:
+        logger.error("Pinecone cleanup failed for %s: %s", site_id, exc)
+        pinecone_cleanup_status = f"failed:{type(exc).__name__}"
+
+    snapshot["pinecone_cleanup"] = pinecone_cleanup_status
+
+    await log_admin_action(
+        db,
+        actor="legacy_admin",
+        action="customer.deleted",
+        target_table="customers",
+        target_id=customer_id,
+        target_site_id=site_id,
+        payload=snapshot,
+        request=request,
+    )
+
     return {"message": f"Customer '{site_id}' deleted successfully"}
 
 

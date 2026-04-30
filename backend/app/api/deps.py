@@ -22,7 +22,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -97,6 +97,7 @@ async def get_admin_tenant(
     authorization: Optional[str] = Header(None),
     x_zunkiree_site_id: Optional[str] = Header(None, alias="X-Zunkiree-Site-Id"),
     db: AsyncSession = Depends(get_db),
+    request: Request = None,
 ) -> Customer:
     """Verify per-tenant admin token and return the tenant Customer.
 
@@ -108,7 +109,10 @@ async def get_admin_tenant(
     4. Confirm the token's customer.site_id matches X-Zunkiree-Site-Id.
        Mismatch → 403 admin_token_scope_mismatch (token issued for tenant A,
        used to act on tenant B).
-    5. Update last_used_at fire-and-forget. Errors here do NOT fail the
+    5. Stash the matched token's public id on `request.state.admin_token_id`
+       so destructive handlers can attribute audit-log rows to the specific
+       token used (Z-Ops hardening sweep).
+    6. Update last_used_at fire-and-forget. Errors here do NOT fail the
        request — auditing is best-effort.
     """
     if not x_zunkiree_site_id:
@@ -164,6 +168,15 @@ async def get_admin_tenant(
             "admin_token_scope_mismatch",
             "Token is not scoped to the requested site_id",
         )
+
+    # Stash the public token_id (zka_live_<...>) on request.state so audit-log
+    # callers can attribute the action to the specific token used. Skipped when
+    # called outside an HTTP request scope (direct unit-test calls).
+    if request is not None:
+        try:
+            request.state.admin_token_id = matched.token_id
+        except Exception:
+            logger.debug("Failed to stash admin_token_id on request.state", exc_info=True)
 
     # Best-effort last_used_at update. Swallow exceptions — auditing must
     # never block the request.
