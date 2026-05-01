@@ -190,6 +190,29 @@ class AgenticomConnector(BackendConnector):
             "(arrives with v1 wire in Z3)"
         )
 
+    async def find_product_by_external_id(
+        self,
+        external_id: str,
+        catalog_limit: int = 100,
+    ) -> Optional[ConnectorProduct]:
+        """Look up a single product by its external_id, mode-agnostic.
+
+        Workaround until #24b/#26 ship per-tenant Bearer auth and a
+        `GET /api/sync/v1/products/{id}` endpoint: this method does broad-search
+        + local filter, which scales O(catalog) not O(1). Acceptable for Phase 1
+        — catalogs are small and `_add_to_cart` only calls this once per click.
+
+        Used by the cart-storefront-realtime path, where `get_product` is
+        unavailable (it raises NotImplementedError in legacy mode and most
+        Phase-1 tenants are still on the global secret).
+        """
+        if not self._is_configured() or not external_id:
+            return None
+        products = await self.search_products(
+            query="", limit=catalog_limit, in_stock_only=False,
+        )
+        return next((p for p in products if p.external_id == external_id), None)
+
     async def search_products(
         self,
         query: str,

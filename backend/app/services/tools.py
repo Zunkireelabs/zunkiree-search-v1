@@ -502,14 +502,32 @@ async def _add_to_cart(
     size: str = "",
     color: str = "",
 ) -> dict:
-    """Add a product to the cart."""
-    # Validate product_id format
+    """Add a product to the cart.
+
+    Routes to the storefront/realtime path for tenants whose products live in
+    an external backend (Stella) — their local Product table is empty by design,
+    so the legacy `select(Product)` path would always return "Product not found".
+    Mirrors the same WidgetConfig branching `_product_search` uses at lines 283-295.
+    """
+    config_result = await db.execute(
+        select(WidgetConfig).where(WidgetConfig.customer_id == customer_id)
+    )
+    config = config_result.scalar_one_or_none()
+    product_source = config.product_source if config else "scraped"
+    fetch_mode = config.storefront_fetch_mode if config else "synced"
+
+    if product_source == "storefront" and fetch_mode == "realtime":
+        return await _storefront_realtime_add_to_cart(
+            db, session_id, customer_id, product_id, quantity, size, color,
+        )
+    # "synced" storefront mode falls through (products already in local DB from sync).
+
+    # Legacy path: validate UUID + look up local Product row.
     try:
         parsed_product_id = uuid.UUID(product_id)
     except (ValueError, AttributeError):
         return {"error": f"Invalid product ID: {product_id}"}
 
-    # Validate product exists
     result = await db.execute(
         select(Product).where(
             Product.id == parsed_product_id,
@@ -536,6 +554,75 @@ async def _add_to_cart(
         size=size,
         color=color,
         image=images[0] if images else "",
+        url=product.url or "",
+    )
+
+    await cart_service.save_to_db(db, session_id, customer_id)
+
+    return {"cart": cart.to_dict(), "message": f"Added {product.name} to your cart!"}
+
+
+async def _storefront_realtime_add_to_cart(
+    db: AsyncSession,
+    session_id: str,
+    customer_id: uuid.UUID,
+    product_id: str,
+    quantity: int = 1,
+    size: str = "",
+    color: str = "",
+) -> dict:
+    """Add to cart for storefront/realtime tenants (Stella-backed).
+
+    Validates the product by fetching it live from the connector instead of
+    querying the empty local Product table. Mirrors `_storefront_realtime_search`'s
+    error handling. `product_id` is treated as an opaque string — Stella IDs
+    happen to be UUIDs today, but future Shopify/Woo connectors won't be.
+    """
+    from app.config import get_settings
+    from app.services.connectors.agenticom_connector import ConnectorRequestError
+    from app.services.connectors.resolver import ConnectorResolver
+
+    settings = get_settings()
+    if not settings.agenticom_api_url or not settings.agenticom_sync_secret:
+        return {"error": "Storefront not configured."}
+
+    connector = await ConnectorResolver.for_tenant(db, customer_id, "stella")
+
+    try:
+        product = await connector.find_product_by_external_id(product_id)
+    except ConnectorRequestError as e:
+        logger.warning("[STOREFRONT-CART] API returned %d: %s", e.status_code, (e.body or "")[:200])
+        return {"error": "Could not reach storefront."}
+    except Exception as e:
+        logger.error("[STOREFRONT-CART] Lookup failed: %s", e)
+        return {"error": "Storefront temporarily unavailable."}
+
+    if not product:
+        return {"error": "Product not found"}
+
+    if not product.in_stock:
+        return {"error": f"{product.name} is currently out of stock"}
+
+    # Stella returns price as a string ("3200.00"); ConnectorProduct.price's
+    # type says Optional[float] but _product_from_raw doesn't coerce. Local
+    # workaround so cart arithmetic doesn't blow up. The connector should
+    # be fixed at the source — flagged as a follow-up.
+    try:
+        price = float(product.price) if product.price is not None else 0.0
+    except (TypeError, ValueError):
+        price = 0.0
+
+    cart_service = get_cart_service()
+    cart = cart_service.add_item(
+        session_id=session_id,
+        product_id=product_id,
+        name=product.name,
+        price=price,
+        currency=product.currency or "",
+        quantity=quantity,
+        size=size,
+        color=color,
+        image=product.images[0] if product.images else "",
         url=product.url or "",
     )
 
