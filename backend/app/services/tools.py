@@ -603,21 +603,12 @@ async def _storefront_realtime_add_to_cart(
     if not product.in_stock:
         return {"error": f"{product.name} is currently out of stock"}
 
-    # Stella returns price as a string ("3200.00"); ConnectorProduct.price's
-    # type says Optional[float] but _product_from_raw doesn't coerce. Local
-    # workaround so cart arithmetic doesn't blow up. The connector should
-    # be fixed at the source — flagged as a follow-up.
-    try:
-        price = float(product.price) if product.price is not None else 0.0
-    except (TypeError, ValueError):
-        price = 0.0
-
     cart_service = get_cart_service()
     cart = cart_service.add_item(
         session_id=session_id,
         product_id=product_id,
         name=product.name,
-        price=price,
+        price=product.price if product.price is not None else 0.0,
         currency=product.currency or "",
         quantity=quantity,
         size=size,
