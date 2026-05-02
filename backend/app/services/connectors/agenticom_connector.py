@@ -380,11 +380,30 @@ class AgenticomConnector(BackendConnector):
                 )
             )
 
-        # Match the legacy fallback in tools.py: top-level price falls through
-        # to the first variant's price when absent.
-        price = p.get("price")
-        if price is None and variants_raw:
-            price = (variants_raw[0] or {}).get("price")
+        # Top-level price falls through to the first variant's price when
+        # absent. Stella sends prices as JSON strings ("2999.00"); coerce
+        # to honor ConnectorProduct.price's Optional[float] contract.
+        # Unparseable values (empty string, garbage) collapse to None
+        # rather than 0.0 — a fake zero would silently misprice carts.
+        raw_price = p.get("price")
+        if raw_price is None and variants_raw:
+            raw_price = (variants_raw[0] or {}).get("price")
+        price: Optional[float]
+        if raw_price is None:
+            price = None
+        else:
+            try:
+                price = float(raw_price)
+            except (TypeError, ValueError):
+                price = None
+
+        # `dict.get("in_stock", True)` only returns the default when the key
+        # is missing; an explicit `"in_stock": null` returns None and
+        # bool(None) is False. Treat both missing and null as "assume in
+        # stock" so a Stella product-level null doesn't flag the whole
+        # catalog out of stock to the agent.
+        raw_in_stock = p.get("in_stock")
+        in_stock = True if raw_in_stock is None else bool(raw_in_stock)
 
         return ConnectorProduct(
             external_id=str(p.get("id") or ""),
@@ -397,6 +416,6 @@ class AgenticomConnector(BackendConnector):
             categories=p.get("categories") or [],
             tags=p.get("tags") or [],
             url=p.get("url"),
-            in_stock=bool(p.get("in_stock", True)),
+            in_stock=in_stock,
             raw=p,
         )

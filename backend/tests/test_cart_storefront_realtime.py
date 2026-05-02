@@ -14,7 +14,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.services.connectors.agenticom_connector import ConnectorRequestError
+from app.services.connectors.agenticom_connector import (
+    AgenticomConnector,
+    ConnectorRequestError,
+)
 from app.services.connectors.base import ConnectorProduct
 from app.services.tools import _add_to_cart
 
@@ -225,19 +228,35 @@ async def test_storefront_realtime_connector_error_returns_graceful_message(monk
 
 @pytest.mark.asyncio
 async def test_storefront_realtime_coerces_string_price_from_connector(monkeypatch):
-    """Pre-existing connector bug: Stella returns price as a string ('3200.00')
-    but ConnectorProduct.price is typed Optional[float]. The cart path does
-    arithmetic on the price (subtotal calc), so it must coerce. Without this,
-    `_recalculate` blows up with TypeError: unsupported operand type(s) for +:
-    'int' and 'str'."""
+    """Stella's legacy /api/sync/products returns price as a JSON string
+    ("3200.00"), but ConnectorProduct.price is typed Optional[float] and the
+    cart path does arithmetic on it (subtotal calc). The contract is honored
+    by source-side coercion in `AgenticomConnector._product_from_raw`; this
+    test exercises that source → cart integration end-to-end by feeding a
+    raw Stella-shaped dict through the decoder before handing the result to
+    `_add_to_cart`. If the source coercion regresses, this test catches it
+    via TypeError in `_recalculate` ('int' + 'str')."""
     _settings_configured(monkeypatch)
 
-    # Build a product whose price is the string Stella actually sends.
-    bad_product = _connector_product()
-    bad_product.price = "3200.00"  # type: ignore[assignment]
+    # Raw Stella payload shape — what the wire actually returns — with the
+    # offending string price. Routing this through `_product_from_raw`
+    # mirrors the production path and gives the test the correct boundary.
+    raw = {
+        "id": "stella-prod-strprice",
+        "name": "Linen Pants",
+        "description": "Lightweight linen trousers",
+        "price": "3200.00",
+        "currency": "NPR",
+        "images": [{"url": "https://example.test/img.jpg"}],
+        "url": "https://example.test/p/linen-pants",
+        "in_stock": True,
+        "variants": [],
+    }
+    decoded = AgenticomConnector._product_from_raw(raw)
+    assert isinstance(decoded.price, float)  # sanity: source coerced before cart
 
     connector = MagicMock()
-    connector.find_product_by_external_id = AsyncMock(return_value=bad_product)
+    connector.find_product_by_external_id = AsyncMock(return_value=decoded)
     _patch_resolver(monkeypatch, connector)
 
     db = _make_db_with_widget_config(
@@ -252,7 +271,7 @@ async def test_storefront_realtime_coerces_string_price_from_connector(monkeypat
     )
 
     assert "error" not in result
-    assert result["cart"]["items"][0]["price"] == 3200.0  # coerced to float
+    assert result["cart"]["items"][0]["price"] == 3200.0
     assert result["cart"]["subtotal"] == 3200.0
 
 

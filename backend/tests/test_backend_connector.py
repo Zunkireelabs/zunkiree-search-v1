@@ -139,6 +139,31 @@ def test_connector_product_falls_back_to_first_variant_price():
     assert product.price == 1499.0  # from variants[0].price
 
 
+def test_connector_product_treats_null_in_stock_as_in_stock():
+    # Stella's legacy /api/sync/products returns "in_stock": null at product
+    # level (variants carry the real availability). bool(None) is False, so
+    # the naive read flagged every product out of stock.
+    payload = dict(STELLA_PRODUCT_FIXTURE)
+    payload["in_stock"] = None
+    product = AgenticomConnector._product_from_raw(payload)
+    assert product.in_stock is True
+
+
+def test_connector_product_respects_explicit_false_in_stock():
+    payload = dict(STELLA_PRODUCT_FIXTURE)
+    payload["in_stock"] = False
+    product = AgenticomConnector._product_from_raw(payload)
+    assert product.in_stock is False
+
+
+def test_connector_product_coerces_string_price_to_float():
+    payload = dict(STELLA_PRODUCT_FIXTURE)
+    payload["price"] = "3200.00"
+    product = AgenticomConnector._product_from_raw(payload)
+    assert product.price == 3200.0
+    assert isinstance(product.price, float)
+
+
 def test_connector_order_draft_accepts_line_items():
     draft = ConnectorOrderDraft(
         email="shopper@example.com",
