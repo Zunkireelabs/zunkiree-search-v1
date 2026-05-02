@@ -251,23 +251,11 @@ async def test_patch_tenant_partial_update(monkeypatch):
 # ---------- delete_tenant requires confirm=true ----------
 
 
-def _fake_request():
-    """Stand-in Request for direct handler calls. Z-Ops hardening added a
-    `request: Request` parameter to delete_tenant for audit-log wiring."""
-    from fastapi import Request
-    req = MagicMock(spec=Request)
-    req.headers = {}
-    req.client = MagicMock(host="127.0.0.1")
-    state = MagicMock(spec=[])
-    req.state = state
-    return req
-
-
 @pytest.mark.asyncio
 async def test_delete_tenant_requires_confirm_flag():
     db = AsyncMock()
     with pytest.raises(HTTPException) as exc:
-        await delete_tenant(site_id="kasa", request=_fake_request(), confirm=False, db=db)
+        await delete_tenant(site_id="kasa", confirm=False, db=db)
     assert exc.value.status_code == 400
     assert exc.value.detail["code"] == "confirmation_required"
 
@@ -281,39 +269,23 @@ async def test_delete_tenant_404_when_missing():
     db.execute.return_value = customer_result
 
     with pytest.raises(HTTPException) as exc:
-        await delete_tenant(site_id="ghost", request=_fake_request(), confirm=True, db=db)
+        await delete_tenant(site_id="ghost", confirm=True, db=db)
     assert exc.value.status_code == 404
     assert exc.value.detail["code"] == "tenant_not_found"
 
 
 @pytest.mark.asyncio
-async def test_delete_tenant_runs_raw_cascade_when_present(monkeypatch):
+async def test_delete_tenant_runs_raw_cascade_when_present():
     """Raw SQL DELETE so DB-level CASCADE handles every related table."""
     customer = MagicMock()
     customer.id = uuid.uuid4()
-    customer.site_id = "kasa"
-    customer.name = "Kasa"
-    customer.stella_merchant_id = None
-    customer.is_active = True
-    customer.website_type = None
     customer_result = MagicMock()
     customer_result.scalar_one_or_none.return_value = customer
-
-    # Pinecone + audit are wired post-delete (Z-Ops hardening); stub them so
-    # this test stays focused on the DB cascade path.
-    from app.api import admin_tenants as tenants_module
-    fake_vss = MagicMock()
-    fake_vss.delete_namespace = AsyncMock()
-    monkeypatch.setattr(tenants_module, "get_vector_store_service", lambda: fake_vss)
-
-    async def _noop_audit(db, **kwargs):
-        return None
-    monkeypatch.setattr(tenants_module, "log_admin_action", _noop_audit)
 
     db = AsyncMock()
     # First .execute is the SELECT, second is the DELETE
     db.execute.side_effect = [customer_result, MagicMock()]
 
-    await delete_tenant(site_id="kasa", request=_fake_request(), confirm=True, db=db)
+    await delete_tenant(site_id="kasa", confirm=True, db=db)
     assert db.execute.await_count == 2
     assert db.commit.await_count == 1

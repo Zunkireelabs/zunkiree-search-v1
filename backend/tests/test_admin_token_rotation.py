@@ -22,18 +22,6 @@ from app.services.tenant_provisioning import (
 )
 
 
-def _fake_request():
-    """Stand-in Request for direct handler calls. Z-Ops hardening added a
-    `request: Request` parameter to rotate_admin_token for audit-log wiring."""
-    from fastapi import Request
-    req = MagicMock(spec=Request)
-    req.headers = {}
-    req.client = MagicMock(host="127.0.0.1")
-    state = MagicMock(spec=[])
-    req.state = state
-    return req
-
-
 @pytest.mark.asyncio
 async def test_rotate_revokes_only_tokens_past_24h_window():
     customer_id = uuid.uuid4()
@@ -95,15 +83,8 @@ async def test_rotate_route_returns_new_token_and_revoked_ids(monkeypatch):
     monkeypatch.setattr(
         "app.api.admin_tenants.TenantProvisioningService.rotate_admin_token", _ok
     )
-
-    # Z-Ops hardening: rotate_admin_token now also calls log_admin_action.
-    # Stub it for this isolated route-shape test.
-    async def _noop_audit(db, **kwargs):
-        return None
-    monkeypatch.setattr("app.api.admin_tenants.log_admin_action", _noop_audit)
-
     db = AsyncMock()
-    resp = await rotate_admin_token(site_id="kasa", request=_fake_request(), customer=customer, db=db)
+    resp = await rotate_admin_token(site_id="kasa", customer=customer, db=db)
     assert resp.admin_token == fake.new_token_secret
     assert resp.admin_token_id == "zka_live_NEW"
     assert resp.revoked_token_ids == ["zka_live_OLD1", "zka_live_OLD2"]
@@ -126,7 +107,7 @@ async def test_rotate_route_returns_409_when_trigger_blocks_overlap(monkeypatch)
     )
     db = AsyncMock()
     with pytest.raises(HTTPException) as exc:
-        await rotate_admin_token(site_id="kasa", request=_fake_request(), customer=customer, db=db)
+        await rotate_admin_token(site_id="kasa", customer=customer, db=db)
     assert exc.value.status_code == 409
     assert exc.value.detail["code"] == "rotation_overlap_window_active"
 
