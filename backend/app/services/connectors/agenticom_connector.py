@@ -405,13 +405,6 @@ class AgenticomConnector(BackendConnector):
         raw_in_stock = p.get("in_stock")
         in_stock = True if raw_in_stock is None else bool(raw_in_stock)
 
-        # Cross-check: if the product-level flag says in-stock but every
-        # variant is explicitly marked unavailable, the item is effectively
-        # out of stock (#42). Products with no variants trust the product-
-        # level flag as-is.
-        if in_stock and variants and not any(v.available for v in variants):
-            in_stock = False
-
         return ConnectorProduct(
             external_id=str(p.get("id") or ""),
             name=p.get("name", ""),
