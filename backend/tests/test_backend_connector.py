@@ -156,6 +156,41 @@ def test_connector_product_respects_explicit_false_in_stock():
     assert product.in_stock is False
 
 
+def test_connector_product_all_variants_unavailable_is_out_of_stock():
+    # product-level in_stock=True but every variant has available=False →
+    # effective out-of-stock (#42). The cross-check prevents the agent from
+    # surfacing items nobody can actually buy.
+    payload = dict(STELLA_PRODUCT_FIXTURE)
+    payload["in_stock"] = True
+    payload["variants"] = [
+        {"id": "v1", "available": False, "price": 1499.0},
+        {"id": "v2", "available": False, "price": 1499.0},
+    ]
+    product = AgenticomConnector._product_from_raw(payload)
+    assert product.in_stock is False
+
+
+def test_connector_product_one_available_variant_is_in_stock():
+    # One available variant is enough — product should remain in_stock.
+    payload = dict(STELLA_PRODUCT_FIXTURE)
+    payload["in_stock"] = True
+    payload["variants"] = [
+        {"id": "v1", "available": False, "price": 1499.0},
+        {"id": "v2", "available": True, "price": 1499.0},
+    ]
+    product = AgenticomConnector._product_from_raw(payload)
+    assert product.in_stock is True
+
+
+def test_connector_product_no_variants_trusts_product_level_flag():
+    # No variants present → fall through to product-level flag unchanged.
+    payload = dict(STELLA_PRODUCT_FIXTURE)
+    payload["in_stock"] = True
+    payload["variants"] = []
+    product = AgenticomConnector._product_from_raw(payload)
+    assert product.in_stock is True
+
+
 def test_connector_product_coerces_string_price_to_float():
     payload = dict(STELLA_PRODUCT_FIXTURE)
     payload["price"] = "3200.00"

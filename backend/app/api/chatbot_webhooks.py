@@ -90,7 +90,23 @@ async def receive_webhook(request: Request):
             },
         )
     if not verify_webhook_signature(payload, signature, settings.meta_app_secret):
-        logger.warning("Invalid webhook signature — rejecting")
+        # Extract diagnostic fields from the untrusted payload so mismatches
+        # are self-diagnosing in prod logs (#44). Parsed for logging only —
+        # the request is still rejected below regardless of what's in the body.
+        _diag_obj, _diag_entry = "?", "?"
+        try:
+            import json as _j
+            _d = _j.loads(payload)
+            _diag_obj = _d.get("object", "?")
+            _entries = _d.get("entry", [])
+            _diag_entry = str(_entries[0].get("id", "?")) if _entries else "?"
+        except Exception:
+            pass
+        _client_ip = request.client.host if request.client else "unknown"
+        logger.warning(
+            "Invalid webhook signature from %s — object=%s entry_id=%s — rejecting",
+            _client_ip, _diag_obj, _diag_entry,
+        )
         raise HTTPException(
             status_code=403,
             detail={"code": "invalid_signature"},
@@ -436,6 +452,17 @@ async def _handle_incoming_message(
                 if all(len(s) <= 20 for s in trimmed):
                     quick_reply_options = trimmed
 
+            # When a product carousel follows, shorten the text to one sentence
+            # so text + carousel feel like one coherent reply rather than two
+            # separate messages (#43). Full answer is preserved when no carousel.
+            send_text = answer
+            if products:
+                dot_pos = answer.find(". ")
+                if 0 < dot_pos < 200:
+                    send_text = answer[:dot_pos + 1]
+                elif len(answer) > 200:
+                    send_text = answer[:200].rstrip() + "…"
+
             # Send answer — with quick replies attached if available
             if quick_reply_options:
                 try:
@@ -444,7 +471,7 @@ async def _handle_incoming_message(
                         page_id=send_page_id,
                         access_token=access_token,
                         recipient_id=sender_id,
-                        text=answer,
+                        text=send_text,
                         options=quick_reply_options,
                     )
                 except Exception:
@@ -453,7 +480,7 @@ async def _handle_incoming_message(
                         page_id=send_page_id,
                         access_token=access_token,
                         recipient_id=sender_id,
-                        text=answer,
+                        text=send_text,
                     )
             else:
                 await client.send_text_message(
@@ -461,7 +488,7 @@ async def _handle_incoming_message(
                     page_id=send_page_id,
                     access_token=access_token,
                     recipient_id=sender_id,
-                    text=answer,
+                    text=send_text,
                 )
 
             # Send product cards if the agent returned products
