@@ -34,7 +34,7 @@ GREETING_WORDS = {
 }
 
 GREETING_RESPONSES = {
-    "ne": "नमस्ते! म {brand_name} हुँ। आज तपाईंलाई कसरी मद्दत गर्न सक्छु?",
+    "ne": "Namaste! Ma {brand_name} ko assistant hun. Aaja tapailai kasto help garna sakchu?",
     "hi": "नमस्ते! मैं {brand_name} हूँ। आज आपकी कैसे मदद कर सकता हूँ?",
 }
 
@@ -482,7 +482,14 @@ class ChatbotQueryService:
         if supported_languages and len(supported_languages) > 0:
             lang_names = [LANGUAGE_NAMES.get(code, code) for code in supported_languages if code != "en"]
             if lang_names:
-                language_instruction = f"- ALWAYS respond in English by default. Only switch to {', '.join(lang_names)} if the customer's ENTIRE message is clearly written in that language. If the message is in English or a mix of English and another language, respond in English."
+                if "ne" in supported_languages:
+                    language_instruction = (
+                        "- If the customer writes in Romanized Nepali (e.g., 'ke cha', 'linen pants chha?', 'kati ho price?') "
+                        "or mixes Romanized Nepali with English, respond in Romanized Nepali (Nepali written in English/Latin script). "
+                        "Do NOT use Devanagari script. If the customer's message is fully in English, respond in English."
+                    )
+                else:
+                    language_instruction = f"- ALWAYS respond in English by default. Only switch to {', '.join(lang_names)} if the customer's ENTIRE message is clearly written in that language. If the message is in English or a mix of English and another language, respond in English."
 
         # Confidence section
         confidence_section = ""
