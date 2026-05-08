@@ -38,6 +38,9 @@ GREETING_RESPONSES = {
     "hi": "नमस्ते! मैं {brand_name} हूँ। आज आपकी कैसे मदद कर सकता हूँ?",
 }
 
+# Romanized Nepali greetings — trigger Nepali response when "ne" in supported_languages
+ROMANIZED_NEPALI_GREETING_WORDS = {"k cha", "ke cha", "kasto cha", "kasto", "k ho", "ke ho", "kya cha", "hajur"}
+
 
 # ---------------------------------------------------------------------------
 # Common abbreviation dictionary for DM shorthand
@@ -254,7 +257,7 @@ class ChatbotQueryService:
             }
 
         # --- Check for greetings (skip RAG) ---
-        cleaned = message_text.strip().lower()
+        cleaned = re.sub(r"[?!.,]+$", "", message_text.strip().lower())
         if cleaned in GREETING_WORDS:
             if welcome_message:
                 greeting = welcome_message
@@ -263,7 +266,9 @@ class ChatbotQueryService:
 
             # Check if user's message is in Nepali/Hindi
             for lang_code, response_template in GREETING_RESPONSES.items():
-                if cleaned in {"namaste", "namaskar", "नमस्ते", "नमस्कार"} and lang_code in supported_languages:
+                devanagari = {"namaste", "namaskar", "नमस्ते", "नमस्कार"}
+                is_nepali_trigger = cleaned in devanagari or (lang_code == "ne" and cleaned in ROMANIZED_NEPALI_GREETING_WORDS)
+                if is_nepali_trigger and lang_code in supported_languages:
                     greeting = response_template.format(brand_name=brand_name)
                     break
 
