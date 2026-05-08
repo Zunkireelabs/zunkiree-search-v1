@@ -190,29 +190,6 @@ class AgenticomConnector(BackendConnector):
             "(arrives with v1 wire in Z3)"
         )
 
-    async def find_product_by_external_id(
-        self,
-        external_id: str,
-        catalog_limit: int = 100,
-    ) -> Optional[ConnectorProduct]:
-        """Look up a single product by its external_id, mode-agnostic.
-
-        Workaround until #24b/#26 ship per-tenant Bearer auth and a
-        `GET /api/sync/v1/products/{id}` endpoint: this method does broad-search
-        + local filter, which scales O(catalog) not O(1). Acceptable for Phase 1
-        — catalogs are small and `_add_to_cart` only calls this once per click.
-
-        Used by the cart-storefront-realtime path, where `get_product` is
-        unavailable (it raises NotImplementedError in legacy mode and most
-        Phase-1 tenants are still on the global secret).
-        """
-        if not self._is_configured() or not external_id:
-            return None
-        products = await self.search_products(
-            query="", limit=catalog_limit, in_stock_only=False,
-        )
-        return next((p for p in products if p.external_id == external_id), None)
-
     async def search_products(
         self,
         query: str,
@@ -380,30 +357,11 @@ class AgenticomConnector(BackendConnector):
                 )
             )
 
-        # Top-level price falls through to the first variant's price when
-        # absent. Stella sends prices as JSON strings ("2999.00"); coerce
-        # to honor ConnectorProduct.price's Optional[float] contract.
-        # Unparseable values (empty string, garbage) collapse to None
-        # rather than 0.0 — a fake zero would silently misprice carts.
-        raw_price = p.get("price")
-        if raw_price is None and variants_raw:
-            raw_price = (variants_raw[0] or {}).get("price")
-        price: Optional[float]
-        if raw_price is None:
-            price = None
-        else:
-            try:
-                price = float(raw_price)
-            except (TypeError, ValueError):
-                price = None
-
-        # `dict.get("in_stock", True)` only returns the default when the key
-        # is missing; an explicit `"in_stock": null` returns None and
-        # bool(None) is False. Treat both missing and null as "assume in
-        # stock" so a Stella product-level null doesn't flag the whole
-        # catalog out of stock to the agent.
-        raw_in_stock = p.get("in_stock")
-        in_stock = True if raw_in_stock is None else bool(raw_in_stock)
+        # Match the legacy fallback in tools.py: top-level price falls through
+        # to the first variant's price when absent.
+        price = p.get("price")
+        if price is None and variants_raw:
+            price = (variants_raw[0] or {}).get("price")
 
         return ConnectorProduct(
             external_id=str(p.get("id") or ""),
@@ -416,6 +374,6 @@ class AgenticomConnector(BackendConnector):
             categories=p.get("categories") or [],
             tags=p.get("tags") or [],
             url=p.get("url"),
-            in_stock=in_stock,
+            in_stock=bool(p.get("in_stock", True)),
             raw=p,
         )
