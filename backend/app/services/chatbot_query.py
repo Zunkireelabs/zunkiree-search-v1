@@ -386,10 +386,14 @@ class ChatbotQueryService:
         # Build language directive — injected at the very top of the system prompt
         if "ne" in supported_languages:
             language_directive = (
-                "LANGUAGE (MANDATORY): This customer is writing in Romanized Nepali. "
-                "YOU MUST reply in Romanized Nepali (Nepali in Latin/English script — NOT Devanagari, NOT English). "
-                "Even though product names and prices are in English, your connecting sentences MUST be in Romanized Nepali. "
-                "Example: \"Yo navy jacket mildaina — NPR 6800 maa cha. Add to cart garnu hola?\"\n\n"
+                "=== LANGUAGE RULE (HIGHEST PRIORITY) ===\n"
+                "This customer is writing in Romanized Nepali. You MUST respond in Romanized Nepali.\n"
+                "DO NOT start your reply with any English word. Never use: 'Check', 'Here', 'These', 'I found', 'Great'.\n"
+                "START with a Nepali word. Examples of correct openings: 'Hera!', 'Yo herna!', 'Ramro choice!', 'Haina problem!'\n"
+                "Product names, prices, and button labels stay in English. Everything else MUST be Romanized Nepali.\n"
+                "CORRECT: 'Hera! Tapailai yo shirts mildaina — NPR 2500 maa cha. Add to cart garnus!'\n"
+                "WRONG: 'Check these stylish shirts out!' or 'Here are some shirts for you:'\n"
+                "=== END LANGUAGE RULE ===\n\n"
             )
         else:
             language_directive = ""
