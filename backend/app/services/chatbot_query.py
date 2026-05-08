@@ -121,7 +121,7 @@ TONE_DIRECTIVES = {
 # DM-specific ecommerce agent system prompt
 # ---------------------------------------------------------------------------
 
-DM_ECOMMERCE_SYSTEM_PROMPT = """You are {brand_name}'s shopping assistant on Instagram DM. Talk like a friend, 1-2 sentences max, plain text only (no markdown/bold/lists/links).
+DM_ECOMMERCE_SYSTEM_PROMPT = """{language_directive}You are {brand_name}'s shopping assistant on Instagram DM. Talk like a friend, 1-2 sentences max, plain text only (no markdown/bold/lists/links).
 
 PRODUCTS: When a customer asks about products, ALWAYS call product_search first.
 Product images and cards are shown automatically as swipeable carousel cards in the DM.
@@ -148,6 +148,7 @@ TOOLS: product_search, add_to_cart, get_cart, remove_from_cart, checkout, create
 # ---------------------------------------------------------------------------
 
 REFINEMENT_SYSTEM_PROMPT = """You are {brand_name}'s representative responding to a customer on {platform} DM.
+{language_instruction}
 {website_type_instruction}
 
 TONE: {tone_directive}
@@ -169,7 +170,6 @@ Instructions:
 - Respond in a {tone_adjective} tone — {tone_brief}.
 {contact_instruction}
 {fallback_instruction}
-{language_instruction}
 - The customer may use informal language, abbreviations, or shorthand. Interpret their intent generously.
 - Always respond in proper, complete language regardless of how the customer writes."""
 
@@ -296,6 +296,7 @@ class ChatbotQueryService:
                 sender_id=sender_id,
                 message_text=expanded_text,
                 brand_name=brand_name,
+                supported_languages=supported_languages,
                 start=start,
             )
 
@@ -374,12 +375,24 @@ class ChatbotQueryService:
         sender_id: str,
         message_text: str,
         brand_name: str,
+        supported_languages: list,
         start: float,
     ) -> dict:
         """Route ecommerce tenants through the agent pipeline (product search, cart, checkout)."""
         agent = self._get_agent_service()
         # Use sender_id as session_id for cart persistence across DM turns
         session_id = f"dm:{channel.id}:{sender_id}"
+
+        # Build language directive — injected at the very top of the system prompt
+        if "ne" in supported_languages:
+            language_directive = (
+                "LANGUAGE (MANDATORY): This customer is writing in Romanized Nepali. "
+                "YOU MUST reply in Romanized Nepali (Nepali in Latin/English script — NOT Devanagari, NOT English). "
+                "Even though product names and prices are in English, your connecting sentences MUST be in Romanized Nepali. "
+                "Example: \"Yo navy jacket mildaina — NPR 6800 maa cha. Add to cart garnu hola?\"\n\n"
+            )
+        else:
+            language_directive = ""
 
         answer = ""
         suggestions = []
@@ -396,7 +409,10 @@ class ChatbotQueryService:
                 question=message_text,
                 customer_id=customer.id,
                 brand_name=brand_name,
-                system_prompt_override=DM_ECOMMERCE_SYSTEM_PROMPT,
+                system_prompt_override=DM_ECOMMERCE_SYSTEM_PROMPT.format(
+                    language_directive=language_directive,
+                    brand_name=brand_name,
+                ),
                 conversation_history=dm_history,
             ):
                 event_type = event.get("type")
@@ -484,9 +500,9 @@ class ChatbotQueryService:
             if lang_names:
                 if "ne" in supported_languages:
                     language_instruction = (
-                        "- If the customer writes in Romanized Nepali (e.g., 'ke cha', 'linen pants chha?', 'kati ho price?') "
-                        "or mixes Romanized Nepali with English, respond in Romanized Nepali (Nepali written in English/Latin script). "
-                        "Do NOT use Devanagari script. If the customer's message is fully in English, respond in English."
+                        "LANGUAGE (MANDATORY): This customer is writing in Romanized Nepali. "
+                        "YOU MUST reply in Romanized Nepali (Nepali in Latin/English script — NOT Devanagari, NOT English). "
+                        "If the customer's message is fully in English, respond in English."
                     )
                 else:
                     language_instruction = f"- ALWAYS respond in English by default. Only switch to {', '.join(lang_names)} if the customer's ENTIRE message is clearly written in that language. If the message is in English or a mix of English and another language, respond in English."
