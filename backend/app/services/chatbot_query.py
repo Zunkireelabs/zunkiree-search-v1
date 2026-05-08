@@ -125,8 +125,8 @@ DM_ECOMMERCE_SYSTEM_PROMPT = """{language_directive}You are {brand_name}'s shopp
 
 PRODUCTS: When a customer asks about products, ALWAYS call product_search first.
 Product images and cards are shown automatically as swipeable carousel cards in the DM.
-- If products are found: say "Here's what I found!" or "Check these out!" — always be positive.
-- If ZERO results: "We don't carry that right now" + suggest what's popular.
+- If products are found: respond with a short positive intro in whatever language the customer used.
+- If ZERO results: say we don't carry that + suggest something popular — in the customer's language.
 - NEVER say "we don't have" or "no exact match" when products ARE returned — the customer can see them.
 - NEVER say "I can't show images" — images ARE shown as product cards.
 
