@@ -16,6 +16,7 @@ from app.models.chatbot import ChatbotChannel
 from app.services.query import get_query_service
 from app.services.llm import get_llm_service, WEBSITE_TYPE_PROMPTS, LANGUAGE_NAMES
 from app.services.chatbot_conversation import get_chatbot_conversation_service
+from app.services.language_detection import detect_language
 
 logger = logging.getLogger("zunkiree.chatbot.query")
 
@@ -121,7 +122,15 @@ TONE_DIRECTIVES = {
 # DM-specific ecommerce agent system prompt
 # ---------------------------------------------------------------------------
 
-DM_ECOMMERCE_SYSTEM_PROMPT = """{language_directive}You are {brand_name}'s shopping assistant on Instagram DM. Talk like a friend, 1-2 sentences max, plain text only (no markdown/bold/lists/links).
+TRANSLATION_SYSTEM_PROMPT = """Translate this ecommerce chat reply to Romanized Nepali (Nepali written in Latin/English script).
+Rules:
+- Keep product names, prices (NPR amounts), and button labels (Add to Cart, Checkout) in English.
+- Only translate the connecting sentences and conversational text.
+- Keep it short and casual — this is an Instagram DM.
+- Do NOT use Devanagari script.
+- Do NOT add any explanation or metadata — output only the translated reply."""
+
+DM_ECOMMERCE_SYSTEM_PROMPT = """You are {brand_name}'s shopping assistant on Instagram DM. Talk like a friend, 1-2 sentences max, plain text only (no markdown/bold/lists/links).
 
 PRODUCTS: When a customer asks about products, ALWAYS call product_search first.
 Product images and cards are shown automatically as swipeable carousel cards in the DM.
@@ -383,20 +392,7 @@ class ChatbotQueryService:
         # Use sender_id as session_id for cart persistence across DM turns
         session_id = f"dm:{channel.id}:{sender_id}"
 
-        # Build language directive — injected at the very top of the system prompt
-        if "ne" in supported_languages:
-            language_directive = (
-                "=== LANGUAGE RULE (HIGHEST PRIORITY) ===\n"
-                "This customer is writing in Romanized Nepali. You MUST respond in Romanized Nepali.\n"
-                "DO NOT start your reply with any English word. Never use: 'Check', 'Here', 'These', 'I found', 'Great'.\n"
-                "START with a Nepali word. Examples of correct openings: 'Hera!', 'Yo herna!', 'Ramro choice!', 'Haina problem!'\n"
-                "Product names, prices, and button labels stay in English. Everything else MUST be Romanized Nepali.\n"
-                "CORRECT: 'Hera! Tapailai yo shirts mildaina — NPR 2500 maa cha. Add to cart garnus!'\n"
-                "WRONG: 'Check these stylish shirts out!' or 'Here are some shirts for you:'\n"
-                "=== END LANGUAGE RULE ===\n\n"
-            )
-        else:
-            language_directive = ""
+        detected_language = detect_language(message_text)
 
         answer = ""
         suggestions = []
@@ -414,7 +410,6 @@ class ChatbotQueryService:
                 customer_id=customer.id,
                 brand_name=brand_name,
                 system_prompt_override=DM_ECOMMERCE_SYSTEM_PROMPT.format(
-                    language_directive=language_directive,
                     brand_name=brand_name,
                 ),
                 conversation_history=dm_history,
@@ -436,6 +431,21 @@ class ChatbotQueryService:
         answer = self._strip_markdown(answer)
         if len(answer) > 950:
             answer = answer[:947] + "..."
+
+        # Translation pass: agent always runs in English; translate output when customer wrote in Nepali
+        if detected_language in {"ne_romanized", "mixed_ne_en"} and "ne" in supported_languages:
+            try:
+                translated = await self.llm_service.provider.generate(
+                    system_prompt=TRANSLATION_SYSTEM_PROMPT,
+                    user_message=answer,
+                    max_tokens=150,
+                    temperature=0.3,
+                )
+                answer = translated.strip()
+                if len(answer) > 950:
+                    answer = answer[:947] + "..."
+            except Exception as e:
+                logger.warning("Translation pass failed for channel %s, using English reply: %s", channel.id, e)
 
         # Persist
         await self.conversation_service.add_message(db, channel.id, sender_id, "assistant", answer)
