@@ -313,10 +313,10 @@ async def test_legacy_mode_search_wire_is_byte_identical_to_z1():
     assert sent.headers.get("X-Site-ID") == "kasa"
     assert "Authorization" not in sent.headers
     assert "X-Stella-Site-Id" not in sent.headers
-    # Query params: search + limit + in_stock=true
+    # Query params: search + limit + in_stock_only=true
     assert sent.url.params.get("search") == "tee"
     assert sent.url.params.get("limit") == "10"
-    assert sent.url.params.get("in_stock") == "true"
+    assert sent.url.params.get("in_stock_only") == "true"
 
 
 # Z2's v1-mode-search-uses-bearer-and-versioned-path test removed in Z3:
