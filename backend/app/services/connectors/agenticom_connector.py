@@ -231,7 +231,7 @@ class AgenticomConnector(BackendConnector):
             return []
         params: dict = {"search": query, "limit": limit}
         if in_stock_only:
-            params["in_stock"] = "true"
+            params["in_stock_only"] = "true"
 
         if self.mode == "v1":
             url = f"{self._api_url}/api/sync/products"
