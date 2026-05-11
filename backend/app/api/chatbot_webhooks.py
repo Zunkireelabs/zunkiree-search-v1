@@ -2,6 +2,7 @@
 Meta webhook handler — receives Instagram, Messenger, and WhatsApp DMs.
 Returns 200 OK immediately and processes messages in background.
 """
+import hashlib
 import logging
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
@@ -19,6 +20,20 @@ logger = logging.getLogger("zunkiree.chatbot.webhook")
 
 router = APIRouter(prefix="/webhooks/meta", tags=["chatbot-webhooks"])
 settings = get_settings()
+
+
+def _secret_fingerprint(secret: str) -> str:
+    """Return a non-sensitive fingerprint of an app secret for log diagnostics."""
+    digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()
+    last4 = secret[-4:] if len(secret) >= 4 else "????"
+    return f"sha256={digest[:8]}... len={len(secret)} last4=...{last4}"
+
+
+# Log fingerprint at startup so drift is visible without exposing the secret.
+if settings.meta_app_secret:
+    logger.info("META_APP_SECRET fingerprint: %s", _secret_fingerprint(settings.meta_app_secret))
+else:
+    logger.error("META_APP_SECRET is empty — HMAC verification will 503 on every POST /webhooks/meta")
 
 # Cache last product results per sender for size quick replies
 _last_products: dict[str, list[dict]] = {}
@@ -103,9 +118,16 @@ async def receive_webhook(request: Request):
         except Exception:
             pass
         _client_ip = request.client.host if request.client else "unknown"
+        _body_sha256 = hashlib.sha256(payload).hexdigest()
+        _content_len = request.headers.get("Content-Length", "?")
+        _content_enc = request.headers.get("Content-Encoding", "none")
         logger.warning(
-            "Invalid webhook signature from %s — object=%s entry_id=%s — rejecting",
+            "Invalid webhook signature from %s — object=%s entry_id=%s "
+            "body_sha256=%s... content-length=%s content-encoding=%s "
+            "secret_fingerprint=[%s] — rejecting",
             _client_ip, _diag_obj, _diag_entry,
+            _body_sha256[:16], _content_len, _content_enc,
+            _secret_fingerprint(settings.meta_app_secret),
         )
         raise HTTPException(
             status_code=403,

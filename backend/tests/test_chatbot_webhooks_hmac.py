@@ -73,6 +73,26 @@ def test_empty_app_secret_returns_503_service_unavailable(monkeypatch):
     assert resp.json()["detail"]["code"] == "service_unavailable"
 
 
+def test_mismatch_log_includes_body_and_secret_diagnostics(monkeypatch, caplog):
+    """On signature mismatch the warning log must contain body_sha256 and secret_fingerprint
+    so a future incident can be diagnosed in seconds from prod logs alone."""
+    import logging
+    client = _client_with_secret(monkeypatch, SECRET)
+    body = b'{"object":"instagram","entry":[]}'
+    with caplog.at_level(logging.WARNING, logger="zunkiree.chatbot.webhook"):
+        resp = client.post(
+            "/api/v1/webhooks/meta",
+            content=body,
+            headers={"X-Hub-Signature-256": "sha256=deadbeef", "Content-Type": "application/json"},
+        )
+    assert resp.status_code == 403
+    mismatch_records = [r for r in caplog.records if "Invalid webhook signature" in r.message]
+    assert mismatch_records, "Expected a 'Invalid webhook signature' log record"
+    msg = mismatch_records[0].message
+    assert "body_sha256=" in msg
+    assert "secret_fingerprint=" in msg
+
+
 def test_valid_signature_processes_normally(monkeypatch):
     client = _client_with_secret(monkeypatch, SECRET)
     # Empty entries list so the dispatcher loop has nothing to do — we are only
