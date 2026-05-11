@@ -433,11 +433,71 @@ async def _handle_incoming_message(
             db.add(inbound_log)
             await db.commit()
 
-            # Direct add-to-cart: user tapped a size quick reply after "Add to Cart" postback.
-            # Bypass the agent entirely — we already know the product_id.
+            # Direct add-to-cart bypasses — skip agent when we already know the product.
             pkey = f"{page_id}:{sender_id}"
             pending_pid = _pending_cart_add.pop(pkey, None)
-            if pending_pid and is_quick_reply:
+
+            if pending_pid and is_postback:
+                # User tapped "Add to Cart" from carousel. Check if product has sizes.
+                sender_key = f"{channel.id}:{sender_id}"
+                product_sizes = []
+                for p in _last_products.get(sender_key, []):
+                    if str(p.get("id", "")) == str(pending_pid):
+                        product_sizes = p.get("sizes", [])
+                        break
+
+                if product_sizes:
+                    # Re-arm pending so the next size quick-reply tap triggers direct add.
+                    _pending_cart_add[pkey] = pending_pid
+                    size_prompt = "What size would you like?"
+                    try:
+                        await client.send_quick_replies(
+                            platform=platform, page_id=send_page_id,
+                            access_token=access_token, recipient_id=sender_id,
+                            text=size_prompt, options=product_sizes[:13],
+                        )
+                    except Exception:
+                        await client.send_text_message(
+                            platform=platform, page_id=send_page_id,
+                            access_token=access_token, recipient_id=sender_id,
+                            text=size_prompt + " Options: " + ", ".join(product_sizes[:13]),
+                        )
+                    bot_reply = size_prompt
+                else:
+                    # No sizes — add directly without prompting.
+                    from app.services.tools import execute_tool
+                    from app.services.cart import get_cart_service
+                    from app.models import Customer
+                    from app.services.chatbot_conversation import get_chatbot_conversation_service
+                    customer = await db.get(Customer, channel.customer_id)
+                    site_id = customer.site_id if customer else ""
+                    session_id = f"dm:{channel.id}:{sender_id}"
+                    await get_cart_service().load_from_db(db, session_id)
+                    add_result = await execute_tool(
+                        tool_name="add_to_cart",
+                        tool_args={"product_id": pending_pid, "size": ""},
+                        db=db, session_id=session_id,
+                        customer_id=channel.customer_id, site_id=site_id,
+                    )
+                    bot_reply = add_result.get("message", "Added to your cart!")
+                    conv = get_chatbot_conversation_service()
+                    await conv.add_message(db, channel.id, sender_id, "user", message_text)
+                    await conv.add_message(db, channel.id, sender_id, "assistant", bot_reply)
+                    await client.send_text_message(
+                        platform=platform, page_id=send_page_id,
+                        access_token=access_token, recipient_id=sender_id, text=bot_reply,
+                    )
+
+                outbound_log = ChatbotMessageLog(
+                    channel_id=channel.id, customer_id=channel.customer_id,
+                    platform_sender_id=sender_id, direction="outbound", message_text=bot_reply,
+                )
+                db.add(outbound_log)
+                await db.commit()
+                return
+
+            elif pending_pid and is_quick_reply:
+                # User tapped a size quick reply — add to cart with the chosen size.
                 from app.services.tools import execute_tool
                 from app.services.cart import get_cart_service
                 from app.models import Customer
@@ -446,25 +506,23 @@ async def _handle_incoming_message(
                 site_id = customer.site_id if customer else ""
                 session_id = f"dm:{channel.id}:{sender_id}"
                 await get_cart_service().load_from_db(db, session_id)
-                result = await execute_tool(
+                add_result = await execute_tool(
                     tool_name="add_to_cart",
                     tool_args={"product_id": pending_pid, "size": message_text.strip()},
-                    db=db,
-                    session_id=session_id,
-                    customer_id=channel.customer_id,
-                    site_id=site_id,
+                    db=db, session_id=session_id,
+                    customer_id=channel.customer_id, site_id=site_id,
                 )
-                reply = result.get("message", "Added to your cart!")
+                bot_reply = add_result.get("message", "Added to your cart!")
                 conv = get_chatbot_conversation_service()
                 await conv.add_message(db, channel.id, sender_id, "user", message_text)
-                await conv.add_message(db, channel.id, sender_id, "assistant", reply)
+                await conv.add_message(db, channel.id, sender_id, "assistant", bot_reply)
                 await client.send_text_message(
                     platform=platform, page_id=send_page_id,
-                    access_token=access_token, recipient_id=sender_id, text=reply,
+                    access_token=access_token, recipient_id=sender_id, text=bot_reply,
                 )
                 outbound_log = ChatbotMessageLog(
                     channel_id=channel.id, customer_id=channel.customer_id,
-                    platform_sender_id=sender_id, direction="outbound", message_text=reply,
+                    platform_sender_id=sender_id, direction="outbound", message_text=bot_reply,
                 )
                 db.add(outbound_log)
                 await db.commit()
@@ -508,14 +566,10 @@ async def _handle_incoming_message(
                     for s in p.get("sizes", []):
                         if s not in available_sizes:
                             available_sizes.append(s)
-                # Arm the pending cache so the user's size tap bypasses the agent
-                # on the next turn. For postback taps re-use the original product_id
-                # (already popped from cache); for single search results use that product.
-                if pkey not in _pending_cart_add:
-                    if pending_pid:
-                        _pending_cart_add[pkey] = pending_pid
-                    elif len(size_source) == 1:
-                        _pending_cart_add[pkey] = size_source[0]["id"]
+                # Arm the pending cache so the user's size tap bypasses the agent.
+                # Only applies when there's a single unambiguous product in context.
+                if pkey not in _pending_cart_add and len(size_source) == 1:
+                    _pending_cart_add[pkey] = size_source[0]["id"]
 
             # Decide what to attach to the answer message
             quick_reply_options = None
