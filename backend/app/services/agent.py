@@ -47,6 +47,7 @@ class AgentService:
         image_data: str | None = None,
         system_prompt_override: str | None = None,
         conversation_history: list[dict] | None = None,
+        force_tool_on_first_turn: bool = False,
     ):
         """
         Process a query through the agentic pipeline with tool calling.
@@ -111,6 +112,11 @@ class AgentService:
         while iteration < MAX_TOOL_ITERATIONS:
             iteration += 1
 
+            # Force a tool call on the first turn when caller requires it (DM
+            # ecommerce path). Prevents GPT-4o-mini from hallucinating product
+            # names instead of calling product_search.
+            tool_choice = "required" if (force_tool_on_first_turn and iteration == 1) else "auto"
+
             # Call OpenAI with tools
             response = await self.client.chat.completions.create(
                 model=self.model,
@@ -119,6 +125,7 @@ class AgentService:
                 max_tokens=200,
                 temperature=0.3,
                 stream=True,
+                tool_choice=tool_choice,
             )
 
             # Stream the response
