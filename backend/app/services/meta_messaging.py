@@ -269,7 +269,7 @@ class MetaMessagingClient:
                 {
                     "type": "postback",
                     "title": "Add to Cart",
-                    "payload": _json.dumps({"action": "add_to_cart", "product_id": p.get("id", "")}),
+                    "payload": _json.dumps({"action": "add_to_cart", "product_id": p.get("id", ""), "name": p.get("name", "")[:80]}),
                 },
                 {
                     "type": "postback",

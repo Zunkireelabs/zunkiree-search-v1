@@ -38,6 +38,10 @@ else:
 # Cache last product results per sender for size quick replies
 _last_products: dict[str, list[dict]] = {}
 
+# Pending add-to-cart: keyed by "page_id:sender_id" → product_id
+# Set when user taps a carousel "Add to Cart" button; consumed when user replies with a size.
+_pending_cart_add: dict[str, str] = {}
+
 
 @router.get("")
 async def verify_webhook(
@@ -185,7 +189,12 @@ async def _process_instagram_entry(entry: dict):
                 if isinstance(action_data, dict):
                     action = action_data.get("action")
                     if action == "add_to_cart":
-                        message_text = f"Add product {action_data['product_id']} to my cart"
+                        pid = action_data["product_id"]
+                        name = action_data.get("name", "")
+                        label = f"'{name}'" if name else f"product {pid}"
+                        message_text = f"Add {label} to my cart [product_id:{pid}]"
+                        # Remember which product so the size reply can bypass the agent
+                        _pending_cart_add[f"{page_id}:{sender_id}"] = pid
                     elif action == "details":
                         message_text = f"Tell me more about {action_data.get('name', 'this product')}"
                     else:
@@ -207,8 +216,10 @@ async def _process_instagram_entry(entry: dict):
 
         # If user tapped a quick reply, use the full payload as the message
         quick_reply = message.get("quick_reply", {})
+        is_quick_reply = False
         if quick_reply.get("payload"):
             message_text = quick_reply["payload"]
+            is_quick_reply = True
 
         # Handle shared posts: extract URL from attachments
         if not message_text and attachments:
@@ -234,6 +245,7 @@ async def _process_instagram_entry(entry: dict):
             sender_id=sender_id,
             message_text=message_text,
             message_id=message_id,
+            is_quick_reply=is_quick_reply,
         )
 
 
@@ -263,7 +275,11 @@ async def _process_messenger_entry(entry: dict):
                 if isinstance(action_data, dict):
                     action = action_data.get("action")
                     if action == "add_to_cart":
-                        message_text = f"Add product {action_data['product_id']} to my cart"
+                        pid = action_data["product_id"]
+                        name = action_data.get("name", "")
+                        label = f"'{name}'" if name else f"product {pid}"
+                        message_text = f"Add {label} to my cart [product_id:{pid}]"
+                        _pending_cart_add[f"{page_id}:{sender_id}"] = pid
                     elif action == "details":
                         message_text = f"Tell me more about {action_data.get('name', 'this product')}"
                     else:
@@ -343,6 +359,7 @@ async def _handle_incoming_message(
     message_text: str,
     message_id: str | None,
     is_postback: bool = False,
+    is_quick_reply: bool = False,
 ):
     """
     Core message handler. Runs with its own DB session since this may
@@ -416,6 +433,43 @@ async def _handle_incoming_message(
             db.add(inbound_log)
             await db.commit()
 
+            # Direct add-to-cart: user tapped a size quick reply after "Add to Cart" postback.
+            # Bypass the agent entirely — we already know the product_id.
+            pkey = f"{page_id}:{sender_id}"
+            pending_pid = _pending_cart_add.pop(pkey, None)
+            if pending_pid and is_quick_reply:
+                from app.services.tools import execute_tool
+                from app.services.cart import get_cart_service
+                from app.models import Customer
+                from app.services.chatbot_conversation import get_chatbot_conversation_service
+                customer = await db.get(Customer, channel.customer_id)
+                site_id = customer.site_id if customer else ""
+                session_id = f"dm:{channel.id}:{sender_id}"
+                await get_cart_service().load_from_db(db, session_id)
+                result = await execute_tool(
+                    tool_name="add_to_cart",
+                    tool_args={"product_id": pending_pid, "size": message_text.strip()},
+                    db=db,
+                    session_id=session_id,
+                    customer_id=channel.customer_id,
+                    site_id=site_id,
+                )
+                reply = result.get("message", "Added to your cart!")
+                conv = get_chatbot_conversation_service()
+                await conv.add_message(db, channel.id, sender_id, "user", message_text)
+                await conv.add_message(db, channel.id, sender_id, "assistant", reply)
+                await client.send_text_message(
+                    platform=platform, page_id=send_page_id,
+                    access_token=access_token, recipient_id=sender_id, text=reply,
+                )
+                outbound_log = ChatbotMessageLog(
+                    channel_id=channel.id, customer_id=channel.customer_id,
+                    platform_sender_id=sender_id, direction="outbound", message_text=reply,
+                )
+                db.add(outbound_log)
+                await db.commit()
+                return
+
             # Process via RAG pipeline
             chatbot_service = get_chatbot_query_service()
             result = await chatbot_service.process_message(
@@ -436,16 +490,6 @@ async def _handle_incoming_message(
             if feedback_signal and query_log_id is None:
                 await _update_feedback_from_signal(db, channel.id, sender_id, feedback_signal)
 
-            # For carousel postback taps, echo the full question first
-            if is_postback:
-                await client.send_text_message(
-                    platform=platform,
-                    page_id=send_page_id,
-                    access_token=access_token,
-                    recipient_id=sender_id,
-                    text=message_text,
-                )
-
             # Cache products for size quick replies on follow-up turns
             sender_key = f"{channel.id}:{sender_id}"
             if products:
@@ -464,6 +508,14 @@ async def _handle_incoming_message(
                     for s in p.get("sizes", []):
                         if s not in available_sizes:
                             available_sizes.append(s)
+                # Arm the pending cache so the user's size tap bypasses the agent
+                # on the next turn. For postback taps re-use the original product_id
+                # (already popped from cache); for single search results use that product.
+                if pkey not in _pending_cart_add:
+                    if pending_pid:
+                        _pending_cart_add[pkey] = pending_pid
+                    elif len(size_source) == 1:
+                        _pending_cart_add[pkey] = size_source[0]["id"]
 
             # Decide what to attach to the answer message
             quick_reply_options = None
