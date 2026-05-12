@@ -154,6 +154,8 @@ As SOON as you have all 4 (name, phone, location, payment_method), IMMEDIATELY c
 If payment_url is returned, share it and say "Tap this link to pay" followed by the URL.
 Do NOT ask for email, postal code, or full address. Remember what the customer already told you.
 
+POST-CART ACTIONS: When customer says "View Cart" or "Cart hernu", call get_cart. When "Keep Shopping" or "Aru herne", reply with "Sure, what else are you looking for?" in their language.
+
 TOOLS: product_search, add_to_cart, get_cart, remove_from_cart, checkout, create_dm_order, add_to_wishlist, get_wishlist, get_order_status.
 """
 
@@ -398,6 +400,13 @@ class ChatbotQueryService:
         session_id = f"dm:{channel.id}:{sender_id}"
 
         detected_language = detect_language(message_text)
+
+        # Persist language preference so the bypass path can localize post-cart replies
+        if detected_language:
+            ch_config = channel.config if isinstance(channel.config, dict) else {}
+            if ch_config.get("preferred_language") != detected_language:
+                channel.config = {**ch_config, "preferred_language": detected_language}
+                await db.commit()
 
         answer = ""
         suggestions = []
