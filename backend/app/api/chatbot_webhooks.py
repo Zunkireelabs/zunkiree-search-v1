@@ -497,36 +497,54 @@ async def _handle_incoming_message(
                 return
 
             elif pending_pid and is_quick_reply:
-                # User tapped a size quick reply — add to cart with the chosen size.
-                from app.services.tools import execute_tool
-                from app.services.cart import get_cart_service
-                from app.models import Customer
-                from app.services.chatbot_conversation import get_chatbot_conversation_service
-                customer = await db.get(Customer, channel.customer_id)
-                site_id = customer.site_id if customer else ""
-                session_id = f"dm:{channel.id}:{sender_id}"
-                await get_cart_service().load_from_db(db, session_id)
-                add_result = await execute_tool(
-                    tool_name="add_to_cart",
-                    tool_args={"product_id": pending_pid, "size": message_text.strip()},
-                    db=db, session_id=session_id,
-                    customer_id=channel.customer_id, site_id=site_id,
-                )
-                bot_reply = add_result.get("message", "Added to your cart!")
-                conv = get_chatbot_conversation_service()
-                await conv.add_message(db, channel.id, sender_id, "user", message_text)
-                await conv.add_message(db, channel.id, sender_id, "assistant", bot_reply)
-                await client.send_text_message(
-                    platform=platform, page_id=send_page_id,
-                    access_token=access_token, recipient_id=sender_id, text=bot_reply,
-                )
-                outbound_log = ChatbotMessageLog(
-                    channel_id=channel.id, customer_id=channel.customer_id,
-                    platform_sender_id=sender_id, direction="outbound", message_text=bot_reply,
-                )
-                db.add(outbound_log)
-                await db.commit()
-                return
+                # Only treat as a size tap if the text actually matches one of the
+                # product's sizes. Chips like "Show my cart" / "Checkout" must fall
+                # through to the agent, not be used as a size string.
+                sender_key = f"{channel.id}:{sender_id}"
+                product_sizes_upper = []
+                for p in _last_products.get(sender_key, []):
+                    if str(p.get("id", "")) == str(pending_pid):
+                        product_sizes_upper = [s.upper() for s in p.get("sizes", [])]
+                        break
+
+                if message_text.strip().upper() in product_sizes_upper:
+                    from app.services.tools import execute_tool
+                    from app.services.cart import get_cart_service
+                    from app.models import Customer
+                    from app.services.chatbot_conversation import get_chatbot_conversation_service
+                    customer = await db.get(Customer, channel.customer_id)
+                    site_id = customer.site_id if customer else ""
+                    session_id = f"dm:{channel.id}:{sender_id}"
+                    await get_cart_service().load_from_db(db, session_id)
+                    add_result = await execute_tool(
+                        tool_name="add_to_cart",
+                        tool_args={"product_id": pending_pid, "size": message_text.strip()},
+                        db=db, session_id=session_id,
+                        customer_id=channel.customer_id, site_id=site_id,
+                    )
+                    bot_reply = add_result.get("message", "Added to your cart!")
+                    conv = get_chatbot_conversation_service()
+                    await conv.add_message(db, channel.id, sender_id, "user", message_text)
+                    await conv.add_message(db, channel.id, sender_id, "assistant", bot_reply)
+                    await client.send_text_message(
+                        platform=platform, page_id=send_page_id,
+                        access_token=access_token, recipient_id=sender_id, text=bot_reply,
+                    )
+                    outbound_log = ChatbotMessageLog(
+                        channel_id=channel.id, customer_id=channel.customer_id,
+                        platform_sender_id=sender_id, direction="outbound", message_text=bot_reply,
+                    )
+                    db.add(outbound_log)
+                    await db.commit()
+                    return
+                else:
+                    # Not a size (e.g. "Show my cart", "Checkout") — re-arm and fall
+                    # through to agent so it handles the real intent.
+                    _pending_cart_add[pkey] = pending_pid
+
+            # Clear any stale pending entry before handing off to agent — the agent
+            # path will re-arm it if it decides to ask about size.
+            _pending_cart_add.pop(pkey, None)
 
             # Process via RAG pipeline
             chatbot_service = get_chatbot_query_service()
