@@ -7,8 +7,9 @@ import secrets
 import logging
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, update
+from sqlalchemy import select, func, update, delete
 
+from app.models.cart import ShoppingCart
 from app.models.order import Order
 from app.services.cart import get_cart_service
 from app.config import get_settings
@@ -66,9 +67,10 @@ class OrderService:
         await db.commit()
         await db.refresh(order)
 
-        # Clear cart after order creation
+        # Clear in-memory cart and delete the DB row — no empty rows accumulate
         cart_service.clear_cart(session_id)
-        await cart_service.save_to_db(db, session_id, customer_id)
+        await db.execute(delete(ShoppingCart).where(ShoppingCart.session_id == session_id))
+        await db.commit()
 
         # Sync order to Agenticom (non-blocking)
         order_dict = self._order_to_dict(order)

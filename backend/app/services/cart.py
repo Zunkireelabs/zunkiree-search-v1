@@ -66,16 +66,14 @@ class CartService:
         return self._carts[session_id]
 
     async def load_from_db(self, db: AsyncSession, session_id: str) -> CartState:
-        """Load cart from DB if not in memory. Called once when a returning session is seen."""
-        if session_id in self._carts and self._carts[session_id].items:
-            return self._carts[session_id]
+        """Load cart from DB — always authoritative. Overwrites any in-memory state."""
         result = await db.execute(
             select(ShoppingCart).where(ShoppingCart.session_id == session_id)
         )
         db_cart = result.scalar_one_or_none()
+        cart = CartState()
         if db_cart and db_cart.items:
             items_data = json.loads(db_cart.items)
-            cart = CartState()
             for item in items_data:
                 cart.items.append(CartItem(
                     product_id=item.get("product_id", ""),
@@ -89,9 +87,8 @@ class CartService:
                     url=item.get("url", ""),
                 ))
             self._recalculate(cart)
-            self._carts[session_id] = cart
-            return cart
-        return self.get_cart(session_id)
+        self._carts[session_id] = cart
+        return cart
 
     def add_item(
         self,
