@@ -433,6 +433,17 @@ async def _storefront_realtime_search(
         if max_price and price and price > max_price:
             continue
         raw = product.raw or {}
+        # Stella exposes sizes/colors only via variants (option1=size, option2=color).
+        # raw.get("sizes") returns [] on Stella — must derive from variants.
+        variant_sizes: list[str] = []
+        variant_colors: list[str] = []
+        for v in product.variants or []:
+            if v.option1 and v.option1 not in variant_sizes:
+                variant_sizes.append(v.option1)
+            if v.option2 and v.option2 not in variant_colors:
+                variant_colors.append(v.option2)
+        sizes = variant_sizes or raw.get("sizes", [])
+        colors = variant_colors or raw.get("colors", [])
         filtered.append({
             "id": product.external_id,
             "name": product.name,
@@ -442,8 +453,8 @@ async def _storefront_realtime_search(
             "images": product.images,
             "url": product.url or "",
             "in_stock": product.in_stock,
-            "sizes": raw.get("sizes", []),
-            "colors": raw.get("colors", []),
+            "sizes": sizes,
+            "colors": colors,
             "slug": raw.get("slug", ""),
         })
 
