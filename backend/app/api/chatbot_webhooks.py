@@ -443,7 +443,7 @@ async def _handle_incoming_message(
                 product_sizes = []
                 for p in _last_products.get(sender_key, []):
                     if str(p.get("id", "")) == str(pending_pid):
-                        product_sizes = p.get("sizes", [])
+                        product_sizes = [s.strip() for s in p.get("sizes", []) if s and s.strip()]
                         break
 
                 if product_sizes:
@@ -504,7 +504,7 @@ async def _handle_incoming_message(
                 product_sizes_upper = []
                 for p in _last_products.get(sender_key, []):
                     if str(p.get("id", "")) == str(pending_pid):
-                        product_sizes_upper = [s.upper() for s in p.get("sizes", [])]
+                        product_sizes_upper = [s.strip().upper() for s in p.get("sizes", []) if s and s.strip()]
                         break
 
                 if message_text.strip().upper() in product_sizes_upper:
