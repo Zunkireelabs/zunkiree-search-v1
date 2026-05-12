@@ -128,9 +128,12 @@ Rules:
 - Only translate the connecting sentences and conversational text.
 - Keep it short and casual — this is an Instagram DM.
 - Do NOT use Devanagari script.
+- PRONOUNS (mandatory): Address the customer with the FORMAL "tapai" or "hajur". NEVER use the informal "timi" / "timro" / "timilai". Use "tapai ko" not "timi ko", "tapailai" not "timilai".
 - Do NOT add any explanation or metadata — output only the translated reply."""
 
 DM_ECOMMERCE_SYSTEM_PROMPT = """You are {brand_name}'s shopping assistant on Instagram DM. Talk like a friend, 1-2 sentences max, plain text only (no markdown/bold/lists/links).
+
+NEPALI PRONOUNS (when replying in Romanized Nepali): Use the FORMAL "tapai" or "hajur" only. NEVER use "timi" / "timro" / "timilai" / "timilai". Examples: "tapai ko cart ma" (not "timi ko cart ma"), "tapailai kasto help garna sakchu" (not "timilai..."), "hajur ko order" is also fine.
 
 PRODUCTS: When a customer asks about products, ALWAYS call product_search first.
 Product cards are sent automatically as a swipeable carousel in the DM — NEVER list product names, prices, or descriptions in your text reply.
@@ -519,6 +522,7 @@ class ChatbotQueryService:
                     language_instruction = (
                         "LANGUAGE (MANDATORY): This customer is writing in Romanized Nepali. "
                         "YOU MUST reply in Romanized Nepali (Nepali in Latin/English script — NOT Devanagari, NOT English). "
+                        "PRONOUNS: Address the customer with the FORMAL 'tapai' or 'hajur'. NEVER use 'timi'/'timro'/'timilai'. "
                         "If the customer's message is fully in English, respond in English."
                     )
                 else:
