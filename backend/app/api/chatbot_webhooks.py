@@ -522,13 +522,43 @@ async def _handle_incoming_message(
                         db=db, session_id=session_id,
                         customer_id=channel.customer_id, site_id=site_id,
                     )
-                    bot_reply = add_result.get("message", "Added to your cart!")
+
+                    # Build richer confirmation with cart summary + CTA chips
+                    size_tapped = message_text.strip()
+                    product_name = next(
+                        (p.get("name", "") for p in _last_products.get(sender_key, [])
+                         if str(p.get("id", "")) == str(pending_pid)),
+                        "",
+                    )
+                    cart_data = add_result.get("cart", {})
+                    item_count = cart_data.get("item_count", 1)
+                    subtotal = cart_data.get("subtotal", 0)
+                    currency = cart_data.get("currency", "NPR")
+
+                    ch_config = channel.config if isinstance(channel.config, dict) else {}
+                    preferred_lang = ch_config.get("preferred_language", "en")
+
+                    if preferred_lang in {"ne_romanized", "mixed_ne_en"}:
+                        bot_reply = (
+                            f"✓ {product_name} (Size {size_tapped}) tapaiko cart ma add bhayo!\n"
+                            f"Cart: {item_count} item, {currency} {subtotal:,.0f}"
+                        )
+                        chips = ["Checkout", "Cart hernu", "Aru herne"]
+                    else:
+                        bot_reply = (
+                            f"✓ Added: {product_name} (Size {size_tapped})\n"
+                            f"Cart: {item_count} item{'s' if item_count != 1 else ''}, "
+                            f"{currency} {subtotal:,.0f}"
+                        )
+                        chips = ["Checkout", "View Cart", "Keep Shopping"]
+
                     conv = get_chatbot_conversation_service()
                     await conv.add_message(db, channel.id, sender_id, "user", message_text)
                     await conv.add_message(db, channel.id, sender_id, "assistant", bot_reply)
-                    await client.send_text_message(
+                    await client.send_quick_replies(
                         platform=platform, page_id=send_page_id,
-                        access_token=access_token, recipient_id=sender_id, text=bot_reply,
+                        access_token=access_token, recipient_id=sender_id,
+                        text=bot_reply, options=chips,
                     )
                     outbound_log = ChatbotMessageLog(
                         channel_id=channel.id, customer_id=channel.customer_id,
