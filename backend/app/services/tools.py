@@ -636,6 +636,7 @@ async def _storefront_realtime_add_to_cart(
 async def _get_cart(db: AsyncSession, session_id: str) -> dict:
     """Get current cart contents."""
     cart_service = get_cart_service()
+    await cart_service.load_from_db(db, session_id)
     cart = cart_service.get_cart(session_id)
     return {"cart": cart.to_dict()}
 
@@ -643,6 +644,7 @@ async def _get_cart(db: AsyncSession, session_id: str) -> dict:
 async def _remove_from_cart(db: AsyncSession, session_id: str, customer_id: uuid.UUID, item_index: int = 0) -> dict:
     """Remove item from cart."""
     cart_service = get_cart_service()
+    await cart_service.load_from_db(db, session_id)
     cart = cart_service.remove_item(session_id, item_index)
     await cart_service.save_to_db(db, session_id, customer_id)
     return {"cart": cart.to_dict(), "message": "Item removed from cart."}
@@ -651,6 +653,7 @@ async def _remove_from_cart(db: AsyncSession, session_id: str, customer_id: uuid
 async def _checkout(db: AsyncSession, session_id: str, customer_id: uuid.UUID) -> dict:
     """Handle checkout based on merchant's checkout_mode setting."""
     cart_service = get_cart_service()
+    await cart_service.load_from_db(db, session_id)
     cart = cart_service.get_cart(session_id)
 
     if not cart.items:
@@ -741,12 +744,10 @@ async def _create_dm_order(
 ) -> dict:
     """Create an order from DM checkout with simplified address."""
     cart_service = get_cart_service()
+    await cart_service.load_from_db(db, session_id)
     cart = cart_service.get_cart(session_id)
     if not cart or cart.item_count == 0:
-        await cart_service.load_from_db(db, session_id)
-        cart = cart_service.get_cart(session_id)
-        if not cart or cart.item_count == 0:
-            return {"error": "Your cart is empty. Add some items first!"}
+        return {"error": "Your cart is empty. Add some items first!"}
 
     # Build simplified address from DM info
     address = {

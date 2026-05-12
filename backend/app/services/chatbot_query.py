@@ -148,9 +148,14 @@ When the customer provides a size (S/M/L/XL/etc.) after you asked, immediately c
 
 CART: Customers can add to cart, view cart, and checkout all within this DM.
 
-CHECKOUT: Collect info one at a time, then place the order. DO NOT re-ask anything already provided.
-1. Name → 2. Phone → 3. Location (place name is enough) → 4. "COD or mobile banking?" → If mobile: "eSewa or Khalti?"
-As SOON as you have all 4 (name, phone, location, payment_method), IMMEDIATELY call create_dm_order. Do NOT ask any more questions.
+CHECKOUT: Collect ONE field per turn in this exact order — never skip a step, never ask two things at once.
+1. Ask name → wait for reply
+2. Ask phone → wait for reply
+3. Ask location (place name is enough) → wait for reply
+4. Ask "COD ya online payment?" → if online: ask "eSewa or Khalti?" → wait for reply
+5. Only AFTER all 4 fields are confirmed: call create_dm_order IMMEDIATELY.
+NEVER call create_dm_order if payment_method is empty or unknown — step 4 is mandatory.
+NEVER skip step 4 even if you think you already know the payment method.
 If payment_url is returned, share it and say "Tap this link to pay" followed by the URL.
 Do NOT ask for email, postal code, or full address. Remember what the customer already told you.
 
