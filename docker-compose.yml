@@ -31,6 +31,9 @@ services:
       - "traefik.http.routers.zunkiree-search-api.rule=Host(`api.zunkireelabs.com`)"
       - "traefik.http.routers.zunkiree-search-api.entrypoints=websecure"
       - "traefik.http.routers.zunkiree-search-api.tls.certresolver=letsencrypt"
+      # HSTS — force HTTPS for ~1 year after first secure visit
+      - "traefik.http.middlewares.hsts-zunkiree-api.headers.stsSeconds=31536000"
+      - "traefik.http.routers.zunkiree-search-api.middlewares=hsts-zunkiree-api"
       - "traefik.http.services.zunkiree-search-api.loadbalancer.server.port=8000"
     networks:
       - hosting
@@ -77,6 +80,9 @@ services:
       - "traefik.http.routers.zunkiree-stage.rule=Host(`staging-api.zunkireelabs.com`)"
       - "traefik.http.routers.zunkiree-stage.entrypoints=websecure"
       - "traefik.http.routers.zunkiree-stage.tls.certresolver=letsencrypt"
+      # HSTS — force HTTPS for ~1 year after first secure visit
+      - "traefik.http.middlewares.hsts-zunkiree-stage.headers.stsSeconds=31536000"
+      - "traefik.http.routers.zunkiree-stage.middlewares=hsts-zunkiree-stage"
       - "traefik.http.services.zunkiree-stage.loadbalancer.server.port=8000"
     networks:
       - hosting
