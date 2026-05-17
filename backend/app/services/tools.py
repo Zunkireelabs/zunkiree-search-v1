@@ -271,7 +271,7 @@ async def _product_search(
     db: AsyncSession,
     customer_id: uuid.UUID,
     site_id: str,
-    query: str,
+    query: str = "",  # LLM may omit query on filter-only searches (e.g. "anything under 2000")
     category: str = "",
     min_price: float | None = None,
     max_price: float | None = None,
@@ -293,6 +293,10 @@ async def _product_search(
         if fetch_mode == "realtime":
             return await _storefront_realtime_search(db, customer_id, site_id, query, min_price, max_price, in_stock_only)
         # "synced" mode falls through to normal search (products already in local DB from sync)
+
+    # No query string — skip vector search, use DB filter browse (e.g. price-only requests)
+    if not query.strip():
+        return await _fallback_product_search(db, customer_id, query, min_price, max_price, in_stock_only)
 
     embedding_service = get_embedding_service()
     vector_store = get_vector_store_service()
