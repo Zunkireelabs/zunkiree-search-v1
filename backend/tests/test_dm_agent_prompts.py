@@ -66,3 +66,25 @@ def test_dm_ecommerce_prompt_no_comma_list_manifest_example():
     That phrasing was the H4 vector — the LLM read '2 products listed' as quantity=2.
     """
     assert "id1=Name1, id2=Name2" not in DM_ECOMMERCE_SYSTEM_PROMPT
+
+
+# ---------------------------------------------------------------------------
+# IG-9 guards — call-shape rule for explicit quantity
+# ---------------------------------------------------------------------------
+
+def test_dm_ecommerce_prompt_quantity_directive_once_per_request():
+    """
+    QUANTITY directive must specify 'ONCE per add request' — locks the call-shape
+    rule that prevents the LLM from fulfilling qty=N via N separate add_to_cart(1)
+    calls (the IG-9 pattern: user says 'add 2', LLM emits two calls, dedup silently
+    collapses to qty=1, bot lies 'added 2').
+    """
+    assert "ONCE per add request" in DM_ECOMMERCE_SYSTEM_PROMPT
+
+
+def test_dm_ecommerce_prompt_quantity_is_parameter_not_loop():
+    """
+    QUANTITY directive must contain 'Quantity is a parameter, not a loop' — explicit
+    anti-pattern callout so the LLM doesn't interpret qty=N as loop(add_to_cart, N).
+    """
+    assert "Quantity is a parameter, not a loop" in DM_ECOMMERCE_SYSTEM_PROMPT
