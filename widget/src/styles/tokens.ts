@@ -1,5 +1,5 @@
 // Design Tokens for Zunkiree Search Widget v2
-// See docs/widget-style-guide.md for full documentation
+// See docs/reference/widget-style-guide.md for full documentation
 
 export const colors = {
   // Primary (defaults - overridden by config)
