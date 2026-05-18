@@ -108,6 +108,7 @@ class AgentService:
 
         full_answer = ""
         iteration = 0
+        cart_adds_this_turn: set[str] = set()  # (product_id, size) dedup within one turn
 
         while iteration < MAX_TOOL_ITERATIONS:
             iteration += 1
@@ -194,8 +195,38 @@ class AgentService:
                     except json.JSONDecodeError:
                         tool_args = {}
 
+                    logger.info("[AGENT] tool=%s args=%s", tool_name, tool_args)
+
                     # Signal tool execution
                     yield {"type": "tool_call", "name": tool_name, "status": "running"}
+
+                    # Guard: skip duplicate add_to_cart for the same product+size in one turn
+                    if tool_name == "add_to_cart":
+                        dedup_key = f"{tool_args.get('product_id', '')}:{tool_args.get('size', '')}"
+                        if dedup_key in cart_adds_this_turn:
+                            logger.warning(
+                                "[AGENT] Duplicate add_to_cart skipped — product=%s size=%s",
+                                tool_args.get("product_id"),
+                                tool_args.get("size"),
+                            )
+                            result = await execute_tool(
+                                tool_name="get_cart",
+                                tool_args={},
+                                db=db,
+                                session_id=session_id,
+                                customer_id=customer_id,
+                                site_id=site_id,
+                            )
+                            if "cart" in result:
+                                yield {"type": "cart_update", "data": result["cart"]}
+                            yield {"type": "tool_call", "name": tool_name, "status": "done"}
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": tc["id"],
+                                "content": json.dumps(result),
+                            })
+                            continue
+                        cart_adds_this_turn.add(dedup_key)
 
                     # Execute the tool
                     result = await execute_tool(
