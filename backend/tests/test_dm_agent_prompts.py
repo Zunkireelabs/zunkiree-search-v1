@@ -88,3 +88,22 @@ def test_dm_ecommerce_prompt_quantity_is_parameter_not_loop():
     anti-pattern callout so the LLM doesn't interpret qty=N as loop(add_to_cart, N).
     """
     assert "Quantity is a parameter, not a loop" in DM_ECOMMERCE_SYSTEM_PROMPT
+
+
+# ---------------------------------------------------------------------------
+# IG-5 guards — zero-result follow-up re-search
+# ---------------------------------------------------------------------------
+
+def test_dm_ecommerce_prompt_products_includes_refinement_trigger():
+    """PRODUCTS lead sentence must cover refinement turns — closes the 'already searched' loophole."""
+    assert "or refines a product query" in DM_ECOMMERCE_SYSTEM_PROMPT
+
+
+def test_dm_ecommerce_prompt_products_has_followup_zero_result_branch():
+    """PRODUCTS block must have a follow-up zero-result branch — the new IG-5 path."""
+    assert "If ZERO results on a follow-up" in DM_ECOMMERCE_SYSTEM_PROMPT
+
+
+def test_dm_ecommerce_prompt_products_first_ask_zero_result_branch_intact():
+    """PRODUCTS block must still have the first-ask zero-result branch — guards against accidental deletion."""
+    assert "If ZERO results on a first ask" in DM_ECOMMERCE_SYSTEM_PROMPT
