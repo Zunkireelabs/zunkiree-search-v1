@@ -2,12 +2,17 @@
 IG-6 regression guard: _process_ecommerce_message must persist a [products_shown: ...]
 manifest to the DB-backed history whenever the agent turn yields products.
 
-Without the manifest, the agent's "extract product_id from [product_id:XXX] markers
-in conversation history" instruction (chatbot_query.py:147) has no markers on the
-carousel-display path — only the carousel-button postback path synthesises them.
-This causes typed add-to-cart ("add white silk shirt to cart") to return "chaina"
-even when the product was visible in the preceding carousel.
+Without the manifest, the agent's "extract product_id from [products_shown] entries
+in conversation history" instruction has no markers on the carousel-display path —
+only the carousel-button postback path synthesises them. This causes typed add-to-cart
+("add white silk shirt to cart") to return "chaina" even when the product was visible
+in the preceding carousel.
+
+IG-8 regression guards (appended): the manifest format must use the
+product(id=…, name=…) wrapper syntax — not a bare comma-list — so the LLM cannot
+misread the result count as the desired purchase quantity.
 """
+import re
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -98,8 +103,8 @@ async def test_product_manifest_written_to_db_when_products_yielded():
 
     persisted = svc.conversation_service.add_message.call_args[0][4]
     assert "[products_shown:" in persisted
-    assert "prod-1=Product 1" in persisted
-    assert "prod-2=Product 2" in persisted
+    assert "product(id=prod-1, name=Product 1)" in persisted
+    assert "product(id=prod-2, name=Product 2)" in persisted
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +169,58 @@ async def test_products_missing_ids_are_skipped_in_manifest():
     await _call(svc, events, sender_id="user-999", message_text="show products")
 
     persisted = svc.conversation_service.add_message.call_args[0][4]
-    assert "valid-id=Good Shirt" in persisted
+    assert "product(id=valid-id, name=Good Shirt)" in persisted
     assert "No ID Shirt" not in persisted
     assert "Empty ID" not in persisted
     assert "=No ID Shirt" not in persisted
+
+
+# ---------------------------------------------------------------------------
+# IG-8 guards — manifest format shape
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_manifest_uses_product_wrapper_format():
+    """
+    IG-8: manifest entries must use product(id=…, name=…) syntax, not bare id=Name.
+    The old comma-list format was the H4 vector: LLM read '2 products listed' as
+    quantity=2. A regex pin locks the shape so future refactors can't silently revert.
+    """
+    svc = _make_service()
+    products = _make_products(2)
+
+    events = [
+        {"type": "products", "data": products},
+        {"type": "done", "answer": "Here are some options!", "suggestions": []},
+    ]
+
+    await _call(svc, events, sender_id="user-ig8", message_text="shirts dekhau")
+
+    persisted = svc.conversation_service.add_message.call_args[0][4]
+    assert re.search(r"\[products_shown: product\(id=[^,]+, name=[^)]+\)", persisted), (
+        f"manifest must start with product(id=…, name=…) wrapper; got: {persisted!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_manifest_entries_separated_by_pipe_not_comma():
+    """
+    IG-8: multi-product manifests must use ' | ' as separator, not ', '.
+    Comma-separated IDs looked like a CSV that the LLM could miscount as quantity.
+    """
+    svc = _make_service()
+    products = _make_products(2)
+
+    events = [
+        {"type": "products", "data": products},
+        {"type": "done", "answer": "Two options!", "suggestions": []},
+    ]
+
+    await _call(svc, events, sender_id="user-ig8b", message_text="shirts dekhau")
+
+    persisted = svc.conversation_service.add_message.call_args[0][4]
+    # Entries must be separated by pipe
+    assert " | " in persisted
+    # Old comma-list format must not appear between entries
+    assert "Product 1, prod-2" not in persisted
+    assert "Product 1, product(id=prod-2" not in persisted

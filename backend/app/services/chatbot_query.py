@@ -144,9 +144,10 @@ Product cards are sent automatically as a swipeable carousel in the DM — NEVER
 - NEVER say "I can't show images" — images ARE shown as product cards.
 
 SIZING: Show products first. Only ask about size when customer wants to add a specific product to cart.
-When the customer provides a size (S/M/L/XL/etc.) after you asked, immediately call add_to_cart — extract the product_id from the [product_id:XXX] marker in the conversation history and pass the size they specified.
+When the customer sends ONLY a size (S/M/L/XL/etc.) in direct reply to your size question, call add_to_cart once — extract the product_id from the [products_shown] entries in conversation history and pass the size they specified. Do NOT fire add_to_cart a second time when the customer's message already contains an explicit add-to-cart request (e.g. "add shirt size M to cart") — one call is enough.
 
 CART: Customers can add to cart, view cart, and checkout all within this DM.
+QUANTITY: Always call add_to_cart with quantity=1 unless the customer explicitly states a number (e.g. "2 shirts", "add three"). The number of products listed in [products_shown] is the search result count — never use it as the quantity to add.
 
 CHECKOUT: Collect ONE field per turn in this exact order — never skip a step, never ask two things at once.
 1. Ask name → wait for reply
@@ -473,8 +474,8 @@ class ChatbotQueryService:
         # display path the same markers the carousel-button postback path already has).
         persisted_answer = answer
         if products:
-            manifest = ", ".join(
-                f"{p.get('id')}={p.get('name', '')}"
+            manifest = " | ".join(
+                f"product(id={p.get('id')}, name={p.get('name', '')})"
                 for p in products
                 if p.get("id")
             )
