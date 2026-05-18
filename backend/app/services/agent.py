@@ -195,7 +195,10 @@ class AgentService:
                     except json.JSONDecodeError:
                         tool_args = {}
 
-                    logger.info("[AGENT] tool=%s args=%s", tool_name, tool_args)
+                    if tool_name == "create_dm_order":
+                        logger.info("[AGENT] tool=%s (redacted, %d keys)", tool_name, len(tool_args))
+                    else:
+                        logger.info("[AGENT] tool=%s args=%s", tool_name, tool_args)
 
                     # Signal tool execution
                     yield {"type": "tool_call", "name": tool_name, "status": "running"}
