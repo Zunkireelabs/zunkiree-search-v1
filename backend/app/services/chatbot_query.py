@@ -467,8 +467,20 @@ class ChatbotQueryService:
             except Exception as e:
                 logger.warning("Translation pass failed for channel %s, using English reply: %s", channel.id, e)
 
-        # Persist
-        await self.conversation_service.add_message(db, channel.id, sender_id, "assistant", answer)
+        # Persist. If products were shown this turn, append a manifest so the agent
+        # can extract product_ids on the next turn (the prompt at line 147 already
+        # instructs it to look for [product_id:XXX] markers — this gives the carousel-
+        # display path the same markers the carousel-button postback path already has).
+        persisted_answer = answer
+        if products:
+            manifest = ", ".join(
+                f"{p.get('id')}={p.get('name', '')}"
+                for p in products
+                if p.get("id")
+            )
+            if manifest:
+                persisted_answer = f"{answer}\n\n[products_shown: {manifest}]"
+        await self.conversation_service.add_message(db, channel.id, sender_id, "assistant", persisted_answer)
 
         return {
             "answer": answer,
