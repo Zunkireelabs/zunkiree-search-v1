@@ -13,6 +13,7 @@ from sqlalchemy import select, func, update, delete
 from app.models.cart import ShoppingCart
 from app.models.order import Order
 from app.services.cart import get_cart_service
+from app.services.sender_profile_service import get_sender_profile_service
 from app.config import get_settings
 
 logger = logging.getLogger("zunkiree.order")
@@ -209,6 +210,14 @@ class OrderService:
 
         if platform_channel == "instagram" and sender_id:
             first_name, last_name = _split_name(customer_name) if customer_name else (None, None)
+            if not first_name:
+                profile = await get_sender_profile_service().get_by_customer_and_sender_id(
+                    db, customer_id, sender_id
+                )
+                if profile and profile.name:
+                    first_name, last_name = _split_name(profile.name)
+                elif profile and profile.username:
+                    first_name, last_name = profile.username, None
             draft = ConnectorOrderDraft(
                 email=None,
                 phone=shipping.get("phone"),

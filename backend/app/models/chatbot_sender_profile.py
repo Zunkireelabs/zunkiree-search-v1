@@ -18,6 +18,7 @@ class ChatbotSenderProfile(Base):
     )
     platform_sender_id: Mapped[str] = mapped_column(String(255), nullable=False)
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    username: Mapped[str | None] = mapped_column(Text, nullable=True)
     profile_pic_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     fetched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     fetch_failed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
