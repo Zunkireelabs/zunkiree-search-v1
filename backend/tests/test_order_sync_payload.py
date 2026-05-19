@@ -97,7 +97,7 @@ async def _call_sync(order_dict):
 
     svc = OrderService()
     with patch("app.services.order.get_settings", return_value=_make_settings()), \
-         patch("app.services.order.ConnectorResolver") as mock_resolver_cls, \
+         patch("app.services.connectors.resolver.ConnectorResolver") as mock_resolver_cls, \
          patch("app.services.order.update"):
         mock_resolver_cls.for_tenant = AsyncMock(return_value=mock_connector)
         await svc._sync_to_agenticom(
