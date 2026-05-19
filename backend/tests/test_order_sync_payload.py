@@ -234,3 +234,18 @@ async def test_ig_order_null_names_when_no_profile():
     assert draft.first_name is None
     assert draft.last_name is None
     assert draft.external_id == "ig_33333"
+
+
+@pytest.mark.asyncio
+async def test_ig_order_profile_name_wins_over_checkout_name():
+    """Profile name takes priority: customer_name='Customer' but profile.name='Sadin Shrestha' → profile wins."""
+    order_dict = _make_order_dict(
+        platform_channel="instagram",
+        platform_sender_id="44444",
+        customer_name="Customer",
+    )
+    draft = await _call_sync(order_dict, sender_profile=_make_profile(name="Sadin Shrestha"))
+
+    assert draft.first_name == "Sadin"
+    assert draft.last_name == "Shrestha"
+    assert draft.external_id == "ig_44444"
