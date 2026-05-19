@@ -209,15 +209,15 @@ class OrderService:
         customer_name = order_dict.get("customer_name")
 
         if platform_channel == "instagram" and sender_id:
-            first_name, last_name = _split_name(customer_name) if customer_name else (None, None)
-            if not first_name:
-                profile = await get_sender_profile_service().get_by_customer_and_sender_id(
-                    db, customer_id, sender_id
-                )
-                if profile and profile.name:
-                    first_name, last_name = _split_name(profile.name)
-                elif profile and profile.username:
-                    first_name, last_name = profile.username, None
+            profile = await get_sender_profile_service().get_by_customer_and_sender_id(
+                db, customer_id, sender_id
+            )
+            if profile and profile.name:
+                first_name, last_name = _split_name(profile.name)
+            elif profile and profile.username:
+                first_name, last_name = profile.username, None
+            else:
+                first_name, last_name = _split_name(customer_name) if customer_name else (None, None)
             draft = ConnectorOrderDraft(
                 email=None,
                 phone=shipping.get("phone"),
