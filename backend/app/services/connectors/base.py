@@ -65,7 +65,7 @@ class ConnectorOrderLineItem:
 
 @dataclass
 class ConnectorOrderDraft:
-    email: str
+    email: Optional[str]  # None for IG orders (no fallback email)
     phone: Optional[str]
     line_items: list[ConnectorOrderLineItem]
     subtotal: float
@@ -76,6 +76,10 @@ class ConnectorOrderDraft:
     shipping_address: Optional[dict]
     billing_address: Optional[dict]
     note: Optional[str]
+    source: Optional[str] = None          # 'instagram', 'web', etc.
+    external_id: Optional[str] = None     # 'ig_<sender_id>' for IG orders
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
 
 
 @dataclass

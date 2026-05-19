@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Agentic AI service with tool-calling for ecommerce shopping assistant.
 Handles multi-turn conversations, product search, cart management, wishlist, and checkout.
@@ -48,6 +49,7 @@ class AgentService:
         system_prompt_override: str | None = None,
         conversation_history: list[dict] | None = None,
         force_tool_on_first_turn: bool = False,
+        platform_sender_id: str | None = None,
     ):
         """
         Process a query through the agentic pipeline with tool calling.
@@ -219,6 +221,7 @@ class AgentService:
                                 session_id=session_id,
                                 customer_id=customer_id,
                                 site_id=site_id,
+                                platform_sender_id=platform_sender_id,
                             )
                             if "cart" in result:
                                 yield {"type": "cart_update", "data": result["cart"]}
@@ -239,6 +242,7 @@ class AgentService:
                         session_id=session_id,
                         customer_id=customer_id,
                         site_id=site_id,
+                        platform_sender_id=platform_sender_id,
                     )
 
                     # Emit rich events based on tool type

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Chatbot query processor — wraps existing RAG pipeline with conversation context.
 Produces DM-friendly answers grounded in the same knowledge base as the widget.
@@ -17,6 +18,7 @@ from app.services.query import get_query_service
 from app.services.llm import get_llm_service, WEBSITE_TYPE_PROMPTS, LANGUAGE_NAMES
 from app.services.chatbot_conversation import get_chatbot_conversation_service
 from app.services.language_detection import detect_language
+from app.services.sender_profile_service import get_sender_profile_service
 
 logger = logging.getLogger("zunkiree.chatbot.query")
 
@@ -265,6 +267,13 @@ class ChatbotQueryService:
         # Load conversation history
         history = await self.conversation_service.get_history(db, channel.id, sender_id)
 
+        # On first message from a new IG sender, cache their Meta profile (best-effort, non-blocking on failure)
+        if not history and channel.platform == "instagram":
+            try:
+                await get_sender_profile_service().get_or_fetch(db, channel, sender_id)
+            except Exception as e:
+                logger.warning("[PROFILE-FETCH] non-fatal failure sender=%s: %s", sender_id, e)
+
         # --- Check for feedback signals before doing anything else ---
         feedback_result = self._detect_feedback(message_text)
         if feedback_result and history:
@@ -435,6 +444,7 @@ class ChatbotQueryService:
                 ),
                 conversation_history=dm_history,
                 force_tool_on_first_turn=True,
+                platform_sender_id=sender_id,
             ):
                 event_type = event.get("type")
                 if event_type == "products":

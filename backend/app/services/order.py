@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Order service — creates and manages orders from cart data.
 """
@@ -24,6 +25,14 @@ def generate_order_number() -> str:
     return f"ZK-{hex_part}-{rand_part:04d}"
 
 
+def _split_name(full_name: str) -> tuple[str | None, str | None]:
+    """Split 'Sadin Shrestha' → ('Sadin', 'Shrestha'). Single word → first_name only."""
+    parts = full_name.strip().split(None, 1)
+    if not parts:
+        return None, None
+    return parts[0], parts[1] if len(parts) > 1 else None
+
+
 class OrderService:
     async def create_order_from_cart(
         self,
@@ -35,6 +44,8 @@ class OrderService:
         shopper_email: str | None = None,
         notes: str | None = None,
         payment_method: str | None = None,
+        platform_sender_id: str | None = None,
+        customer_name: str | None = None,
     ) -> dict:
         """Snapshot cart into an order."""
         cart_service = get_cart_service()
@@ -74,6 +85,12 @@ class OrderService:
 
         # Sync order to Agenticom (non-blocking)
         order_dict = self._order_to_dict(order)
+        # Attach platform context not stored in the Order model
+        if platform_sender_id:
+            order_dict["platform_sender_id"] = platform_sender_id
+            order_dict["platform_channel"] = "instagram"
+        if customer_name:
+            order_dict["customer_name"] = customer_name
         try:
             # Get site_id from customer
             from app.models import Customer
@@ -186,19 +203,44 @@ class OrderService:
             "phone": shipping.get("phone", order_dict.get("shopper_email", "")),
         }
 
-        draft = ConnectorOrderDraft(
-            email=order_dict.get("shopper_email") or f"{site_id}@orders.zunkireelabs.com",
-            phone=shipping.get("phone"),
-            line_items=line_items,
-            subtotal=order_dict.get("subtotal") or 0,
-            total=order_dict.get("total") or 0,
-            currency=order_dict.get("currency") or "NPR",
-            payment_method=order_dict.get("payment_method", "online"),
-            payment_intent_id=order_dict.get("payment_intent_id"),
-            shipping_address=address,
-            billing_address=None,
-            note=f"Synced from Zunkiree widget. Order #{order_dict.get('order_number', '')}",
-        )
+        platform_channel = order_dict.get("platform_channel", "web")
+        sender_id = order_dict.get("platform_sender_id")
+        customer_name = order_dict.get("customer_name")
+
+        if platform_channel == "instagram" and sender_id:
+            first_name, last_name = _split_name(customer_name) if customer_name else (None, None)
+            draft = ConnectorOrderDraft(
+                email=None,
+                phone=shipping.get("phone"),
+                line_items=line_items,
+                subtotal=order_dict.get("subtotal") or 0,
+                total=order_dict.get("total") or 0,
+                currency=order_dict.get("currency") or "NPR",
+                payment_method=order_dict.get("payment_method", "online"),
+                payment_intent_id=order_dict.get("payment_intent_id"),
+                shipping_address=address,
+                billing_address=None,
+                note=f"Synced from Zunkiree widget. Order #{order_dict.get('order_number', '')}",
+                source="instagram",
+                external_id=f"ig_{sender_id}",
+                first_name=first_name,
+                last_name=last_name,
+            )
+        else:
+            draft = ConnectorOrderDraft(
+                email=order_dict.get("shopper_email") or f"{site_id}@orders.zunkireelabs.com",
+                phone=shipping.get("phone"),
+                line_items=line_items,
+                subtotal=order_dict.get("subtotal") or 0,
+                total=order_dict.get("total") or 0,
+                currency=order_dict.get("currency") or "NPR",
+                payment_method=order_dict.get("payment_method", "online"),
+                payment_intent_id=order_dict.get("payment_intent_id"),
+                shipping_address=address,
+                billing_address=None,
+                note=f"Synced from Zunkiree widget. Order #{order_dict.get('order_number', '')}",
+                source="web",
+            )
 
         connector = await ConnectorResolver.for_tenant(db, customer_id, "stella")
 

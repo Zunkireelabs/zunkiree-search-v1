@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Meta Messaging API client — send messages via Instagram, Messenger, and WhatsApp.
 Handles HMAC signature verification and platform-specific send formats.
@@ -58,6 +59,26 @@ def decrypt_token(encrypted: str) -> str:
         raise ValueError("chatbot_encryption_key is not configured")
     f = Fernet(key.encode("utf-8"))
     return f.decrypt(encrypted.encode("utf-8")).decode("utf-8")
+
+
+async def get_instagram_profile(sender_id: str, access_token: str) -> dict | None:
+    """Fetch IG sender's public profile (name + pic) via Graph API.
+
+    Returns dict with keys 'name', 'profile_pic' on success; None on any error.
+    """
+    url = f"https://graph.facebook.com/v22.0/{sender_id}"
+    params = {"fields": "name,profile_pic", "access_token": access_token}
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(url, params=params)
+            if resp.status_code != 200:
+                logger.warning("[META-PROFILE] fetch failed status=%s sender=%s", resp.status_code, sender_id)
+                return None
+            data = resp.json()
+            return {"name": data.get("name"), "profile_pic": data.get("profile_pic")}
+    except Exception as e:
+        logger.error("[META-PROFILE] fetch exception sender=%s err=%s", sender_id, e)
+        return None
 
 
 class MetaMessagingClient:

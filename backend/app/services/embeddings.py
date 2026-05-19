@@ -1,3 +1,4 @@
+from __future__ import annotations
 from openai import AsyncOpenAI
 from app.config import get_settings
 

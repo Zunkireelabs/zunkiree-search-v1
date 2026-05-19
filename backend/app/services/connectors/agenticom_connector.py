@@ -287,6 +287,14 @@ class AgenticomConnector(BackendConnector):
             "total": draft.total,
             "currency": draft.currency,
         }
+        if draft.source:
+            payload["source"] = draft.source
+        if draft.external_id:
+            payload["external_id"] = draft.external_id
+        if draft.first_name is not None:
+            payload["first_name"] = draft.first_name
+        if draft.last_name is not None:
+            payload["last_name"] = draft.last_name
 
         # Idempotency-Key is v1-only per SHARED-CONTRACT §6 — the legacy
         # /api/sync/orders endpoint does not understand it.

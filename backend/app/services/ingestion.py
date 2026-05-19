@@ -1,3 +1,4 @@
+from __future__ import annotations
 import uuid
 import logging
 from datetime import datetime

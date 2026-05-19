@@ -29,6 +29,7 @@ class ChatbotChannel(Base):
     customer: Mapped["Customer"] = relationship(back_populates="chatbot_channels")
     conversations: Mapped[list["ChatbotConversation"]] = relationship(back_populates="channel", cascade="all, delete-orphan")
     message_logs: Mapped[list["ChatbotMessageLog"]] = relationship(back_populates="channel", cascade="all, delete-orphan")
+    sender_profiles: Mapped[list["ChatbotSenderProfile"]] = relationship(back_populates="channel", cascade="all, delete-orphan")
 
 
 class ChatbotConversation(Base):
@@ -79,3 +80,4 @@ class ChatbotMessageLog(Base):
 
 
 from app.models.customer import Customer
+from app.models.chatbot_sender_profile import ChatbotSenderProfile
