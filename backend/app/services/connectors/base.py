@@ -80,6 +80,7 @@ class ConnectorOrderDraft:
     external_id: Optional[str] = None     # 'ig_<sender_id>' for IG orders
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+    ig_username: Optional[str] = None
 
 
 @dataclass

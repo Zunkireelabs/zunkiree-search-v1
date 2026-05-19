@@ -234,6 +234,7 @@ class OrderService:
                 external_id=f"ig_{sender_id}",
                 first_name=first_name,
                 last_name=last_name,
+                ig_username=profile.username if profile else None,
             )
         else:
             draft = ConnectorOrderDraft(

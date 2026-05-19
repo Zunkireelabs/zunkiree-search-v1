@@ -249,3 +249,40 @@ async def test_ig_order_profile_name_wins_over_checkout_name():
     assert draft.first_name == "Sadin"
     assert draft.last_name == "Shrestha"
     assert draft.external_id == "ig_44444"
+
+
+# ---------------------------------------------------------------------------
+# ig_username forwarding tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_ig_order_forwards_username_from_profile():
+    """IG order with profile.username='sadinstha' → draft.ig_username == 'sadinstha'."""
+    order_dict = _make_order_dict(
+        platform_channel="instagram",
+        platform_sender_id="55555",
+    )
+    draft = await _call_sync(order_dict, sender_profile=_make_profile(username="sadinstha"))
+
+    assert draft.ig_username == "sadinstha"
+
+
+@pytest.mark.asyncio
+async def test_ig_order_ig_username_none_when_no_profile():
+    """IG order with no profile row → draft.ig_username is None."""
+    order_dict = _make_order_dict(
+        platform_channel="instagram",
+        platform_sender_id="66666",
+    )
+    draft = await _call_sync(order_dict, sender_profile=None)
+
+    assert draft.ig_username is None
+
+
+@pytest.mark.asyncio
+async def test_web_order_ig_username_is_none():
+    """Web order → draft.ig_username is None (field absent for non-IG)."""
+    order_dict = _make_order_dict(shopper_email="customer@example.com")
+    draft = await _call_sync(order_dict)
+
+    assert draft.ig_username is None

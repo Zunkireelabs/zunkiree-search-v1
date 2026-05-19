@@ -295,6 +295,8 @@ class AgenticomConnector(BackendConnector):
             payload["first_name"] = draft.first_name
         if draft.last_name is not None:
             payload["last_name"] = draft.last_name
+        if draft.ig_username is not None:
+            payload["ig_username"] = draft.ig_username
 
         # Idempotency-Key is v1-only per SHARED-CONTRACT §6 — the legacy
         # /api/sync/orders endpoint does not understand it.
