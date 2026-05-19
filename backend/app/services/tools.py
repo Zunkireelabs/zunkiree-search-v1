@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 OpenAI function-calling tool definitions and executors for ecommerce agent.
 """
@@ -241,6 +242,7 @@ async def execute_tool(
     session_id: str,
     customer_id: uuid.UUID,
     site_id: str,
+    platform_sender_id: str | None = None,
 ) -> dict:
     """Execute a tool and return the result."""
     if tool_name == "product_search":
@@ -262,7 +264,7 @@ async def execute_tool(
     elif tool_name == "get_order_status":
         return await _get_order_status(db, **tool_args)
     elif tool_name == "create_dm_order":
-        return await _create_dm_order(db, session_id, customer_id, site_id, **tool_args)
+        return await _create_dm_order(db, session_id, customer_id, site_id, platform_sender_id=platform_sender_id, **tool_args)
     else:
         return {"error": f"Unknown tool: {tool_name}"}
 
@@ -745,6 +747,7 @@ async def _create_dm_order(
     phone: str,
     location: str,
     payment_method: str,
+    platform_sender_id: str | None = None,
 ) -> dict:
     """Create an order from DM checkout with simplified address."""
     cart_service = get_cart_service()
@@ -774,6 +777,8 @@ async def _create_dm_order(
             billing_address=address,
             shipping_address=address,
             payment_method="cod" if payment_method == "cod" else "online",
+            platform_sender_id=platform_sender_id,
+            customer_name=name,
         )
     except Exception as e:
         logger.error("DM order creation failed: %s", e)
