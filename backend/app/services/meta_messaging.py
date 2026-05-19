@@ -67,7 +67,7 @@ async def get_instagram_profile(sender_id: str, access_token: str) -> dict | Non
     Returns dict with keys 'name', 'profile_pic' on success; None on any error.
     """
     url = f"https://graph.facebook.com/v22.0/{sender_id}"
-    params = {"fields": "name,profile_pic", "access_token": access_token}
+    params = {"fields": "name,username,profile_pic", "access_token": access_token}
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(url, params=params)
@@ -75,7 +75,7 @@ async def get_instagram_profile(sender_id: str, access_token: str) -> dict | Non
                 logger.warning("[META-PROFILE] fetch failed status=%s sender=%s", resp.status_code, sender_id)
                 return None
             data = resp.json()
-            return {"name": data.get("name"), "profile_pic": data.get("profile_pic")}
+            return {"name": data.get("name"), "username": data.get("username"), "profile_pic": data.get("profile_pic")}
     except Exception as e:
         logger.error("[META-PROFILE] fetch exception sender=%s err=%s", sender_id, e)
         return None

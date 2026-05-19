@@ -47,8 +47,9 @@ class SenderProfileService:
             )
             db.add(profile)
 
-        if meta_data and meta_data.get("name"):
-            profile.name = meta_data["name"]
+        if meta_data and (meta_data.get("name") or meta_data.get("username")):
+            profile.name = meta_data.get("name")
+            profile.username = meta_data.get("username")
             profile.profile_pic_url = meta_data.get("profile_pic")
             profile.fetched_at = datetime.utcnow()
             profile.fetch_failed_at = None
@@ -58,7 +59,7 @@ class SenderProfileService:
             profile.fetch_error = "Meta API returned no name or failed"
 
         await db.commit()
-        return profile if profile.name else None
+        return profile if (profile.name or profile.username) else None
 
     async def get_by_customer_and_sender_id(
         self,
@@ -66,14 +67,14 @@ class SenderProfileService:
         customer_id: uuid.UUID,
         platform_sender_id: str,
     ) -> ChatbotSenderProfile | None:
-        """Read cached profile (no API call). Used in order sync path."""
+        """Read cached profile (no API call). Used in order sync path.
+        Returns the profile row if it exists, regardless of whether name/username are populated."""
         result = await db.execute(
             select(ChatbotSenderProfile)
             .join(ChatbotChannel, ChatbotSenderProfile.channel_id == ChatbotChannel.id)
             .where(
                 ChatbotChannel.customer_id == customer_id,
                 ChatbotSenderProfile.platform_sender_id == platform_sender_id,
-                ChatbotSenderProfile.name.isnot(None),
             )
         )
         return result.scalar_one_or_none()

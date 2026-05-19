@@ -80,7 +80,7 @@ def _make_settings():
     return s
 
 
-async def _call_sync(order_dict):
+async def _call_sync(order_dict, sender_profile=None):
     from app.services.order import OrderService
 
     captured = {}
@@ -95,10 +95,14 @@ async def _call_sync(order_dict):
     mock_connector = AsyncMock()
     mock_connector.create_order = fake_create_order
 
+    mock_profile_svc = AsyncMock()
+    mock_profile_svc.get_by_customer_and_sender_id = AsyncMock(return_value=sender_profile)
+
     svc = OrderService()
     with patch("app.services.order.get_settings", return_value=_make_settings()), \
          patch("app.services.connectors.resolver.ConnectorResolver") as mock_resolver_cls, \
-         patch("app.services.order.update"):
+         patch("app.services.order.update"), \
+         patch("app.services.order.get_sender_profile_service", return_value=mock_profile_svc):
         mock_resolver_cls.for_tenant = AsyncMock(return_value=mock_connector)
         await svc._sync_to_agenticom(
             db=AsyncMock(),
@@ -177,3 +181,56 @@ async def test_web_order_fallback_email_when_no_shopper_email():
 
     assert draft.email == "kasa-clothing@orders.zunkireelabs.com"
     assert draft.source == "web"
+
+
+# ---------------------------------------------------------------------------
+# Sender profile name fallback tests
+# ---------------------------------------------------------------------------
+
+def _make_profile(name=None, username=None):
+    profile = MagicMock()
+    profile.name = name
+    profile.username = username
+    return profile
+
+
+@pytest.mark.asyncio
+async def test_ig_order_uses_profile_name_when_no_checkout_name():
+    """No customer_name but profile.name set → split into first/last."""
+    order_dict = _make_order_dict(
+        platform_channel="instagram",
+        platform_sender_id="11111",
+    )
+    draft = await _call_sync(order_dict, sender_profile=_make_profile(name="Sadin Shrestha"))
+
+    assert draft.first_name == "Sadin"
+    assert draft.last_name == "Shrestha"
+    assert draft.external_id == "ig_11111"
+
+
+@pytest.mark.asyncio
+async def test_ig_order_uses_profile_username_when_name_null():
+    """No customer_name, profile.name null, profile.username set → username as first_name."""
+    order_dict = _make_order_dict(
+        platform_channel="instagram",
+        platform_sender_id="22222",
+    )
+    draft = await _call_sync(order_dict, sender_profile=_make_profile(username="sadinshrestha"))
+
+    assert draft.first_name == "sadinshrestha"
+    assert draft.last_name is None
+    assert draft.external_id == "ig_22222"
+
+
+@pytest.mark.asyncio
+async def test_ig_order_null_names_when_no_profile():
+    """No customer_name, no profile row → first_name=None, last_name=None."""
+    order_dict = _make_order_dict(
+        platform_channel="instagram",
+        platform_sender_id="33333",
+    )
+    draft = await _call_sync(order_dict, sender_profile=None)
+
+    assert draft.first_name is None
+    assert draft.last_name is None
+    assert draft.external_id == "ig_33333"
