@@ -57,13 +57,20 @@ jobs:
 
             echo "=== Resetting working tree to origin/main ==="
             # Stateless deploy: VPS code state always equals origin/main.
-            # `git checkout -B main origin/main` is robust against the VPS
-            # being on any branch — the exact failure mode that caused Z1 +
-            # Z2 deploys to fail silently on 2026-04-26. Plain `git reset
-            # --hard origin/main` would silently corrupt a non-main branch
-            # pointer instead of switching to main.
+            # Two-step stateless deploy — both steps are load-bearing:
+            # 1. `git checkout -B main origin/main` switches to main regardless
+            #    of which branch the VPS is on. This guards against the Z1/Z2
+            #    failure mode (2026-04-26) where a bare `git reset --hard
+            #    origin/main` would silently corrupt a non-main branch pointer
+            #    instead of switching branches.
+            # 2. `git reset --hard origin/main` clobbers any uncommitted drift
+            #    in the working tree, so migrate.sh always runs the committed
+            #    version. Safe because step 1 already guarantees we are on main.
+            #    Without this step, drift survives every deploy and self-perpetuates
+            #    (root cause of phantom-revert incidents 6–9 and 2026-05-19).
             git fetch origin main
             git checkout -B main origin/main
+            git reset --hard origin/main
 
             echo "=== Logging in to GHCR ==="
             # --password-stdin avoids the password ever appearing in `ps` /

@@ -73,12 +73,17 @@ jobs:
             cd "$STAGE_DIR"
 
             echo "=== Resetting staging working tree to origin/stage ==="
-            # Same stateless contract as prod (deploy.yml). Anything edited
-            # directly on the VPS gets blown away by the next deploy.
-            # `git checkout -B stage origin/stage` is robust against the VPS
-            # being on any branch.
+            # Two-step stateless deploy — mirrors the prod fix in deploy.yml:
+            # 1. `git checkout -B stage origin/stage` switches to stage
+            #    regardless of which branch the VPS is on (Z1/Z2-safe branch
+            #    selection — bare `git reset --hard` would corrupt a non-stage
+            #    branch pointer instead of switching).
+            # 2. `git reset --hard origin/stage` clobbers any uncommitted drift
+            #    so migrate.sh always runs the committed version. Safe because
+            #    step 1 already guarantees we are on stage.
             git fetch origin stage
             git checkout -B stage origin/stage
+            git reset --hard origin/stage
 
             # Bootstrap backend/.env.staging from prod path on first run.
             # The file is gitignored (.env* pattern), so `git clone` doesn't
