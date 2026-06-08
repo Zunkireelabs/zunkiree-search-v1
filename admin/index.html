@@ -228,6 +228,75 @@
     .tenant-selector select {
       max-width: 320px;
     }
+    /* Custom searchable tenant combobox (website UI, not native OS dropdown) */
+    .combobox {
+      position: relative;
+      width: 100%;
+      max-width: 320px;
+    }
+    .combobox-input {
+      padding-right: 34px;
+      cursor: text;
+    }
+    .combobox-caret {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      pointer-events: none;
+      color: #6b7280;
+      font-size: 11px;
+      transition: transform 0.15s;
+    }
+    .combobox.open .combobox-caret {
+      transform: translateY(-50%) rotate(180deg);
+    }
+    .combobox-panel {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      background: #fff;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+      max-height: 280px;
+      overflow-y: auto;
+      z-index: 50;
+    }
+    .combobox-option {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 14px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .combobox-option:hover,
+    .combobox-option.active {
+      background: #eff3ff;
+    }
+    .combobox-option .combobox-id {
+      color: #6b7280;
+      font-size: 12px;
+    }
+    .combobox-option .combobox-badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 10px;
+      white-space: nowrap;
+    }
+    .combobox-option .combobox-badge.off {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .combobox-empty {
+      padding: 12px 14px;
+      color: #6b7280;
+      font-size: 13px;
+    }
     .tenant-overview {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -421,7 +490,12 @@
       <div class="card">
         <h2>Tenant Overview</h2>
         <div class="tenant-selector">
-          <select id="tenantSelect" onchange="onTenantSelected()">
+          <div class="combobox" id="tenantCombo">
+            <input type="text" id="tenantInput" class="combobox-input" placeholder="Select a tenant..." autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" />
+            <span class="combobox-caret">&#9660;</span>
+            <div class="combobox-panel hidden" id="tenantPanel" role="listbox"></div>
+          </div>
+          <select id="tenantSelect" onchange="onTenantSelected()" style="display:none;">
             <option value="">Select a tenant...</option>
           </select>
           <button onclick="loadTenants()" class="secondary" style="white-space:nowrap;">Refresh</button>
@@ -1307,6 +1381,8 @@
     }
 
     // --- Tenant Overview ---
+    let tenantList = [];
+
     async function loadTenants() {
       try {
         const res = await fetch(`${API_URL}/api/v1/admin/customers`, {
@@ -1318,7 +1394,12 @@
         const sel = document.getElementById('tenantSelect');
         const current = sel.value;
         sel.innerHTML = '<option value="">Select a tenant...</option>';
-        data.customers.forEach(c => {
+        tenantList = (data.customers || []).map(c => ({
+          site_id: c.site_id,
+          name: c.name,
+          is_active: !!c.is_active,
+        }));
+        tenantList.forEach(c => {
           const opt = document.createElement('option');
           opt.value = c.site_id;
           opt.dataset.active = c.is_active ? '1' : '0';
@@ -1326,10 +1407,108 @@
           sel.appendChild(opt);
         });
         if (current) sel.value = current;
+        // Reflect resolved selection (or placeholder) in the custom input.
+        // Reading sel.value after assignment handles deleted tenants (value falls back to "").
+        const input = document.getElementById('tenantInput');
+        const resolved = sel.value;
+        const c = resolved ? tenantList.find(t => t.site_id === resolved) : null;
+        input.value = c ? `${c.name} (${c.site_id})` : '';
+        if (comboboxOpen) renderTenantOptions(input.value);
       } catch {
         // silent
       }
     }
+
+    // --- Custom searchable combobox ---
+    let comboboxOpen = false;
+    let comboboxActiveIndex = -1;
+
+    function getFilteredTenants(filter) {
+      const q = (filter || '').trim().toLowerCase();
+      if (!q) return tenantList;
+      return tenantList.filter(c =>
+        c.name.toLowerCase().includes(q) || c.site_id.toLowerCase().includes(q)
+      );
+    }
+
+    function renderTenantOptions(filter) {
+      const panel = document.getElementById('tenantPanel');
+      const matches = getFilteredTenants(filter);
+      comboboxActiveIndex = -1;
+      if (!matches.length) {
+        panel.innerHTML = '<div class="combobox-empty">No tenants found</div>';
+        return;
+      }
+      panel.innerHTML = matches.map((c, i) => `
+        <div class="combobox-option" role="option" data-index="${i}" data-site-id="${c.site_id}"
+             onmousedown="event.preventDefault(); selectTenant('${c.site_id}')">
+          <span><strong>${c.name}</strong> <span class="combobox-id">${c.site_id}</span></span>
+          ${c.is_active ? '' : '<span class="combobox-badge off">Disabled</span>'}
+        </div>
+      `).join('');
+    }
+
+    function openCombobox() {
+      comboboxOpen = true;
+      document.getElementById('tenantCombo').classList.add('open');
+      document.getElementById('tenantPanel').classList.remove('hidden');
+      document.getElementById('tenantInput').setAttribute('aria-expanded', 'true');
+      renderTenantOptions(document.getElementById('tenantInput').value);
+    }
+
+    function closeCombobox() {
+      comboboxOpen = false;
+      comboboxActiveIndex = -1;
+      document.getElementById('tenantCombo').classList.remove('open');
+      document.getElementById('tenantPanel').classList.add('hidden');
+      document.getElementById('tenantInput').setAttribute('aria-expanded', 'false');
+      // Restore the input text to the current selection (discard partial typing)
+      const sel = document.getElementById('tenantSelect');
+      const input = document.getElementById('tenantInput');
+      const c = tenantList.find(t => t.site_id === sel.value);
+      input.value = c ? `${c.name} (${c.site_id})` : '';
+    }
+
+    function selectTenant(siteId) {
+      const sel = document.getElementById('tenantSelect');
+      sel.value = siteId;
+      const c = tenantList.find(t => t.site_id === siteId);
+      document.getElementById('tenantInput').value = c ? `${c.name} (${c.site_id})` : '';
+      closeCombobox();
+      onTenantSelected();
+    }
+
+    function setComboboxActive(index) {
+      const opts = document.querySelectorAll('#tenantPanel .combobox-option');
+      if (!opts.length) return;
+      comboboxActiveIndex = (index + opts.length) % opts.length;
+      opts.forEach((el, i) => el.classList.toggle('active', i === comboboxActiveIndex));
+      opts[comboboxActiveIndex].scrollIntoView({ block: 'nearest' });
+    }
+
+    function initTenantCombobox() {
+      const input = document.getElementById('tenantInput');
+      input.addEventListener('focus', openCombobox);
+      input.addEventListener('input', () => {
+        if (!comboboxOpen) openCombobox();
+        renderTenantOptions(input.value);
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown') { e.preventDefault(); if (!comboboxOpen) openCombobox(); setComboboxActive(comboboxActiveIndex + 1); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); setComboboxActive(comboboxActiveIndex - 1); }
+        else if (e.key === 'Enter') {
+          e.preventDefault();
+          const opts = document.querySelectorAll('#tenantPanel .combobox-option');
+          if (comboboxActiveIndex >= 0 && opts[comboboxActiveIndex]) {
+            selectTenant(opts[comboboxActiveIndex].dataset.siteId);
+          }
+        } else if (e.key === 'Escape') { closeCombobox(); input.blur(); }
+      });
+      document.addEventListener('click', (e) => {
+        if (comboboxOpen && !document.getElementById('tenantCombo').contains(e.target)) closeCombobox();
+      });
+    }
+    initTenantCombobox();
 
     async function onTenantSelected() {
       const siteId = document.getElementById('tenantSelect').value;
@@ -1480,6 +1659,8 @@
         if (res.ok) {
           const data = await res.json();
           opt.dataset.active = data.is_active ? '1' : '0';
+          const t = tenantList.find(x => x.site_id === siteId);
+          if (t) t.is_active = !!data.is_active;
           updateWidgetStatusUI();
           showAlert(data.message, 'success');
         } else {
