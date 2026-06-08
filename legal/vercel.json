@@ -13,6 +13,11 @@
   "rewrites": [
     { "source": "/", "destination": "/privacy-policy.html" },
     { "source": "/privacy", "destination": "/privacy-policy.html" },
-    { "source": "/privacy-policy", "destination": "/privacy-policy.html" }
+    { "source": "/privacy-policy", "destination": "/privacy-policy.html" },
+    { "source": "/terms",              "destination": "/terms-of-service.html" },
+    { "source": "/terms-of-service",   "destination": "/terms-of-service.html" },
+    { "source": "/tos",                "destination": "/terms-of-service.html" },
+    { "source": "/data-deletion",      "destination": "/data-deletion.html" },
+    { "source": "/data-deletion-instructions", "destination": "/data-deletion.html" }
   ]
 }
