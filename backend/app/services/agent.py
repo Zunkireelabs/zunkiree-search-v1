@@ -50,6 +50,7 @@ class AgentService:
         conversation_history: list[dict] | None = None,
         force_tool_on_first_turn: bool = False,
         platform_sender_id: str | None = None,
+        tools: list | None = None,
     ):
         """
         Process a query through the agentic pipeline with tool calling.
@@ -124,7 +125,7 @@ class AgentService:
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                tools=ECOMMERCE_TOOLS,
+                tools=tools if tools is not None else ECOMMERCE_TOOLS,
                 max_tokens=200,
                 temperature=0.3,
                 stream=True,

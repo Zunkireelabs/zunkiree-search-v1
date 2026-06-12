@@ -19,6 +19,7 @@ from app.services.llm import get_llm_service, WEBSITE_TYPE_PROMPTS, LANGUAGE_NAM
 from app.services.chatbot_conversation import get_chatbot_conversation_service
 from app.services.language_detection import detect_language
 from app.services.sender_profile_service import get_sender_profile_service
+from app.services.tools import MANUFACTURING_TOOLS
 
 logger = logging.getLogger("zunkiree.chatbot.query")
 
@@ -166,6 +167,31 @@ Do NOT ask for email, postal code, or full address. Remember what the customer a
 POST-CART ACTIONS: When customer says "View Cart" or "Cart hernu", call get_cart. When "Keep Shopping" or "Aru herne", reply with "Sure, what else are you looking for?" in their language.
 
 TOOLS: product_search, add_to_cart, get_cart, remove_from_cart, checkout, create_dm_order, add_to_wishlist, get_wishlist, get_order_status.
+"""
+
+DM_MANUFACTURING_SYSTEM_PROMPT = """You are {brand_name}'s B2B product assistant on Instagram DM. Talk professionally but conversationally, 1-2 sentences max, plain text only (no markdown/bold/lists/links).
+
+LANGUAGE: ALWAYS write your reply in plain English. The system automatically translates to the customer's language when needed. Do NOT switch to Nepali, Romanized Nepali, Hindi, or any other language — even if the customer's prior messages were in another language.
+
+PRODUCTS: When a customer asks about products, tiles, or materials, ALWAYS call product_search first.
+Product cards are sent automatically — NEVER list product names, specs, or prices in your text reply.
+- If products are found: say ONLY a 1-sentence intro like "Here are some matching tiles!" or "Found a few options for you!"
+- If ZERO results: acknowledge what they asked for and suggest they contact our sales team or browse alternatives.
+- NEVER list product names, sizes, or technical specs in text — the cards show everything.
+- NEVER say "I can't show images" — product cards ARE shown automatically.
+
+SPECIFICATIONS: Answer technical questions (PEI rating, water absorption, slip resistance, finish, material, application) directly from the knowledge base. Be precise.
+
+QUOTE LIST: Customers can build a quote list to request bulk pricing for their project.
+- Use add_to_cart to add tiles to their quote list.
+- Use get_cart to show current quote list.
+- Use remove_from_cart to remove items.
+- When a customer wants to finalize, tell them to contact the sales team with their quote list — do NOT attempt checkout or collect payment.
+- NEVER mention "checkout", "payment", "COD", "eSewa", or "Khalti" — all B2B orders go through the sales team.
+
+DEALER / PROJECT INQUIRIES: For customers asking about dealership, distribution, or large project orders, direct them to contact the sales team directly.
+
+TOOLS: product_search, add_to_cart, get_cart, remove_from_cart, add_to_wishlist, get_wishlist, get_order_status.
 """
 
 # ---------------------------------------------------------------------------
@@ -319,8 +345,14 @@ class ChatbotQueryService:
         # --- Expand abbreviations before sending to RAG ---
         expanded_text = self._expand_abbreviations(message_text, custom_abbreviations)
 
-        # --- Route ecommerce tenants through the agent pipeline ---
-        if website_type == "ecommerce":
+        # --- Route ecommerce and manufacturing tenants through the agent pipeline ---
+        if website_type in ("ecommerce", "manufacturing"):
+            if website_type == "manufacturing":
+                sp_override = DM_MANUFACTURING_SYSTEM_PROMPT.format(brand_name=brand_name)
+                tools_override = MANUFACTURING_TOOLS
+            else:
+                sp_override = DM_ECOMMERCE_SYSTEM_PROMPT.format(brand_name=brand_name)
+                tools_override = None
             return await self._process_ecommerce_message(
                 db=db,
                 customer=customer,
@@ -330,6 +362,8 @@ class ChatbotQueryService:
                 brand_name=brand_name,
                 supported_languages=supported_languages,
                 start=start,
+                system_prompt_override=sp_override,
+                tools_override=tools_override,
             )
 
         # Call existing RAG pipeline
@@ -409,8 +443,10 @@ class ChatbotQueryService:
         brand_name: str,
         supported_languages: list,
         start: float,
+        system_prompt_override: str | None = None,
+        tools_override: list | None = None,
     ) -> dict:
-        """Route ecommerce tenants through the agent pipeline (product search, cart, checkout)."""
+        """Route ecommerce/manufacturing tenants through the agent pipeline."""
         agent = self._get_agent_service()
         # Use sender_id as session_id for cart persistence across DM turns
         session_id = f"dm:{channel.id}:{sender_id}"
@@ -439,12 +475,11 @@ class ChatbotQueryService:
                 question=message_text,
                 customer_id=customer.id,
                 brand_name=brand_name,
-                system_prompt_override=DM_ECOMMERCE_SYSTEM_PROMPT.format(
-                    brand_name=brand_name,
-                ),
+                system_prompt_override=system_prompt_override or DM_ECOMMERCE_SYSTEM_PROMPT.format(brand_name=brand_name),
                 conversation_history=dm_history,
                 force_tool_on_first_turn=True,
                 platform_sender_id=sender_id,
+                tools=tools_override,
             ):
                 event_type = event.get("type")
                 if event_type == "products":

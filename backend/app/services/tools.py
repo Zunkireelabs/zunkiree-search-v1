@@ -234,6 +234,11 @@ ECOMMERCE_TOOLS = [
     },
 ]
 
+MANUFACTURING_TOOLS = [
+    t for t in ECOMMERCE_TOOLS
+    if t["function"]["name"] not in ("checkout", "create_dm_order")
+]
+
 
 async def execute_tool(
     tool_name: str,
