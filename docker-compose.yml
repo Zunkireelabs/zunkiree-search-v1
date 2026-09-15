@@ -88,6 +88,7 @@ services:
       - hosting
     profiles:
       - staging
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
 
   zunkiree-backup:
     image: postgres:16-alpine
