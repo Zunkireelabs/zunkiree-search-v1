@@ -81,6 +81,11 @@ class Settings(BaseSettings):
     # warning (preserves Z6 behavior on misconfigured deploys).
     widget_data_api_url: str = ""
 
+    # ClinicMD integration (clinic website_type agent). Optional — clinic
+    # tools return a clean error if unset. Anon key only, never service_role.
+    clinicmd_supabase_url: str | None = None
+    clinicmd_supabase_anon_key: str | None = None
+
     # Meta Messaging / Chatbot
     meta_app_secret: str = ""
     meta_verify_token: str = ""

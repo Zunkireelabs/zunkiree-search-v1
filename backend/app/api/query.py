@@ -533,7 +533,11 @@ async def submit_query_stream(
     question_to_answer = query.question.strip()
     lead_signup_cta = False
 
-    is_reg_query = _is_registration_query(question_to_answer)
+    # Clinic tenants have their own agent + booking confirmation flow; the
+    # generic "register as a new patient" / "sign me up" phrasing would
+    # otherwise be caught by the identity-verification registration gate
+    # below and never reach ClinicAgentService.
+    is_reg_query = False if customer.website_type == "clinic" else _is_registration_query(question_to_answer)
     if (verification_enabled or has_lead_intents or is_reg_query) and query.session_id:
         v_session = await get_or_create_session(db, query.session_id, customer.id)
 
@@ -626,6 +630,23 @@ async def submit_query_stream(
                     session_id=query.session_id or "",
                     question=question_to_answer,
                     customer_id=customer.id,
+                    brand_name=brand_name,
+                ):
+                    yield f"data: {json.dumps(event)}\n\n"
+                return
+
+            # Route clinic customers to the ClinicMD-backed front-desk agent
+            if customer.website_type == "clinic":
+                from app.services.clinic_agent import get_clinic_agent_service
+                agent_service = get_clinic_agent_service()
+                async for event in agent_service.process_agent_stream(
+                    db=db,
+                    site_id=query.site_id,
+                    session_id=query.session_id or "",
+                    question=question_to_answer,
+                    customer_id=customer.id,
+                    customer=customer,
+                    config=config,
                     brand_name=brand_name,
                 ):
                     yield f"data: {json.dumps(event)}\n\n"
