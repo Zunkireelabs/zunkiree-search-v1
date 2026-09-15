@@ -9,6 +9,7 @@ A stage redeploy wipes it — same tradeoff as ConversationStore.
 import difflib
 import logging
 import re
+import uuid as uuid_module
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -98,12 +99,12 @@ CLINIC_TOOLS = [
         "type": "function",
         "function": {
             "name": "prepare_booking",
-            "description": "Validate a booking and stage it for confirmation. Creates nothing yet. Use the service_id/branch_id returned by list_services or check_availability. After calling this, read the returned summary back to the visitor and ask 'Shall I book this?' — only call confirm_booking after they explicitly say yes in a LATER message.",
+            "description": "Validate a booking and stage it for confirmation. Creates nothing yet. Pass the service's exact NAME as shown by list_services/check_availability (e.g. 'General Dentistry') — never a number, list position, or anything the visitor typed as a shorthand pick. Branch is optional; only pass it if the clinic has more than one branch and the visitor named one. After calling this, read the returned summary back to the visitor and ask 'Shall I book this?' — only call confirm_booking after they explicitly say yes in a LATER message.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "service_id": {"type": "string"},
-                    "branch_id": {"type": "string"},
+                    "service": {"type": "string", "description": "The service's exact name, e.g. 'General Dentistry'. Never a number or list position."},
+                    "branch": {"type": "string", "description": "Branch name — only needed if the clinic has more than one branch."},
                     "date": {"type": "string", "description": "YYYY-MM-DD"},
                     "time": {"type": "string", "description": "HH:MM, 24h"},
                     "full_name": {"type": "string"},
@@ -111,7 +112,7 @@ CLINIC_TOOLS = [
                     "email": {"type": "string"},
                     "note": {"type": "string", "description": "Any visitor note for the clinic"},
                 },
-                "required": ["service_id", "branch_id", "date", "time", "full_name", "phone"],
+                "required": ["service", "date", "time", "full_name", "phone"],
             },
         },
     },
@@ -217,6 +218,34 @@ async def _resolve_org(db: AsyncSession, customer: Customer) -> tuple[str, list[
 
 def _default_branch(branches: list[dict]) -> dict | None:
     return branches[0] if branches else None
+
+
+def _is_uuid(value: str | None) -> bool:
+    if not value:
+        return False
+    try:
+        uuid_module.UUID(str(value))
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
+def _match_branch(branches: list[dict], branch_name: str) -> tuple[dict | None, list[dict]]:
+    """Fuzzy-resolve a branch name. Returns (branch, ambiguous_options)."""
+    name_lower = branch_name.lower().strip()
+    exact = [b for b in branches if b["name"].lower() == name_lower]
+    if exact:
+        return exact[0], []
+    contains = [b for b in branches if name_lower in b["name"].lower()]
+    if len(contains) == 1:
+        return contains[0], []
+    if len(contains) > 1:
+        return None, contains
+    close_names = difflib.get_close_matches(branch_name, [b["name"] for b in branches], n=3, cutoff=0.5)
+    matches = [b for b in branches if b["name"] in close_names]
+    if len(matches) == 1:
+        return matches[0], []
+    return None, matches
 
 
 def _match_service(treatments: list[dict], service_name: str) -> tuple[dict | None, list[dict]]:
@@ -343,28 +372,74 @@ async def _prepare_booking(
     customer: Customer,
     session_id: str,
     current_turn: int,
-    service_id: str,
-    branch_id: str,
     date: str,
     time: str,
     full_name: str,
     phone: str,
+    service: str | None = None,
+    branch: str | None = None,
+    service_id: str | None = None,
+    branch_id: str | None = None,
     email: str | None = None,
     note: str | None = None,
+    **_ignored,
 ) -> dict:
     if not session_id or not session_id.strip():
         return {"error": "MISSING_SESSION", "message": "A session is required to prepare a booking."}
 
     org_id, branches = await _resolve_org(db, customer)
-    branch = next((b for b in branches if b["id"] == branch_id), None)
-    if not branch:
-        return {"error": "INVALID_BRANCH", "message": "That branch isn't available."}
+    if not branches:
+        return {"error": "NO_BRANCH", "message": "No active branch configured for this clinic."}
+
+    branch_row = next((b for b in branches if _is_uuid(branch_id) and b["id"] == branch_id), None)
+    if branch_row is None and branch:
+        matched, ambiguous_branches = _match_branch(branches, branch)
+        if matched:
+            branch_row = matched
+        elif ambiguous_branches:
+            return {
+                "error": "BRANCH_AMBIGUOUS",
+                "message": f"Multiple branches match '{branch}'.",
+                "options": [b["name"] for b in ambiguous_branches],
+            }
+        else:
+            return {
+                "error": "BRANCH_NOT_FOUND",
+                "message": f"Branch not recognised: '{branch}'.",
+                "options": [b["name"] for b in branches],
+            }
+    if branch_row is None:
+        if len(branches) == 1:
+            branch_row = branches[0]
+        else:
+            return {
+                "error": "BRANCH_REQUIRED",
+                "message": "This clinic has more than one branch — which one would you like?",
+                "options": [b["name"] for b in branches],
+            }
+    branch = branch_row
 
     client = get_clinicmd_client()
     treatments = await client.list_treatments(org_id, branch)
-    treatment = next((t for t in treatments if t["id"] == service_id), None)
-    if not treatment:
-        return {"error": "INVALID_SERVICE", "message": "That service isn't available."}
+    treatment = next((t for t in treatments if _is_uuid(service_id) and t["id"] == service_id), None)
+    if treatment is None:
+        if not service:
+            return {"error": "INVALID_SERVICE", "message": "A service name is required."}
+        matched, ambiguous_services = _match_service(treatments, service)
+        if matched:
+            treatment = matched
+        elif ambiguous_services:
+            return {
+                "error": "SERVICE_AMBIGUOUS",
+                "message": f"Multiple services match '{service}'.",
+                "options": [{"id": t["id"], "name": t["name"]} for t in ambiguous_services],
+            }
+        else:
+            return {
+                "error": "SERVICE_NOT_FOUND",
+                "message": f"Service not recognised: '{service}'.",
+                "options": [t["name"] for t in treatments],
+            }
 
     try:
         target_date = datetime.strptime(date, "%Y-%m-%d").date()

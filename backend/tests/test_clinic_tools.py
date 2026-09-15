@@ -123,8 +123,7 @@ async def test_prepare_booking_picks_open_slot_and_stages_pending(monkeypatch):
         customer=customer,
         session_id="s1",
         current_turn=1,
-        service_id="svc-1",
-        branch_id="branch-1",
+        service="Teeth Cleaning",
         date="2026-10-01",
         time="10:00",
         full_name="jane doe",
@@ -146,7 +145,7 @@ async def test_prepare_booking_rejects_taken_slot(monkeypatch):
 
     result = await clinic_tools._prepare_booking(
         db=AsyncMock(), customer=customer, session_id="s1", current_turn=1,
-        service_id="svc-1", branch_id="branch-1", date="2026-10-01", time="10:00",
+        service="Teeth Cleaning", date="2026-10-01", time="10:00",
         full_name="Jane", phone="9841234567",
     )
     assert result["error"] == "SLOT_TAKEN"
@@ -161,10 +160,101 @@ async def test_prepare_booking_refuses_empty_session_id(monkeypatch):
 
     result = await clinic_tools._prepare_booking(
         db=AsyncMock(), customer=customer, session_id="", current_turn=1,
-        service_id="svc-1", branch_id="branch-1", date="2026-10-01", time="10:00",
+        service="Teeth Cleaning", date="2026-10-01", time="10:00",
         full_name="Jane", phone="9841234567",
     )
     assert result["error"] == "MISSING_SESSION"
+
+
+# --- service/branch resolution (list-position id hallucination guard) ---
+
+@pytest.mark.asyncio
+async def test_prepare_booking_ignores_non_uuid_service_id_and_resolves_by_name(monkeypatch):
+    """LLM sometimes echoes a list position ('1') as service_id instead of the real
+    UUID — that must be ignored and the service name used instead."""
+    client = FakeClient()
+    _patch_client(monkeypatch, client)
+    customer = _make_customer()
+
+    result = await clinic_tools._prepare_booking(
+        db=AsyncMock(), customer=customer, session_id="s1", current_turn=1,
+        service="Teeth Cleaning", service_id="1", date="2026-10-01", time="10:00",
+        full_name="Jane", phone="9841234567",
+    )
+    assert "summary" in result
+    assert clinic_tools._state("s1")["pending"]["service_id"] == "svc-1"
+
+
+@pytest.mark.asyncio
+async def test_prepare_booking_bad_service_name_returns_clear_error_with_options(monkeypatch):
+    client = FakeClient()
+    _patch_client(monkeypatch, client)
+    customer = _make_customer()
+
+    result = await clinic_tools._prepare_booking(
+        db=AsyncMock(), customer=customer, session_id="s1", current_turn=1,
+        service="1", date="2026-10-01", time="10:00",
+        full_name="Jane", phone="9841234567",
+    )
+    assert result["error"] == "SERVICE_NOT_FOUND"
+    assert "1" in result["message"]
+    assert result["options"] == ["Teeth Cleaning"]
+
+
+@pytest.mark.asyncio
+async def test_prepare_booking_ambiguous_service_name_returns_options(monkeypatch):
+    treatments = [
+        {**TREATMENT, "id": "svc-1", "name": "General Dentistry"},
+        {**TREATMENT, "id": "svc-2", "name": "General Treatment"},
+    ]
+    client = FakeClient(treatments=treatments)
+    _patch_client(monkeypatch, client)
+    customer = _make_customer()
+
+    result = await clinic_tools._prepare_booking(
+        db=AsyncMock(), customer=customer, session_id="s1", current_turn=1,
+        service="General", date="2026-10-01", time="10:00",
+        full_name="Jane", phone="9841234567",
+    )
+    assert result["error"] == "SERVICE_AMBIGUOUS"
+    assert {o["name"] for o in result["options"]} == {"General Dentistry", "General Treatment"}
+    assert clinic_tools._state("s1")["pending"] is None
+
+
+@pytest.mark.asyncio
+async def test_prepare_booking_defaults_to_single_branch_without_branch_arg(monkeypatch):
+    client = FakeClient()
+    _patch_client(monkeypatch, client)
+    customer = _make_customer()
+
+    result = await clinic_tools._prepare_booking(
+        db=AsyncMock(), customer=customer, session_id="s1", current_turn=1,
+        service="Teeth Cleaning", date="2026-10-01", time="10:00",
+        full_name="Jane", phone="9841234567",
+    )
+    assert "summary" in result
+    assert clinic_tools._state("s1")["pending"]["branch_id"] == "branch-1"
+
+
+@pytest.mark.asyncio
+async def test_prepare_booking_multi_branch_without_branch_arg_asks_which(monkeypatch):
+    branches = [BRANCH, {"id": "branch-2", "name": "Lalitpur Branch", "excluded_treatment_categories": []}]
+
+    async def fake_resolve_org(db, customer):
+        return ORG_ID, branches
+
+    monkeypatch.setattr(clinic_tools, "_resolve_org", fake_resolve_org)
+    client = FakeClient()
+    _patch_client(monkeypatch, client)
+    customer = _make_customer()
+
+    result = await clinic_tools._prepare_booking(
+        db=AsyncMock(), customer=customer, session_id="s1", current_turn=1,
+        service="Teeth Cleaning", date="2026-10-01", time="10:00",
+        full_name="Jane", phone="9841234567",
+    )
+    assert result["error"] == "BRANCH_REQUIRED"
+    assert set(result["options"]) == {"Thimi Branch", "Lalitpur Branch"}
 
 
 # --- confirm_booking guards ---
@@ -191,7 +281,7 @@ async def test_confirm_booking_refuses_same_turn(monkeypatch):
 
     await clinic_tools._prepare_booking(
         db=AsyncMock(), customer=customer, session_id="s1", current_turn=2,
-        service_id="svc-1", branch_id="branch-1", date="2026-10-01", time="10:00",
+        service="Teeth Cleaning", date="2026-10-01", time="10:00",
         full_name="Jane", phone="9841234567",
     )
     result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=2)
@@ -207,7 +297,7 @@ async def test_confirm_booking_succeeds_on_later_turn_and_is_idempotent(monkeypa
 
     await clinic_tools._prepare_booking(
         db=AsyncMock(), customer=customer, session_id="s1", current_turn=3,
-        service_id="svc-1", branch_id="branch-1", date="2026-10-01", time="10:00",
+        service="Teeth Cleaning", date="2026-10-01", time="10:00",
         full_name="Jane", phone="9841234567",
     )
 
@@ -233,7 +323,7 @@ async def test_confirm_booking_maps_p0003_to_slot_taken_with_alternatives(monkey
 
     await clinic_tools._prepare_booking(
         db=AsyncMock(), customer=customer, session_id="s1", current_turn=5,
-        service_id="svc-1", branch_id="branch-1", date="2026-10-01", time="10:00",
+        service="Teeth Cleaning", date="2026-10-01", time="10:00",
         full_name="Jane", phone="9841234567",
     )
     result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=6)
@@ -249,7 +339,7 @@ async def test_confirm_booking_maps_p0005_to_slot_taken(monkeypatch):
 
     await clinic_tools._prepare_booking(
         db=AsyncMock(), customer=customer, session_id="s1", current_turn=7,
-        service_id="svc-1", branch_id="branch-1", date="2026-10-01", time="10:00",
+        service="Teeth Cleaning", date="2026-10-01", time="10:00",
         full_name="Jane", phone="9841234567",
     )
     result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=8)
@@ -264,7 +354,7 @@ async def test_confirm_booking_maps_other_pg_error_to_booking_failed(monkeypatch
 
     await clinic_tools._prepare_booking(
         db=AsyncMock(), customer=customer, session_id="s1", current_turn=9,
-        service_id="svc-1", branch_id="branch-1", date="2026-10-01", time="10:00",
+        service="Teeth Cleaning", date="2026-10-01", time="10:00",
         full_name="Jane", phone="9841234567",
     )
     result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=10)
