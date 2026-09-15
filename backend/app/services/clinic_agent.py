@@ -156,7 +156,7 @@ class ClinicAgentService:
                         customer=customer,
                         config=config,
                         site_id=site_id,
-                        session_id=session_id or "anonymous",
+                        session_id=session_id,
                         current_turn=current_turn,
                     )
 

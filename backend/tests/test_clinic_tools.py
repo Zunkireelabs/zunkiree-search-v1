@@ -153,7 +153,28 @@ async def test_prepare_booking_rejects_taken_slot(monkeypatch):
     assert clinic_tools._state("s1")["pending"] is None
 
 
+@pytest.mark.asyncio
+async def test_prepare_booking_refuses_empty_session_id(monkeypatch):
+    client = FakeClient()
+    _patch_client(monkeypatch, client)
+    customer = _make_customer()
+
+    result = await clinic_tools._prepare_booking(
+        db=AsyncMock(), customer=customer, session_id="", current_turn=1,
+        service_id="svc-1", branch_id="branch-1", date="2026-10-01", time="10:00",
+        full_name="Jane", phone="9841234567",
+    )
+    assert result["error"] == "MISSING_SESSION"
+
+
 # --- confirm_booking guards ---
+
+@pytest.mark.asyncio
+async def test_confirm_booking_refuses_empty_session_id(monkeypatch):
+    customer = _make_customer()
+    result = await clinic_tools._confirm_booking(AsyncMock(), customer, "", current_turn=1)
+    assert result["error"] == "MISSING_SESSION"
+
 
 @pytest.mark.asyncio
 async def test_confirm_booking_refuses_when_no_pending(monkeypatch):

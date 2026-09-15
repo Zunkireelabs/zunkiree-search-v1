@@ -153,7 +153,7 @@ async def execute_clinic_tool(
     session_id: str,
     current_turn: int,
 ) -> dict:
-    logger.info("[CLINIC-AGENT] tool=%s args=%s", tool_name, {k: v for k, v in tool_args.items() if k not in ("phone", "email")})
+    logger.info("[CLINIC-AGENT] tool=%s args=%s", tool_name, {k: v for k, v in tool_args.items() if k not in ("phone", "email", "full_name", "note")})
     try:
         if tool_name == "search_knowledge":
             return await _search_knowledge(db, customer, config, site_id, tool_args.get("query", ""))
@@ -352,6 +352,9 @@ async def _prepare_booking(
     email: str | None = None,
     note: str | None = None,
 ) -> dict:
+    if not session_id or not session_id.strip():
+        return {"error": "MISSING_SESSION", "message": "A session is required to prepare a booking."}
+
     org_id, branches = await _resolve_org(db, customer)
     branch = next((b for b in branches if b["id"] == branch_id), None)
     if not branch:
@@ -484,6 +487,9 @@ def _signature(pending: dict) -> tuple:
 
 
 async def _confirm_booking(db: AsyncSession, customer: Customer, session_id: str, current_turn: int) -> dict:
+    if not session_id or not session_id.strip():
+        return {"error": "MISSING_SESSION", "message": "A session is required to confirm a booking."}
+
     state = _state(session_id)
     pending = state.get("pending")
 
