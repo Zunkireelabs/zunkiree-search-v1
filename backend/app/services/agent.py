@@ -121,6 +121,9 @@ class AgentService:
             # names instead of calling product_search.
             tool_choice = "required" if (force_tool_on_first_turn and iteration == 1) else "auto"
 
+            # Release the pooler connection before each LLM round-trip. See C1 notes.
+            await db.commit()
+
             # Call OpenAI with tools
             response = await self.client.chat.completions.create(
                 model=self.model,

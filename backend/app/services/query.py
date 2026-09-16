@@ -392,6 +392,10 @@ class QueryService:
         chunks_for_llm = retrieval["chunks_for_llm"]
         llm_params = self._build_llm_params(config, customer, profile)
 
+        # Release the pooler connection before the LLM call (can run several
+        # seconds); reacquired lazily by `_log_query` below. See C1 notes.
+        await db.commit()
+
         # Stream the LLM response
         full_answer = ""
         suggestions = []

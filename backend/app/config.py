@@ -17,6 +17,13 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str
+    # Supavisor session-mode pooler (port 5432) enforces a project-wide client
+    # ceiling shared by stage AND prod (same Supabase project — see
+    # CLAUDE.md / [[zunkiree_environment_topology]]). Leave unset to fall back
+    # to environment-aware defaults in database.py, sized so stage can never
+    # consume enough of the shared ceiling to starve prod.
+    db_pool_size: int | None = None
+    db_max_overflow: int | None = None
 
     @model_validator(mode="after")
     def fix_database_url(self):

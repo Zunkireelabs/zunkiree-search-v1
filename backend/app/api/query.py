@@ -1,10 +1,12 @@
 import json
 import logging
 
+import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import TimeoutError as SATimeoutError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -27,6 +29,23 @@ from app.services.personalization import classify_query, parse_lead_intents, _is
 from app.config import get_settings
 
 logger = logging.getLogger("zunkiree.query.api")
+
+# Raised when the Supavisor pooler or SQLAlchemy's local pool has no
+# connection to hand out. Surfaced as a clean 503 instead of a raw 500 — see
+# C1 connection-pool notes.
+_POOL_EXHAUSTED_ERRORS = (SATimeoutError, asyncpg.exceptions.TooManyConnectionsError, asyncpg.exceptions.InternalServerError)
+
+
+def _is_pool_exhausted(exc: Exception) -> bool:
+    if not isinstance(exc, _POOL_EXHAUSTED_ERRORS):
+        return False
+    if isinstance(exc, asyncpg.exceptions.InternalServerError):
+        # Supavisor's EMAXCONNSESSION isn't a standard SQLSTATE, so asyncpg
+        # surfaces it as a generic InternalServerError — only treat it as
+        # pool exhaustion when the message actually says so, so we don't
+        # mask a genuine unrelated server error as "service busy".
+        return "max clients" in str(exc).lower() or "EMAXCONNSESSION" in str(exc)
+    return True
 
 router = APIRouter(prefix="/query", tags=["query"])
 settings = get_settings()
@@ -210,6 +229,14 @@ async def submit_query(
         raise HTTPException(
             status_code=401,
             detail={"code": "INVALID_SITE_ID", "message": str(e)},
+        )
+    except _POOL_EXHAUSTED_ERRORS as e:
+        if not _is_pool_exhausted(e):
+            raise
+        logger.warning("[QUERY] db pool exhausted site_id=%s", query.site_id)
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "SERVICE_BUSY", "message": "Service is busy, please retry shortly", "retry_after_seconds": 2},
         )
 
     brand_name = config.brand_name if config else customer.name
@@ -502,6 +529,14 @@ async def submit_query_stream(
             status_code=401,
             detail={"code": "INVALID_SITE_ID", "message": str(e)},
         )
+    except _POOL_EXHAUSTED_ERRORS as e:
+        if not _is_pool_exhausted(e):
+            raise
+        logger.warning("[QUERY] db pool exhausted site_id=%s", query.site_id)
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "SERVICE_BUSY", "message": "Service is busy, please retry shortly", "retry_after_seconds": 2},
+        )
 
     brand_name = config.brand_name if config else customer.name
 
@@ -603,6 +638,12 @@ async def submit_query_stream(
     origin = request.headers.get("origin")
     user_agent = request.headers.get("user-agent")
     ip_address = request.client.host if request.client else None
+
+    # Release the pooler connection checked out for the lookups above before
+    # entering the long LLM/tool phase below (which can run 10-20s for voice
+    # turns). `db` stays usable — SQLAlchemy reacquires a connection lazily
+    # the next time it's queried. See CLAUDE.md C1 / connection-pool notes.
+    await db.commit()
 
     async def event_stream():
         prefix_sent = False

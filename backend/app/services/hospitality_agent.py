@@ -68,6 +68,9 @@ class HospitalityAgentService:
         while iteration < MAX_TOOL_ITERATIONS:
             iteration += 1
 
+            # Release the pooler connection before each LLM round-trip. See C1 notes.
+            await db.commit()
+
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
