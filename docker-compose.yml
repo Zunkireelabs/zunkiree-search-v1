@@ -18,6 +18,9 @@ services:
       - ./backend/.env
     environment:
       - ENVIRONMENT=production
+      # Must match the --workers flag in backend/Dockerfile:18 — DB pool
+      # sizing (backend/app/database.py) divides its socket budget by this.
+      - UVICORN_WORKERS=2
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
@@ -69,6 +72,12 @@ services:
       - ./backend/.env.staging
     environment:
       - ENVIRONMENT=staging
+      # This service has no `command:` override, so it runs the Dockerfile's
+      # default --workers 2 (main does not carry stage/#52's --workers 1
+      # pin — that was a clinic-agent-specific stopgap not present here).
+      # Must match the worker count actually in effect — DB pool sizing
+      # (backend/app/database.py) divides its socket budget by this.
+      - UVICORN_WORKERS=2
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
