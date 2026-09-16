@@ -25,11 +25,26 @@ settings = get_settings()
 #   prod:    8  (currently 2 workers x (pool_size=2 + max_overflow=2))
 #   staging: 2  (currently 1 worker  x (pool_size=1 + max_overflow=1))
 #   total:   10 of 15 -> 5 connections of headroom
+#
+# Default to the SMALL (staging-sized) budget for anything that isn't
+# explicitly "production" — including local dev and an unset/unrecognized
+# environment value. config.py:8 defaults an unset ENVIRONMENT to
+# "production", so a laptop running the backend locally against the shared
+# pool MUST set ENVIRONMENT=development in its .env, or it silently takes
+# the full production-sized (8-socket) budget. Failing large used to be the
+# safe default when the ceiling had ~14-of-15 headroom; at 10-of-15 an
+# unrecognized environment taking the big budget is itself capable of
+# recreating the incident this PR fixes (a local dev backend contributed to
+# it). Fail small instead.
 _worker_count = settings.uvicorn_workers or (2 if settings.environment == "production" else 1)
-_total_socket_budget = 2 if settings.environment == "staging" else 8
+_total_socket_budget = 8 if settings.environment == "production" else 2
 _per_worker_budget = max(1, _total_socket_budget // _worker_count)
 _default_pool_size = max(1, _per_worker_budget // 2)
 _default_max_overflow = _per_worker_budget - _default_pool_size
+# NOTE: max(1, ...) means each worker always gets at least 1+1 sockets, so
+# the total budget stops being enforced if worker_count exceeds the budget
+# (e.g. 16 workers => 16 sockets against an 8-socket budget). Fine at
+# today's worker counts (2 prod / 1 staging); revisit if workers scale up.
 
 engine = create_async_engine(
     settings.database_url,
