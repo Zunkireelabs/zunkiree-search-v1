@@ -352,8 +352,9 @@ async def test_char_by_char_stream_does_not_leak_digit_run_split_by_spaces():
 @pytest.mark.asyncio
 async def test_voice_channel_prompt_carries_budget_and_safety_exemptions():
     """The `channel: "voice"` declaration must reach the system prompt with
-    the ~60-char budget and both safety exemptions (escalations, phone
-    number) — repeated so a flaky mock ordering can't hide a wiring bug."""
+    a directive one/two-sentence budget and both safety exemptions
+    (escalations, phone number) — repeated so a flaky mock ordering can't
+    hide a wiring bug."""
     for _ in range(3):
         service, captured = _service_capturing_prompts("Sure, we're open 9-5.")
         await _run(service, config=None, channel="voice")
@@ -361,8 +362,14 @@ async def test_voice_channel_prompt_carries_budget_and_safety_exemptions():
         assert len(captured) == 1
         system_prompt = captured[0][0]["content"]
         assert "VOICE:" in system_prompt
-        assert "60" in system_prompt
-        assert "does NOT apply" in system_prompt
+        assert "ONE short sentence" in system_prompt
+        assert "80 characters" in system_prompt
+        assert "never shortened" in system_prompt
+        # The block must sit at the END of the prompt (most salient
+        # position) — see VOICE-PROFILE-STRENGTHEN-BRIEF §3.
+        assert system_prompt.rstrip().endswith(
+            "phone number whenever you tell someone to call."
+        )
 
 
 @pytest.mark.asyncio
