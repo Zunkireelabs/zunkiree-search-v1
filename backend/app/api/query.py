@@ -165,6 +165,9 @@ class QueryRequest(BaseModel):
     session_id: str | None = Field(None, description="Session identifier for identity verification")
     language: str | None = Field(None, description="Response language code (e.g. 'en', 'ne')")
     image_data: str | None = Field(None, description="Base64-encoded image for visual product search")
+    channel: str | None = Field(
+        None, description="Response channel: 'chat' (default) or 'voice' — selects a response-shape profile"
+    )
 
 
 class SourceInfo(BaseModel):
@@ -648,6 +651,7 @@ async def submit_query_stream(
                     customer=customer,
                     config=config,
                     brand_name=brand_name,
+                    channel=query.channel or "chat",
                 ):
                     yield f"data: {json.dumps(event)}\n\n"
                 return

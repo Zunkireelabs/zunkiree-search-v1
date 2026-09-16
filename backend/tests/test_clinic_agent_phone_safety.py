@@ -74,6 +74,7 @@ async def _run(
     service: ClinicAgentService,
     config: WidgetConfig | None,
     question: str = "मेरो दाँत एकदम दुख्यो र सुन्निएको छ, कहाँ फोन गर्ने?",
+    channel: str = "chat",
 ):
     customer = _make_customer()
     events = []
@@ -86,9 +87,29 @@ async def _run(
         customer=customer,
         config=config,
         brand_name="Dental City",
+        channel=channel,
     ):
         events.append(event)
     return events
+
+
+def _service_capturing_prompts(reply: str) -> tuple[ClinicAgentService, list]:
+    """Like _service_with_reply, but also records every `messages` list
+    passed to the (mocked) chat completion call, so a test can assert on the
+    system prompt actually sent for a given channel."""
+    captured_calls: list = []
+    service = ClinicAgentService()
+
+    def _create(**kw):
+        captured_calls.append(kw["messages"])
+        return _stream(reply)
+
+    service.client = AsyncMock()
+    service.client.chat.completions.create = AsyncMock(side_effect=_create)
+    service.conversation_store = AsyncMock()
+    service.conversation_store.get_messages = lambda session_id: []
+    service.conversation_store.add_message = lambda *a, **kw: None
+    return service, captured_calls
 
 
 # --- Unit tests: the sanitizer itself ---
@@ -323,3 +344,81 @@ async def test_char_by_char_stream_does_not_leak_digit_run_split_by_spaces():
     streamed = "".join(e["data"] for e in token_events)
     assert "4444444" not in streamed.translate(str.maketrans("०१२३४५६७८९", "0123456789"))
     assert streamed == done_event["answer"]
+
+
+# --- VOICE-CHANNEL-RESPONSE-BRIEF §4: channel is a pure adapter declaration ---
+# --- that selects a response-shape profile in the one agent definition.     ---
+
+@pytest.mark.asyncio
+async def test_voice_channel_prompt_carries_budget_and_safety_exemptions():
+    """The `channel: "voice"` declaration must reach the system prompt with
+    the ~60-char budget and both safety exemptions (escalations, phone
+    number) — repeated so a flaky mock ordering can't hide a wiring bug."""
+    for _ in range(3):
+        service, captured = _service_capturing_prompts("Sure, we're open 9-5.")
+        await _run(service, config=None, channel="voice")
+
+        assert len(captured) == 1
+        system_prompt = captured[0][0]["content"]
+        assert "VOICE:" in system_prompt
+        assert "60" in system_prompt
+        assert "does NOT apply" in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_chat_channel_omits_voice_block():
+    """Default channel ("chat") must not carry any voice-only instructions —
+    the adapter declaring nothing must behave exactly as before this brief."""
+    service, captured = _service_capturing_prompts("Sure, we're open 9-5.")
+    await _run(service, config=None, channel="chat")
+
+    system_prompt = captured[0][0]["content"]
+    assert "VOICE:" not in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_voice_channel_does_not_change_phone_sanitization():
+    """The channel only changes response shape, never the phone-number
+    safety net — a fabricated number must still be stripped under voice."""
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="Dental City", contact_phone=REAL_NUMBER)
+    service = _service_with_fabricated_reply("01-1234567")
+
+    events = await _run(service, config, channel="voice")
+    done_event = next(e for e in events if e["type"] == "done")
+
+    assert "1234567" not in done_event["answer"]
+
+
+# --- Phone-presence follow-up (post-#53 smoke): "never wrong" must also be ---
+# --- "always present" whenever config.contact_phone is set on escalation.  ---
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("channel", ["chat", "voice"])
+async def test_medical_prompt_mandates_stating_the_number_when_verified(channel):
+    """Prompt-content guard, repeated over both channels: the MEDICAL section
+    must instruct the model to ALWAYS give the verified number on escalation,
+    not merely permit it — the earlier wording ('only state ... if it
+    appears') was satisfied by omitting the number entirely, which is how 2
+    of 6 live escalation probes on stage came back with no number at all."""
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="Dental City", contact_phone=REAL_NUMBER)
+    service, captured = _service_capturing_prompts("Please call us right away.")
+
+    await _run(service, config, channel=channel)
+
+    system_prompt = captured[0][0]["content"]
+    assert REAL_NUMBER in system_prompt
+    assert "ALWAYS tell them to call the clinic immediately AND" in system_prompt
+    assert "state the clinic's verified phone number" in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_medical_prompt_still_forbids_digits_when_unverified():
+    """The mandate to always state the number only applies once one is
+    verified — with none configured, the prompt must keep forbidding digits
+    outright rather than accidentally demanding a number that doesn't exist."""
+    service, captured = _service_capturing_prompts("Please call us right away.")
+
+    await _run(service, config=None, channel="chat")
+
+    system_prompt = captured[0][0]["content"]
+    assert "WITHOUT stating any digits" in system_prompt
