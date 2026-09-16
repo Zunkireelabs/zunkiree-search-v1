@@ -47,25 +47,41 @@ async def _stream(text: str):
     yield _chunk(content=text)
 
 
-def _service_with_fabricated_reply(fabricated_number: str) -> ClinicAgentService:
+async def _stream_char_by_char(text: str):
+    """Simulate real OpenAI streaming, where a delta can be a single character —
+    the shape that made a per-delta sanitize impossible in the first place."""
+    for ch in text:
+        yield _chunk(content=ch)
+
+
+def _service_with_reply(reply: str, char_by_char: bool = False) -> ClinicAgentService:
     service = ClinicAgentService()
-    reply = f"That sounds urgent — please call the clinic at {fabricated_number} right away."
+    stream_fn = _stream_char_by_char if char_by_char else _stream
     service.client = AsyncMock()
-    service.client.chat.completions.create = AsyncMock(side_effect=lambda **kw: _stream(reply))
+    service.client.chat.completions.create = AsyncMock(side_effect=lambda **kw: stream_fn(reply))
     service.conversation_store = AsyncMock()
     service.conversation_store.get_messages = lambda session_id: []
     service.conversation_store.add_message = lambda *a, **kw: None
     return service
 
 
-async def _run(service: ClinicAgentService, config: WidgetConfig | None):
+def _service_with_fabricated_reply(fabricated_number: str) -> ClinicAgentService:
+    reply = f"That sounds urgent — please call the clinic at {fabricated_number} right away."
+    return _service_with_reply(reply)
+
+
+async def _run(
+    service: ClinicAgentService,
+    config: WidgetConfig | None,
+    question: str = "मेरो दाँत एकदम दुख्यो र सुन्निएको छ, कहाँ फोन गर्ने?",
+):
     customer = _make_customer()
     events = []
     async for event in service.process_agent_stream(
         db=AsyncMock(),
         site_id="dental-city",
         session_id="s1",
-        question="मेरो दाँत एकदम दुख्यो र सुन्निएको छ, कहाँ फोन गर्ने?",
+        question=question,
         customer_id=customer.id,
         customer=customer,
         config=config,
@@ -102,6 +118,96 @@ def test_sanitizer_does_not_touch_dates_or_times():
     text = "We're open 2026-09-17 from 09:00 to 17:00."
     sanitized = sanitize_phone_numbers(text, allowed_digits=set())
     assert sanitized == text
+
+
+def test_sanitizer_does_not_touch_price_ranges():
+    text = "Cleaning costs NPR 1500-3000 depending on the case."
+    sanitized = sanitize_phone_numbers(text, allowed_digits=set())
+    assert sanitized == text
+
+
+# --- F1 (PR #53 review): the visitor's own number must never be stripped ---
+
+def test_sanitizer_keeps_visitor_supplied_number_when_marked_allowed():
+    text = "I've prepared your booking for Sadin on 2026-09-28 at 10:00 AM. Phone: 9841540343. Shall I book this?"
+    sanitized = sanitize_phone_numbers(text, allowed_digits={"9841540343"})
+    assert "9841540343" in sanitized
+    assert sanitized == text
+
+
+@pytest.mark.asyncio
+async def test_booking_readback_preserves_number_visitor_just_gave():
+    """The booking flow's own verification step ('read it back, ask Shall I
+    book this?') must not eat the visitor's number — they need to see it to
+    catch a typo."""
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="Dental City", contact_phone=REAL_NUMBER)
+    reply = "Got it — I have your number as 9812345678. Shall I book this?"
+    service = _service_with_reply(reply)
+
+    events = await _run(service, config, question="My phone is 9812345678")
+    done_event = next(e for e in events if e["type"] == "done")
+
+    assert "9812345678" in done_event["answer"]
+
+
+# --- F2 (PR #53 review): formatting must not defeat the guard ---
+
+BYPASS_FORMATS = [
+    "+977-1-4444444",
+    "+977 1 4444444",
+    "977014444444",
+    "(01) 4444444",
+    "01.4444444",
+]
+
+
+@pytest.mark.parametrize("fabricated", BYPASS_FORMATS)
+def test_sanitizer_normalizes_formatting_before_comparing(fabricated):
+    text = f"Call {fabricated} for urgent care."
+    sanitized = sanitize_phone_numbers(text, allowed_digits={REAL_DIGITS})
+    assert "4444444" not in sanitized.translate(str.maketrans("०१२३४५६७८९", "0123456789"))
+
+
+@pytest.mark.parametrize("equivalent_format", [
+    "980-1222339",
+    "+977-980-1222339",
+    "9779801222339",
+])
+def test_sanitizer_recognizes_same_number_in_different_formats(equivalent_format):
+    text = f"Please call the clinic at {equivalent_format} right away."
+    sanitized = sanitize_phone_numbers(text, allowed_digits={REAL_DIGITS})
+    assert equivalent_format in sanitized
+
+
+# --- F3 (PR #53 review): hold-back streaming must stay safe under real, ---
+# --- character-granular deltas, not just the single-chunk mock above.    ---
+
+@pytest.mark.asyncio
+async def test_char_by_char_stream_never_leaks_fabricated_number_in_any_token():
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="Dental City", contact_phone=REAL_NUMBER)
+    reply = "That sounds urgent — please call the clinic at +977-1-4444444 right away."
+    service = _service_with_reply(reply, char_by_char=True)
+
+    events = await _run(service, config)
+    token_events = [e for e in events if e["type"] == "token"]
+    done_event = next(e for e in events if e["type"] == "done")
+
+    assert len(token_events) > 1, "hold-back streaming should still emit progressive chunks"
+    for e in token_events:
+        assert "4444444" not in e["data"]
+    assert "4444444" not in done_event["answer"]
+
+
+@pytest.mark.asyncio
+async def test_char_by_char_stream_still_delivers_real_number():
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="Dental City", contact_phone=REAL_NUMBER)
+    reply = f"That sounds urgent — please call the clinic at {REAL_NUMBER} right away."
+    service = _service_with_reply(reply, char_by_char=True)
+
+    events = await _run(service, config)
+    done_event = next(e for e in events if e["type"] == "done")
+
+    assert REAL_NUMBER in done_event["answer"]
 
 
 # --- Integration: process_agent_stream over repeated fabrication runs ---
