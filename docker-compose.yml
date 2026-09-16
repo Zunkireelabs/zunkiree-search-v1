@@ -18,6 +18,9 @@ services:
       - ./backend/.env
     environment:
       - ENVIRONMENT=production
+      # Must match the --workers flag in backend/Dockerfile:18 — DB pool
+      # sizing (backend/app/database.py) divides its socket budget by this.
+      - UVICORN_WORKERS=2
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
@@ -69,6 +72,9 @@ services:
       - ./backend/.env.staging
     environment:
       - ENVIRONMENT=staging
+      # Must match the --workers flag on the command line below — DB pool
+      # sizing (backend/app/database.py) divides its socket budget by this.
+      - UVICORN_WORKERS=1
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
@@ -88,6 +94,7 @@ services:
       - hosting
     profiles:
       - staging
+    # --workers here must match UVICORN_WORKERS above.
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
 
   zunkiree-backup:

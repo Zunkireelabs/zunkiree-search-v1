@@ -413,14 +413,23 @@ class QueryService:
                 full_answer = event["answer"]
                 suggestions = event["suggestions"]
 
-        # Log query
+        # Log query. The answer has already been streamed to the client in
+        # full at this point, so a log-write failure (e.g. pool exhaustion)
+        # must never surface as a stream error — that would make the client
+        # discard an answer it already received. Degrade to a skipped log
+        # instead; a missing query_logs row is an acceptable loss, a dropped
+        # answer is not.
         response_time_ms = int((time.time() - start_time) * 1000)
-        log_id = await self._log_query(
-            db=db, customer_id=customer.id, question=question, answer=full_answer,
-            chunks_used=len(chunks_for_llm), response_time_ms=response_time_ms,
-            origin=origin, user_agent=user_agent, ip_address=ip_address,
-            top_score=retrieval["top_score"],
-        )
+        log_id = None
+        try:
+            log_id = await self._log_query(
+                db=db, customer_id=customer.id, question=question, answer=full_answer,
+                chunks_used=len(chunks_for_llm), response_time_ms=response_time_ms,
+                origin=origin, user_agent=user_agent, ip_address=ip_address,
+                top_score=retrieval["top_score"],
+            )
+        except Exception:
+            logger.exception("[QUERY] failed to persist query log, answer already streamed")
 
         yield {
             "type": "done",
