@@ -17,6 +17,21 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str
+    # Supavisor session-mode pooler (port 5432) enforces a project-wide client
+    # ceiling shared by stage AND prod (same Supabase project — see
+    # CLAUDE.md / [[zunkiree_environment_topology]]). Leave unset to fall back
+    # to environment-aware defaults in database.py, sized so stage can never
+    # consume enough of the shared ceiling to starve prod.
+    db_pool_size: int | None = None
+    db_max_overflow: int | None = None
+    # uvicorn --workers count for THIS process. Each worker runs its own
+    # engine/pool, so the per-worker pool sizing in database.py is divided by
+    # this to keep the process-wide (worker_count x pool) total on-budget.
+    # Must match the --workers flag actually used to launch this process —
+    # see Dockerfile:18 (prod) / docker-compose.yml:91 (stage). Leave unset to
+    # fall back to environment-aware defaults in database.py that assume the
+    # current documented worker counts (prod=2, staging=1).
+    uvicorn_workers: int | None = None
 
     @model_validator(mode="after")
     def fix_database_url(self):
