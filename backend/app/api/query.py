@@ -31,8 +31,14 @@ from app.config import get_settings
 logger = logging.getLogger("zunkiree.query.api")
 
 # Raised when the Supavisor pooler or SQLAlchemy's local pool has no
-# connection to hand out. Surfaced as a clean 503 instead of a raw 500 — see
-# C1 connection-pool notes.
+# connection to hand out AND the individual checkout wait exceeds
+# pool_timeout (database.py). Surfaced as a clean 503 instead of a raw 500.
+# This only catches genuine exhaustion (a single checkout that times out) —
+# an undersized pool under moderate concurrency does NOT hit this path.
+# Measured on stage: 5 concurrent requests against a 2-socket budget
+# returned all HTTP 200s, several taking 15-65s, because each individual
+# checkout stayed under the 10s timeout while waits queued up across a
+# request's multiple checkouts. See database.py's pool_timeout comment.
 _POOL_EXHAUSTED_ERRORS = (SATimeoutError, asyncpg.exceptions.TooManyConnectionsError, asyncpg.exceptions.InternalServerError)
 
 
