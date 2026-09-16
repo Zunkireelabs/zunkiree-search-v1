@@ -7,13 +7,13 @@ run), so these tests assert over repeated runs rather than a single sample.
 """
 import uuid
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.models.customer import Customer
 from app.models.widget_config import WidgetConfig
-from app.services.clinic_agent import ClinicAgentService, sanitize_phone_numbers
+from app.services.clinic_agent import ClinicAgentService, sanitize_phone_numbers, _safe_flush_index
 
 REAL_NUMBER = "980-1222339"
 REAL_DIGITS = "9801222339"
@@ -240,3 +240,86 @@ async def test_escalation_with_no_configured_phone_gives_no_digits():
     done_event = next(e for e in events if e["type"] == "done")
 
     assert "1234567" not in done_event["answer"]
+
+
+# --- N1 (PR #53 review pass 2): a booking reference is grounded like a phone ---
+# --- number and must survive the confirm_booking read-back.                  ---
+
+def _tool_call_chunk(call_id: str, name: str, arguments: str):
+    delta = SimpleNamespace(
+        content=None,
+        tool_calls=[SimpleNamespace(index=0, id=call_id, function=SimpleNamespace(name=name, arguments=arguments))],
+    )
+    return SimpleNamespace(choices=[SimpleNamespace(delta=delta)])
+
+
+async def _stream_tool_call(call_id: str, name: str, arguments: str):
+    yield _tool_call_chunk(call_id, name, arguments)
+
+
+@pytest.mark.asyncio
+async def test_booking_reference_survives_confirm_booking_readback():
+    """N1: booking_number is phone-shaped (7-13 digits) and would otherwise be
+    stripped by the sanitizer as an unrecognized number ('Your booking
+    reference is BK-, please keep it.')."""
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="Dental City", contact_phone=REAL_NUMBER)
+    service = ClinicAgentService()
+    service.conversation_store = AsyncMock()
+    service.conversation_store.get_messages = lambda session_id: []
+    service.conversation_store.add_message = lambda *a, **kw: None
+
+    responses = [
+        _stream_tool_call("call_1", "confirm_booking", "{}"),
+        _stream("Your booking reference is BK-20260928-0001, please keep it."),
+    ]
+    service.client = AsyncMock()
+    service.client.chat.completions.create = AsyncMock(side_effect=lambda **kw: responses.pop(0))
+
+    fake_result = {
+        "booking": {
+            "booking_number": "BK-20260928-0001",
+            "date": "2026-09-28",
+            "start_time": "10:00",
+            "treatment_name": "General Dentistry",
+            "branch_name": "Main Branch",
+        }
+    }
+    with patch("app.services.clinic_agent.execute_clinic_tool", AsyncMock(return_value=fake_result)):
+        events = await _run(service, config)
+
+    done_event = next(e for e in events if e["type"] == "done")
+    assert "BK-20260928-0001" in done_event["answer"]
+
+
+# --- N2 (PR #53 review pass 2): the streaming boundary must not cut through ---
+# --- an in-progress digit run, leaving the widget out of sync with `done`.  ---
+
+def test_safe_flush_index_pulls_back_before_in_progress_digit_run():
+    text = "Please call us at +977 1"
+    boundary = _safe_flush_index(text, hold_back_tokens=2)
+    assert boundary <= text.index("+977")
+
+
+def test_safe_flush_index_unaffected_when_tail_has_no_digits():
+    text = "Please call us at the clinic today"
+    boundary = _safe_flush_index(text, hold_back_tokens=2)
+    assert text[:boundary] == "Please call us at the clinic"
+
+
+@pytest.mark.asyncio
+async def test_char_by_char_stream_does_not_leak_digit_run_split_by_spaces():
+    """A fabricated number spread across separate whitespace tokens
+    ("+977 1 4444444") must not leak piecemeal just because no single flush
+    window ever contains all 7+ digits at once — and what the visitor saw
+    while streaming must match what `done` / conversation history keep."""
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="Dental City", contact_phone=REAL_NUMBER)
+    reply = "Please call us at +977 1 4444444 for urgent care today."
+    service = _service_with_reply(reply, char_by_char=True)
+
+    events = await _run(service, config)
+    token_events = [e for e in events if e["type"] == "token"]
+    done_event = next(e for e in events if e["type"] == "done")
+
+    streamed = "".join(e["data"] for e in token_events)
+    assert "4444444" not in streamed.translate(str.maketrans("०१२३४५६७८९", "0123456789"))
+    assert streamed == done_event["answer"]

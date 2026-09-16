@@ -141,15 +141,30 @@ def sanitize_phone_numbers(text: str, allowed_digits: set[str]) -> str:
     return sanitized
 
 
+# N2: matches a digit run (with the punctuation/spacing a phone number can use)
+# still in progress at the very end of a string, so the flush boundary can be
+# pulled back to before it started instead of cutting through it.
+_TRAILING_DIGIT_RUN = re.compile(r"[+(]?[\d०-९][\d०-९\-.\s()]*$")
+
+
 def _safe_flush_index(text: str, hold_back_tokens: int = 8) -> int:
-    """Index up to which `text` is safe to sanitize-and-flush while streaming,
-    keeping the last `hold_back_tokens` whitespace-delimited tokens back so a
-    phone number split across deltas ("+977", "1", "4444444") is never flushed
-    mid-formation (PR #53 review F3)."""
+    """Index up to which `text` is safe to sanitize-and-flush while streaming.
+    Starts from a word-based boundary — `hold_back_tokens` elements of
+    `re.split(r"(\\s+)", text)` held back, which alternates word/whitespace
+    parts so this is roughly `hold_back_tokens // 2` trailing words, not
+    `hold_back_tokens` — then pulls that boundary back further if it would
+    land inside or just past an in-progress digit run, so a phone number
+    split across deltas ("+977", "1", "4444444") is never flushed mid-formation
+    (PR #53 review F3, tightened for N2)."""
     parts = re.split(r"(\s+)", text)
     if len(parts) <= hold_back_tokens:
-        return 0
-    return len("".join(parts[: len(parts) - hold_back_tokens]))
+        boundary = 0
+    else:
+        boundary = len("".join(parts[: len(parts) - hold_back_tokens]))
+    m = _TRAILING_DIGIT_RUN.search(text[:boundary])
+    if m:
+        boundary = m.start()
+    return boundary
 
 _TURN_COUNTERS: dict[str, int] = {}
 
@@ -326,6 +341,13 @@ class ClinicAgentService:
                         allowed_phone_digits |= _extract_phone_digits(str(tool_args.get("phone") or ""))
                         pending = (result or {}).get("pending_booking") or {}
                         allowed_phone_digits |= _extract_phone_digits(str(pending.get("phone_e164") or ""))
+                    elif tool_name == "confirm_booking":
+                        # N1: a booking_number is phone-shaped (7-13 digits) and comes
+                        # straight from ClinicMD, so it's grounded exactly like a phone
+                        # number — without this the sanitizer strips it out of the
+                        # confirmation read-back ("Your reference is BK-, please keep it").
+                        booking = (result or {}).get("booking") or {}
+                        allowed_phone_digits |= _extract_phone_digits(str(booking.get("booking_number") or ""))
 
                     messages.append({
                         "role": "tool",
