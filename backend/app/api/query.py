@@ -191,7 +191,9 @@ class QueryRequest(BaseModel):
     language: str | None = Field(None, description="Response language code (e.g. 'en', 'ne')")
     image_data: str | None = Field(None, description="Base64-encoded image for visual product search")
     channel: str | None = Field(
-        None, description="Response channel: 'chat' (default) or 'voice' — selects a response-shape profile"
+        None,
+        pattern="^(chat|voice)$",
+        description="Response channel: 'chat' (default) or 'voice' — selects a response-shape profile",
     )
 
 

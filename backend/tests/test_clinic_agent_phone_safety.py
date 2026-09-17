@@ -429,3 +429,38 @@ async def test_medical_prompt_still_forbids_digits_when_unverified():
 
     system_prompt = captured[0][0]["content"]
     assert "WITHOUT stating any digits" in system_prompt
+
+
+# --- ZUNKIREE-CLEANUP-BRIEF C2: false refusal + language matching, Nepali-only ---
+
+@pytest.mark.asyncio
+async def test_prompt_scopes_facts_to_clinic_data_not_agent_process():
+    """FACTS must not read as covering the agent's own capabilities/process —
+    that over-broad scope is what made the model prepend a false refusal
+    ('I can't explain the booking process...') before answering from BOOKING
+    in Nepali. The prompt must say explicitly that describing how booking
+    works, unlike clinic data, needs no tool and no refusal."""
+    service, captured = _service_capturing_prompts("Sure, here's how booking works.")
+    await _run(service, config=None, channel="chat")
+
+    system_prompt = captured[0][0]["content"]
+    assert "FACTS:" in system_prompt
+    assert "clinic DATA only" in system_prompt
+    assert "own capabilities" in system_prompt
+    assert "without a tool and without any disclaimer or refusal" in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_prompt_carries_explicit_language_matching_rule():
+    """The system prompt is English-only text but must explicitly instruct
+    the model to reply in the visitor's own language and to keep every other
+    rule (FACTS, BOOKING) in force regardless of language — the earlier
+    prompt had no LANGUAGE rule at all, which is the same root cause as the
+    Nepali-only false refusal (REVIEW-PR55 §4.3)."""
+    service, captured = _service_capturing_prompts("Sure, we're open 9-5.")
+    await _run(service, config=None, channel="chat")
+
+    system_prompt = captured[0][0]["content"]
+    assert "LANGUAGE:" in system_prompt
+    assert "English in, English out" in system_prompt
+    assert "applies identically no matter which language" in system_prompt
