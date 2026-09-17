@@ -1,0 +1,108 @@
+# Deploys admin/, legal/, and widget/ to production, all three together.
+#
+# Why one workflow for three containers instead of three: they live in one
+# repo and are small, static-or-single-build sites — splitting into three
+# workflows would triple the SSH/checkout overhead for no isolation benefit,
+# since a push to main touching any of the three already means "this repo's
+# frontend changed." Rollback (frontend-rollback.yml) IS per-app, so a bad
+# widget/ build doesn't force reverting admin/ or legal/ too.
+#
+# Separate git checkout from the backend pipeline's
+# /home/zunkireelabs/devprojects/zunkiree-search-v1 — that directory is
+# backend's own working copy, driven by deploy.yml's git operations. This
+# workflow uses its own directory so the two pipelines never race on the
+# same working tree.
+
+name: Deploy Frontend to Production
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'admin/**'
+      - 'legal/**'
+      - 'widget/**'
+      - 'docker-compose.frontend.yml'
+      - '.github/workflows/frontend-deploy.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-frontend-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy admin/legal/widget to Production
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+
+            DIR="/home/zunkireelabs/devprojects/websiteprojects/zunkiree-search-v1-frontend-prod"
+
+            if [ ! -d "$DIR/.git" ]; then
+              echo "=== First-time production bootstrap: cloning repo ==="
+              mkdir -p "$(dirname "$DIR")"
+              git clone -b main git@github.com:Zunkireelabs/zunkiree-search-v1.git "$DIR"
+            fi
+            cd "$DIR"
+
+            echo "=== Resetting frontend-prod working tree to origin/main ==="
+            git fetch origin main
+            git checkout -B main origin/main
+            git reset --hard origin/main
+
+            echo "=== Building and starting admin, legal, widget ==="
+            docker compose -f docker-compose.frontend.yml up -d --build admin-web legal-web widget-app
+
+            echo "=== Verifying container health ==="
+            sleep 5
+            for CONTAINER in zunkiree-admin-prod zunkiree-legal-prod zunkiree-widget-prod; do
+              HEALTHY=""
+              for i in $(seq 1 12); do
+                STATUS=$(docker inspect --format='{{.State.Health.Status}}' "$CONTAINER" 2>/dev/null || echo "unknown")
+                if [ "$STATUS" = "healthy" ]; then
+                  echo "$CONTAINER is healthy!"
+                  HEALTHY="yes"
+                  break
+                fi
+                echo "Attempt $i/12: $CONTAINER status is $STATUS, waiting..."
+                sleep 10
+              done
+              if [ -z "$HEALTHY" ]; then
+                echo "$CONTAINER did not become healthy within 2 minutes"
+                docker logs "$CONTAINER" --tail 50
+                exit 1
+              fi
+            done
+
+      - name: Verify Health
+        run: |
+          for DOMAIN in admin-zunkiree.zunkireelabs.com legal-zunkiree.zunkireelabs.com widget-zunkiree.zunkireelabs.com; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$DOMAIN")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "$DOMAIN health check passed (HTTP $HTTP_CODE)"
+            else
+              echo "$DOMAIN health check failed (HTTP $HTTP_CODE)"
+              exit 1
+            fi
+          done
+
+      - name: Verify legal/ rewrite paths
+        run: |
+          for PATH_ in / /privacy /privacy-policy /terms /terms-of-service /tos /data-deletion /data-deletion-instructions; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://legal-zunkiree.zunkireelabs.com$PATH_")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "legal-zunkiree.zunkireelabs.com$PATH_ -> HTTP $HTTP_CODE"
+            else
+              echo "legal-zunkiree.zunkireelabs.com$PATH_ -> HTTP $HTTP_CODE (expected 200)"
+              exit 1
+            fi
+          done

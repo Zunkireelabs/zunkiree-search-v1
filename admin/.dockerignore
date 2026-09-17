@@ -1,0 +1,5 @@
+.vercel
+.git
+.DS_Store
+Dockerfile
+docker-compose*.yml

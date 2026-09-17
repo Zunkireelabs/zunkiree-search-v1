@@ -1,0 +1,54 @@
+# Separate from the root ci.yml (backend-owned, no path filter). Scoped to
+# admin/legal/widget so it never runs on unrelated PRs and never touches the
+# backend-check job.
+
+name: Frontend CI
+
+on:
+  pull_request:
+    branches: [main, stage]
+    paths:
+      - 'admin/**'
+      - 'legal/**'
+      - 'widget/**'
+      - '.github/workflows/frontend-ci.yml'
+
+concurrency:
+  group: frontend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  widget-build:
+    name: Build widget
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: widget/package-lock.json
+
+      - run: cd widget && npm ci
+      - run: cd widget && npm run build
+
+  static-files-present:
+    name: Verify legal/admin rewrite targets exist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Every file here is a rewrite destination in admin/vercel.json or
+      # legal/vercel.json. legal's targets are the URL shapes submitted to
+      # Meta App Review — a missing file here is a broken review URL, not
+      # just a 404.
+      - name: Check required files exist
+        run: |
+          for f in admin/index.html admin/dashboard.html \
+                   legal/privacy-policy.html legal/terms-of-service.html legal/data-deletion.html; do
+            if [ ! -f "$f" ]; then
+              echo "::error::Missing required file: $f"
+              exit 1
+            fi
+          done

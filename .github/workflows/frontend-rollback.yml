@@ -1,0 +1,124 @@
+# Manual rollback for one frontend app at a time. Per-app (not bundled like
+# frontend-deploy.yml) so a bad widget/ release doesn't force reverting
+# admin/ or legal/ too.
+
+name: Rollback Frontend (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: "Which app to roll back"
+        required: true
+        type: choice
+        options:
+          - admin
+          - legal
+          - widget-prod
+          - widget-stage
+      commit_sha:
+        description: "Full commit SHA to roll back to"
+        required: true
+        type: string
+      reason:
+        description: "Reason for rollback (audit trail)"
+        required: true
+        type: string
+
+concurrency:
+  group: rollback-frontend-${{ inputs.app }}
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    name: Rollback ${{ inputs.app }} to ${{ inputs.commit_sha }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.app == 'widget-stage' && 'staging' || 'production' }}
+    steps:
+      - name: Rollback via SSH
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+
+            case "${{ inputs.app }}" in
+              admin)
+                DIR="/home/zunkireelabs/devprojects/websiteprojects/zunkiree-search-v1-frontend-prod"
+                BRANCH="main"
+                COMPOSE_FILE="docker-compose.frontend.yml"
+                SERVICE="admin-web"
+                CONTAINER="zunkiree-admin-prod"
+                DOMAIN="admin-zunkiree.zunkireelabs.com"
+                ;;
+              legal)
+                DIR="/home/zunkireelabs/devprojects/websiteprojects/zunkiree-search-v1-frontend-prod"
+                BRANCH="main"
+                COMPOSE_FILE="docker-compose.frontend.yml"
+                SERVICE="legal-web"
+                CONTAINER="zunkiree-legal-prod"
+                DOMAIN="legal-zunkiree.zunkireelabs.com"
+                ;;
+              widget-prod)
+                DIR="/home/zunkireelabs/devprojects/websiteprojects/zunkiree-search-v1-frontend-prod"
+                BRANCH="main"
+                COMPOSE_FILE="docker-compose.frontend.yml"
+                SERVICE="widget-app"
+                CONTAINER="zunkiree-widget-prod"
+                DOMAIN="widget-zunkiree.zunkireelabs.com"
+                ;;
+              widget-stage)
+                DIR="/home/zunkireelabs/devprojects/websiteprojects/zunkiree-search-v1-frontend-stage"
+                BRANCH="stage"
+                COMPOSE_FILE="docker-compose.frontend.dev.yml"
+                SERVICE="widget-app-stage"
+                CONTAINER="zunkiree-widget-stage"
+                DOMAIN="dev-widget-zunkiree.zunkireelabs.com"
+                ;;
+            esac
+
+            echo "Rolling back ${{ inputs.app }} to ${{ inputs.commit_sha }}"
+            echo "Reason: ${{ inputs.reason }}"
+
+            if [ ! -d "$DIR/.git" ]; then
+              echo "::error::$DIR does not exist yet — nothing to roll back"
+              exit 1
+            fi
+            cd "$DIR"
+
+            git fetch origin
+            git checkout "${{ inputs.commit_sha }}"
+
+            docker compose -f "$COMPOSE_FILE" up -d --build "$SERVICE"
+
+            echo "=== Verifying container health ==="
+            for i in $(seq 1 12); do
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' "$CONTAINER" 2>/dev/null || echo "unknown")
+              if [ "$STATUS" = "healthy" ]; then
+                echo "Rollback successful — $CONTAINER is healthy!"
+                exit 0
+              fi
+              echo "Attempt $i/12: Status is $STATUS, waiting..."
+              sleep 10
+            done
+            echo "Rollback failed — $CONTAINER did not become healthy"
+            docker logs "$CONTAINER" --tail 50
+            exit 1
+
+      - name: Verify Health
+        run: |
+          case "${{ inputs.app }}" in
+            admin) DOMAIN="admin-zunkiree.zunkireelabs.com" ;;
+            legal) DOMAIN="legal-zunkiree.zunkireelabs.com" ;;
+            widget-prod) DOMAIN="widget-zunkiree.zunkireelabs.com" ;;
+            widget-stage) DOMAIN="dev-widget-zunkiree.zunkireelabs.com" ;;
+          esac
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$DOMAIN")
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "Rollback verified — $DOMAIN returned HTTP $HTTP_CODE"
+          else
+            echo "Health check failed after rollback — $DOMAIN returned HTTP $HTTP_CODE"
+            exit 1
+          fi
