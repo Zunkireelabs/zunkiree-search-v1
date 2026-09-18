@@ -50,7 +50,7 @@ jobs:
             if [ ! -d "$DIR/.git" ]; then
               echo "=== First-time production bootstrap: cloning repo ==="
               mkdir -p "$(dirname "$DIR")"
-              git clone -b main git@github.com:Zunkireelabs/zunkiree-search-v1.git "$DIR"
+              git clone -b main https://github.com/Zunkireelabs/zunkiree-search-v1.git "$DIR"
             fi
             cd "$DIR"
 
@@ -86,7 +86,7 @@ jobs:
       - name: Verify Health
         run: |
           for DOMAIN in admin-zunkiree.zunkireelabs.com legal-zunkiree.zunkireelabs.com widget-zunkiree.zunkireelabs.com; do
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$DOMAIN")
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --retry 5 --retry-delay 10 --retry-connrefused --retry-all-errors "https://$DOMAIN")
             if [ "$HTTP_CODE" = "200" ]; then
               echo "$DOMAIN health check passed (HTTP $HTTP_CODE)"
             else
@@ -98,7 +98,7 @@ jobs:
       - name: Verify legal/ rewrite paths
         run: |
           for PATH_ in / /privacy /privacy-policy /terms /terms-of-service /tos /data-deletion /data-deletion-instructions; do
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://legal-zunkiree.zunkireelabs.com$PATH_")
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --retry 5 --retry-delay 10 --retry-connrefused --retry-all-errors "https://legal-zunkiree.zunkireelabs.com$PATH_")
             if [ "$HTTP_CODE" = "200" ]; then
               echo "legal-zunkiree.zunkireelabs.com$PATH_ -> HTTP $HTTP_CODE"
             else
