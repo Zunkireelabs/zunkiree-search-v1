@@ -1,0 +1,93 @@
+# Production compose for the three Vercel-migrated frontends (admin/, legal/,
+# widget/). Deliberately a SEPARATE file from the root docker-compose.yml,
+# which belongs to backend/ — this file must never trigger, or be triggered
+# by, the backend deploy pipeline. See .github/workflows/frontend-deploy.yml.
+#
+# One compose file for all three: they live in one repo and always deploy
+# together on push to main. Each service's build context is its own
+# subdirectory, not the repo root.
+services:
+  admin-web:
+    container_name: zunkiree-admin-prod
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+    networks:
+      - hosting
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=hosting"
+      - "traefik.http.routers.zunkiree-admin-prod.rule=Host(`admin-zunkiree.zunkireelabs.com`)"
+      - "traefik.http.routers.zunkiree-admin-prod.entrypoints=websecure"
+      - "traefik.http.routers.zunkiree-admin-prod.tls=true"
+      - "traefik.http.routers.zunkiree-admin-prod.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.zunkiree-admin-prod-http.rule=Host(`admin-zunkiree.zunkireelabs.com`)"
+      - "traefik.http.routers.zunkiree-admin-prod-http.entrypoints=web"
+      - "traefik.http.routers.zunkiree-admin-prod-http.middlewares=zunkiree-admin-prod-redirect"
+      - "traefik.http.middlewares.zunkiree-admin-prod-redirect.redirectscheme.scheme=https"
+      - "traefik.http.services.zunkiree-admin-prod.loadbalancer.server.port=80"
+
+  legal-web:
+    container_name: zunkiree-legal-prod
+    build:
+      context: ./legal
+      dockerfile: Dockerfile
+    networks:
+      - hosting
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=hosting"
+      - "traefik.http.routers.zunkiree-legal-prod.rule=Host(`legal-zunkiree.zunkireelabs.com`)"
+      - "traefik.http.routers.zunkiree-legal-prod.entrypoints=websecure"
+      - "traefik.http.routers.zunkiree-legal-prod.tls=true"
+      - "traefik.http.routers.zunkiree-legal-prod.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.zunkiree-legal-prod-http.rule=Host(`legal-zunkiree.zunkireelabs.com`)"
+      - "traefik.http.routers.zunkiree-legal-prod-http.entrypoints=web"
+      - "traefik.http.routers.zunkiree-legal-prod-http.middlewares=zunkiree-legal-prod-redirect"
+      - "traefik.http.middlewares.zunkiree-legal-prod-redirect.redirectscheme.scheme=https"
+      - "traefik.http.services.zunkiree-legal-prod.loadbalancer.server.port=80"
+
+  widget-app:
+    container_name: zunkiree-widget-prod
+    build:
+      context: ./widget
+      dockerfile: Dockerfile
+    networks:
+      - hosting
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=hosting"
+      - "traefik.http.routers.zunkiree-widget-prod.rule=Host(`widget-zunkiree.zunkireelabs.com`)"
+      - "traefik.http.routers.zunkiree-widget-prod.entrypoints=websecure"
+      - "traefik.http.routers.zunkiree-widget-prod.tls=true"
+      - "traefik.http.routers.zunkiree-widget-prod.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.zunkiree-widget-prod-http.rule=Host(`widget-zunkiree.zunkireelabs.com`)"
+      - "traefik.http.routers.zunkiree-widget-prod-http.entrypoints=web"
+      - "traefik.http.routers.zunkiree-widget-prod-http.middlewares=zunkiree-widget-prod-redirect"
+      - "traefik.http.middlewares.zunkiree-widget-prod-redirect.redirectscheme.scheme=https"
+      - "traefik.http.services.zunkiree-widget-prod.loadbalancer.server.port=80"
+
+networks:
+  hosting:
+    external: true

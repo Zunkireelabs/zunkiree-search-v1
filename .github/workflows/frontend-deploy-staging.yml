@@ -1,0 +1,80 @@
+# Deploys widget/ to staging. admin/ and legal/ have no staging environment
+# (static HTML, decided 2026-09-17) — only widget/ is wired here.
+#
+# Separate git checkout from the backend pipeline's
+# /home/zunkireelabs/devprojects/zunkiree-search-v1-stage — that directory is
+# backend's own working copy, driven by deploy-staging.yml's git operations.
+# This workflow uses its own directory so the two pipelines never race on
+# the same working tree.
+
+name: Deploy Frontend to Staging
+
+on:
+  push:
+    branches: [stage]
+    paths:
+      - 'widget/**'
+      - 'docker-compose.frontend.dev.yml'
+      - '.github/workflows/frontend-deploy-staging.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-frontend-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy widget to Staging
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+
+            DIR="/home/zunkireelabs/devprojects/websiteprojects/zunkiree-search-v1-frontend-stage"
+
+            if [ ! -d "$DIR/.git" ]; then
+              echo "=== First-time staging bootstrap: cloning repo ==="
+              mkdir -p "$(dirname "$DIR")"
+              git clone -b stage git@github.com:Zunkireelabs/zunkiree-search-v1.git "$DIR"
+            fi
+            cd "$DIR"
+
+            echo "=== Resetting frontend-stage working tree to origin/stage ==="
+            git fetch origin stage
+            git checkout -B stage origin/stage
+            git reset --hard origin/stage
+
+            echo "=== Building and starting widget-app-stage ==="
+            docker compose -f docker-compose.frontend.dev.yml up -d --build widget-app-stage
+
+            echo "=== Verifying container health ==="
+            sleep 5
+            for i in $(seq 1 12); do
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' zunkiree-widget-stage 2>/dev/null || echo "unknown")
+              if [ "$STATUS" = "healthy" ]; then
+                echo "Container is healthy!"
+                exit 0
+              fi
+              echo "Attempt $i/12: Status is $STATUS, waiting..."
+              sleep 10
+            done
+            echo "Container did not become healthy within 2 minutes"
+            docker logs zunkiree-widget-stage --tail 50
+            exit 1
+
+      - name: Verify Health
+        run: |
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://dev-widget-zunkiree.zunkireelabs.com")
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "Staging health check passed (HTTP $HTTP_CODE)"
+          else
+            echo "Staging health check failed (HTTP $HTTP_CODE)"
+            exit 1
+          fi
