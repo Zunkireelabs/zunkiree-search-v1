@@ -71,7 +71,7 @@ jobs:
 
       - name: Verify Health
         run: |
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --retry 5 --retry-delay 10 --retry-connrefused "https://dev-widget-zunkiree.zunkireelabs.com")
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --retry 5 --retry-delay 10 --retry-connrefused --retry-all-errors "https://dev-widget-zunkiree.zunkireelabs.com")
           if [ "$HTTP_CODE" = "200" ]; then
             echo "Staging health check passed (HTTP $HTTP_CODE)"
           else

@@ -119,7 +119,7 @@ jobs:
             widget-prod) DOMAIN="widget-zunkiree.zunkireelabs.com" ;;
             widget-stage) DOMAIN="dev-widget-zunkiree.zunkireelabs.com" ;;
           esac
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --retry 5 --retry-delay 10 --retry-connrefused "https://$DOMAIN")
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --retry 5 --retry-delay 10 --retry-connrefused --retry-all-errors "https://$DOMAIN")
           if [ "$HTTP_CODE" = "200" ]; then
             echo "Rollback verified — $DOMAIN returned HTTP $HTTP_CODE"
           else
