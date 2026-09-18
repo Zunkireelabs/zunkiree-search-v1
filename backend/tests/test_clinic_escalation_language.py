@@ -35,8 +35,10 @@ async def _stream(text: str):
     yield _chunk(content=text)
 
 
-def _completion(text: str):
-    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text))])
+def _completion(text: str, finish_reason: str = "stop"):
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=text), finish_reason=finish_reason)]
+    )
 
 
 async def _run(service, config, question, channel="chat", session_id="s1"):
@@ -97,6 +99,59 @@ async def test_language_directive_reflects_detected_language():
 
     system_prompt = captured[0][0]["content"]
     assert "LANGUAGE-THIS-TURN: The visitor wrote in Devanagari Nepali." in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_mixed_language_directive_mirrors_the_visitor():
+    """PR #63 review fix 1: mixed_ne_en (code-switching — one Nepali signal
+    word alongside English) is the single most likely real-world input and
+    must not silently fall through _LANGUAGE_DIRECTIVES.get(..., "") to no
+    directive at all."""
+    service = ClinicAgentService()
+    captured: list = []
+
+    def _create(**kw):
+        captured.append(kw["messages"])
+        return _stream("Sure, we can book that.")
+
+    service.client = AsyncMock()
+    service.client.chat.completions.create = AsyncMock(side_effect=_create)
+    service.conversation_store = AsyncMock()
+    service.conversation_store.get_messages = lambda session_id: []
+    service.conversation_store.add_message = lambda *a, **kw: None
+
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="Dental City", contact_phone=REAL_NUMBER)
+    await _run(service, config, question="appointment book garna paincha?")
+
+    system_prompt = captured[0][0]["content"]
+    assert "LANGUAGE-THIS-TURN: The visitor wrote in a mix of Nepali and English." in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_truncated_translation_falls_back_to_original_answer():
+    """PR #63 review fix 2: a translation cut off mid-generation (finish_reason
+    == "length") must never be used — a mutilated safety message, possibly
+    mid-phone-number, is worse than a complete answer in the wrong language."""
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="Dental City", contact_phone=REAL_NUMBER)
+    english_reply = f"Please call the clinic immediately at {REAL_NUMBER} for urgent assistance."
+    service = ClinicAgentService()
+
+    def _create(**kw):
+        if kw.get("stream"):
+            return _stream(english_reply)
+        return _completion("कृपया तुरुन्तै क्लिनिकलाई", finish_reason="length")
+
+    service.client = AsyncMock()
+    service.client.chat.completions.create = AsyncMock(side_effect=_create)
+    service.conversation_store = AsyncMock()
+    service.conversation_store.get_messages = lambda session_id: []
+    service.conversation_store.add_message = lambda *a, **kw: None
+
+    events = await _run(service, config, question="मेरो गिजाबाट धेरै रगत बगिरहेको छ।")
+    done_event = next(e for e in events if e["type"] == "done")
+
+    assert done_event["answer"] == english_reply
+    assert REAL_NUMBER in done_event["answer"]
 
 
 @pytest.mark.asyncio
