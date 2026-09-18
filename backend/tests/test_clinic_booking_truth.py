@@ -17,7 +17,22 @@ import pytest
 
 from app.models.customer import Customer
 from app.models.widget_config import WidgetConfig
-from app.services.clinic_agent import ClinicAgentService
+from app.services.clinic_agent import (
+    ClinicAgentService,
+    _build_booking_readback,
+    _to_local_phone,
+    sanitize_phone_numbers,
+)
+
+_PENDING = {
+    "service_name": "General Dentistry",
+    "date": "2026-09-20",  # a Sunday
+    "time": "10:30",
+    "full_name": "TEST Booking NE1",
+    "phone_e164": "+9779800000011",
+    "branch_name": "Main Branch",
+    "price_npr": 2000,
+}
 
 
 def _make_customer() -> Customer:
@@ -116,7 +131,15 @@ async def test_prepare_without_confirm_never_claims_booked():
     assert "बुक गरेको छु" not in answer  # "I have booked" — the false claim
     assert "I have booked" not in answer
     assert "General Dentistry" in answer
-    assert "2026-09-20" in answer
+    # MUST A (PR #65 review): no ISO date in the read-back — the weekday
+    # and date are stated the way a person says them, not "2026-09-20",
+    # and in the visitor's own language (this question was Devanagari).
+    assert "2026-09-20" not in answer
+    assert "आइतबार" in answer  # Sunday, in Devanagari
+    assert "September" in answer
+    # MUST A: phone in LOCAL ASCII form, never +977.
+    assert "9841234567" in answer
+    assert "+977" not in answer
     assert answer.strip().endswith("?")  # ends in the confirmation question
 
 
@@ -226,7 +249,10 @@ async def test_confirm_blocked_same_turn_still_gets_deterministic_readback():
 
     prepare_result = {
         "summary": "General Dentistry on Sunday, 2026-09-20 at 12:00 for Test Patient (+9779841234567) at Main Branch.",
-        "pending_booking": {},
+        "pending_booking": {
+            "service_name": "General Dentistry", "date": "2026-09-20", "time": "12:00",
+            "full_name": "Test Patient", "phone_e164": "+9779841234567", "branch_name": "Main Branch",
+        },
     }
     confirm_result = {"error": "NEEDS_CONFIRMATION", "message": "wait for explicit yes"}
 
@@ -240,3 +266,49 @@ async def test_confirm_blocked_same_turn_still_gets_deterministic_readback():
     answer = done_event["answer"]
     assert "General Dentistry" in answer
     assert answer.strip().endswith("?")
+
+
+# --- MUST A (PR #65 review): the read-back must be in the visitor's own  ---
+# --- language, no ISO dates, and the phone must survive the sanitizer.   ---
+
+def test_readback_devanagari_turn_is_devanagari_with_nepali_weekday():
+    readback = _build_booking_readback(_PENDING, "ne_devanagari")
+    assert "आइतबार" in readback  # Sunday, in Nepali — 2026-09-20 is a Sunday
+    assert "General Dentistry" in readback  # service names stay as given, like the model's own replies
+    assert "2026-09-20" not in readback
+    assert "+977" not in readback
+    assert "9800000011" in readback
+
+
+def test_readback_romanized_turn_uses_romanized_weekday():
+    readback = _build_booking_readback(_PENDING, "ne_romanized")
+    assert "Aitabar" in readback
+    assert "2026-09-20" not in readback
+    assert "+977" not in readback
+
+
+def test_readback_english_turn_says_date_like_a_person_not_iso():
+    readback = _build_booking_readback(_PENDING, "en")
+    assert "Sunday" in readback
+    assert "20 September" in readback
+    assert "2026-09-20" not in readback
+    assert "+977" not in readback
+    assert "9800000011" in readback
+
+
+def test_to_local_phone_strips_country_code():
+    assert _to_local_phone("+9779800000011") == "9800000011"
+    assert _to_local_phone(None) == ""
+
+
+@pytest.mark.parametrize("lang", ["ne_devanagari", "ne_romanized", "en"])
+def test_readback_phone_survives_the_sanitizer_in_every_language(lang):
+    """The whole point of MUST A: the phone number in this read-back must
+    actually be there for the visitor to verify. Build the read-back,
+    then run it through the SAME sanitizer the real answer passes through
+    — if the phone digits didn't match the allow-list core-normalization,
+    they'd be silently stripped here too."""
+    readback = _build_booking_readback(_PENDING, lang)
+    allowed = {"9800000011"}  # core-normalized form of +9779800000011
+    sanitized = sanitize_phone_numbers(readback, allowed)
+    assert "9800000011" in sanitized

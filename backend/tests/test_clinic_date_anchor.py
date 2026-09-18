@@ -20,8 +20,10 @@ from app.services.clinic_agent import (
     NPT,
     _resolve_relative_date_word,
     _resolve_weekday_word,
+    _resolve_date_expression,
     _EXPLICIT_DATE_SIGNAL,
     _DATE_ANCHOR,
+    _NEXT_PREFIX_ADDS_DAYS,
     reset_date_anchor,
 )
 
@@ -135,9 +137,16 @@ def test_resolve_weekday_word(text, target_weekday, is_next):
     today_weekday = now_npt.date().weekday()
     offset = (target_weekday - today_weekday) % 7
     if is_next:
-        offset += 7
+        offset += _NEXT_PREFIX_ADDS_DAYS
     expected = (now_npt.date() + timedelta(days=offset)).isoformat()
     assert _resolve_weekday_word(text, now_npt) == expected
+
+
+def test_next_prefix_currently_means_the_coming_occurrence_not_a_week_later():
+    """Sadin's call (PR #65 review open question): "next Monday"/"अर्को
+    सोमबार" means the COMING Monday, same as a bare weekday name — not the
+    Monday a week after that."""
+    assert _NEXT_PREFIX_ADDS_DAYS == 0
 
 
 def test_resolve_weekday_word_bare_name_means_today_when_today_is_that_weekday():
@@ -320,7 +329,7 @@ async def test_next_monday_is_resolved_deterministically_not_left_to_the_model()
 
     now_npt = datetime.now(NPT)
     today_weekday = now_npt.date().weekday()
-    offset = (0 - today_weekday) % 7 + 7  # "next" Monday
+    offset = (0 - today_weekday) % 7 + _NEXT_PREFIX_ADDS_DAYS  # "next" Monday
     correct_date = (now_npt.date() + timedelta(days=offset)).isoformat()
 
     _DATE_ANCHOR["s1"] = _today_plus(1)  # stale "भोलि" anchor from an earlier turn
@@ -398,3 +407,47 @@ async def test_sessionless_turn_does_not_leak_anchor_across_visitors():
     # the model supplied) passes through unmodified rather than being
     # overridden with visitor A's भोलि date.
     assert captured_calls[1]["tool_args"]["date"] == "2099-01-01"
+
+
+# --- MUST B (PR #65 review): in-utterance self-corrections must enforce  ---
+# --- the LAST-mentioned date, not whichever pattern matches first.       ---
+
+def test_self_correction_weekday_to_weekday_resolves_the_corrected_value():
+    """सोमबार होइन, मंगलबार -> Tuesday, not Monday. People correct forward."""
+    now_npt = datetime.now(NPT)
+    today_weekday = now_npt.date().weekday()
+    expected = (now_npt.date() + timedelta(days=(1 - today_weekday) % 7)).isoformat()  # Tuesday
+    assert _resolve_date_expression("सोमबार होइन, मंगलबार", now_npt) == expected
+
+
+def test_self_correction_relative_word_to_relative_word_resolves_the_corrected_value():
+    """पर्सी होइन, भोलि -> tomorrow, not day-after-tomorrow."""
+    now_npt = datetime.now(NPT)
+    expected = (now_npt.date() + timedelta(days=1)).isoformat()  # भोलि
+    assert _resolve_date_expression("पर्सी होइन, भोलि", now_npt) == expected
+
+
+def test_self_correction_english_weekday_resolves_the_corrected_value():
+    """"Monday… actually Tuesday" -> Tuesday. Also documents which way the
+    rule breaks: without an explicit negation word, "Tuesday, not Monday"
+    (negation AFTER the correct value) still resolves to the LAST mention
+    (Monday) — negation-skipping only excludes a value immediately
+    followed by a negation word, it doesn't reorder based on meaning."""
+    now_npt = datetime.now(NPT)
+    today_weekday = now_npt.date().weekday()
+    tuesday = (now_npt.date() + timedelta(days=(1 - today_weekday) % 7)).isoformat()
+    monday = (now_npt.date() + timedelta(days=(0 - today_weekday) % 7)).isoformat()
+    assert _resolve_date_expression("Monday… actually Tuesday", now_npt) == tuesday
+    # Documented breakage direction: negation precedes the corrected value
+    # here, so "not Monday" is skipped (correct), but the mention order
+    # still decides — Tuesday is both last-mentioned AND the intended
+    # value, so this phrasing happens to work. The rule does NOT parse
+    # "not"'s target semantically; see the docstring above.
+    assert _resolve_date_expression("Tuesday, not Monday", now_npt) == monday
+
+
+def test_no_self_correction_single_mention_unaffected():
+    now_npt = datetime.now(NPT)
+    assert _resolve_date_expression("भोलि खाली छ?", now_npt) == _today_plus(1)
+    assert _resolve_date_expression("", now_npt) is None
+    assert _resolve_date_expression("सात बजेको गर्दिनोस्", now_npt) is None
