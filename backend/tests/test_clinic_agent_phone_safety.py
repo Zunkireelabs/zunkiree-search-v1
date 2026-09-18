@@ -225,7 +225,10 @@ async def test_char_by_char_stream_still_delivers_real_number():
     reply = f"That sounds urgent — please call the clinic at {REAL_NUMBER} right away."
     service = _service_with_reply(reply, char_by_char=True)
 
-    events = await _run(service, config)
+    # English question so the CLINIC-ESCALATION-LANGUAGE-BRIEF translation net
+    # (Devanagari-in, non-Devanagari-out) doesn't fire — this test is about
+    # phone-number sanitization, not language matching.
+    events = await _run(service, config, question="My tooth really hurts, who do I call?")
     done_event = next(e for e in events if e["type"] == "done")
 
     assert REAL_NUMBER in done_event["answer"]
@@ -305,8 +308,11 @@ async def test_booking_reference_survives_confirm_booking_readback():
             "branch_name": "Main Branch",
         }
     }
+    # English question so the CLINIC-ESCALATION-LANGUAGE-BRIEF translation net
+    # doesn't fire and consume the second mocked response meant for the
+    # confirm_booking read-back.
     with patch("app.services.clinic_agent.execute_clinic_tool", AsyncMock(return_value=fake_result)):
-        events = await _run(service, config)
+        events = await _run(service, config, question="Please confirm my booking.")
 
     done_event = next(e for e in events if e["type"] == "done")
     assert "BK-20260928-0001" in done_event["answer"]
