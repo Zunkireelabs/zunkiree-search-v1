@@ -320,6 +320,36 @@ async def test_repeat_prepare_same_slot_preserves_original_prepared_turn(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_repeat_prepare_same_slot_but_changed_phone_resets_prepared_turn(monkeypatch):
+    """PR #64 review MUST 1: a re-prepare that keeps the same slot but
+    changes a read-back field (phone — the most error-prone field on a
+    voice call) must NOT preserve prepared_turn. The read-back is the only
+    defence against booking a number the visitor never confirmed hearing,
+    so any change to it must force a fresh confirmation."""
+    client = FakeClient()
+    _patch_client(monkeypatch, client)
+    customer = _make_customer()
+
+    await clinic_tools._prepare_booking(
+        db=AsyncMock(), customer=customer, session_id="s1", current_turn=5,
+        service="Teeth Cleaning", date="2026-10-01", time="10:00",
+        full_name="Jane", phone="9841234567",
+    )
+    # Same slot, but a different phone number (misheard STT / visitor
+    # correction) on the turn the visitor supposedly confirmed.
+    await clinic_tools._prepare_booking(
+        db=AsyncMock(), customer=customer, session_id="s1", current_turn=6,
+        service="Teeth Cleaning", date="2026-10-01", time="10:00",
+        full_name="Jane", phone="9841234568",
+    )
+    assert clinic_tools._state("s1")["pending"]["prepared_turn"] == 6
+
+    result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=6)
+    assert result["error"] == "NEEDS_CONFIRMATION"
+    assert client.insert_calls == 0
+
+
+@pytest.mark.asyncio
 async def test_repeat_prepare_different_slot_resets_prepared_turn(monkeypatch):
     """A genuinely NEW slot (not a re-prepare of the same one) must still
     reset prepared_turn to the current turn — the same-turn confirmation

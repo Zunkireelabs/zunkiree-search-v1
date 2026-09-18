@@ -475,13 +475,34 @@ async def _prepare_booking(
     # Preserving the ORIGINAL prepared_turn when the slot is unchanged keeps
     # the guard anchored to when the visitor first saw the summary, not to
     # whichever turn happened to re-run prepare_booking.
+    #
+    # PR #64 review (MUST 1): this must compare EVERY field the read-back
+    # summary shows the visitor, not just the slot identity (service/date/
+    # time) that _signature() uses for booking idempotency. Those are
+    # deliberately different questions — _signature() asks "is this the same
+    # appointment", this asks "has the visitor already heard exactly these
+    # details read back". A voice re-prepare that changes the phone number
+    # (misheard STT, or the visitor correcting it) must reset prepared_turn
+    # and force a fresh read-back — phone digits are the single most
+    # error-prone field on a call, and the read-back is the only defence
+    # against booking a number the visitor never confirmed hearing.
     existing_pending = _state(session_id).get("pending")
     prepared_turn = current_turn
     if existing_pending and (
         existing_pending["service_id"],
         existing_pending["date"],
         existing_pending["time"],
-    ) == (treatment["id"], date, time):
+        existing_pending["full_name"],
+        existing_pending["phone_e164"],
+        existing_pending["branch_id"],
+    ) == (
+        treatment["id"],
+        date,
+        time,
+        full_name.strip(),
+        phone_e164,
+        branch["id"],
+    ):
         prepared_turn = existing_pending["prepared_turn"]
 
     pending = {
