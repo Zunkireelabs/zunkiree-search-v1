@@ -466,6 +466,24 @@ async def _prepare_booking(
             "alternatives": slots[:3],
         }
 
+    # D2 (CLINIC-BOOKING-FLOW-VOICE-BRIEF): a harmless re-prepare of the SAME
+    # slot — the LLM re-running prepare_booking right before confirm_booking,
+    # observed in the live session — must not push prepared_turn forward. If
+    # it did, confirm_booking's same-turn guard (below) would see
+    # prepared_turn == current_turn on the very turn the visitor said yes and
+    # refuse, and the agent would silently re-ask the same question forever.
+    # Preserving the ORIGINAL prepared_turn when the slot is unchanged keeps
+    # the guard anchored to when the visitor first saw the summary, not to
+    # whichever turn happened to re-run prepare_booking.
+    existing_pending = _state(session_id).get("pending")
+    prepared_turn = current_turn
+    if existing_pending and (
+        existing_pending["service_id"],
+        existing_pending["date"],
+        existing_pending["time"],
+    ) == (treatment["id"], date, time):
+        prepared_turn = existing_pending["prepared_turn"]
+
     pending = {
         "service_id": treatment["id"],
         "service_name": treatment["name"],
@@ -478,7 +496,7 @@ async def _prepare_booking(
         "email": (email or "").strip() or None,
         "note": (note or "").strip(),
         "price_npr": treatment.get("price_npr"),
-        "prepared_turn": current_turn,
+        "prepared_turn": prepared_turn,
     }
     _state(session_id)["pending"] = pending
 

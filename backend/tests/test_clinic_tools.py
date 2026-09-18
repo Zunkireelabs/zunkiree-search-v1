@@ -290,6 +290,62 @@ async def test_confirm_booking_refuses_same_turn(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_repeat_prepare_same_slot_preserves_original_prepared_turn(monkeypatch):
+    """CLINIC-BOOKING-FLOW-VOICE-BRIEF D2: the live session showed the LLM
+    re-running prepare_booking for the SAME slot immediately before
+    confirm_booking, on the turn the visitor said yes. If that re-prepare
+    pushed prepared_turn forward, confirm_booking's same-turn guard would
+    wrongly refuse a genuine confirmation forever."""
+    client = FakeClient()
+    _patch_client(monkeypatch, client)
+    customer = _make_customer()
+
+    await clinic_tools._prepare_booking(
+        db=AsyncMock(), customer=customer, session_id="s1", current_turn=5,
+        service="Teeth Cleaning", date="2026-10-01", time="10:00",
+        full_name="Jane", phone="9841234567",
+    )
+    # Visitor says yes on turn 6; LLM redundantly re-prepares the same slot
+    # before confirming, both on turn 6.
+    await clinic_tools._prepare_booking(
+        db=AsyncMock(), customer=customer, session_id="s1", current_turn=6,
+        service="Teeth Cleaning", date="2026-10-01", time="10:00",
+        full_name="Jane", phone="9841234567",
+    )
+    assert clinic_tools._state("s1")["pending"]["prepared_turn"] == 5
+
+    result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=6)
+    assert "booking" in result
+    assert client.insert_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_repeat_prepare_different_slot_resets_prepared_turn(monkeypatch):
+    """A genuinely NEW slot (not a re-prepare of the same one) must still
+    reset prepared_turn to the current turn — the same-turn confirmation
+    guard should still apply to an actually-new booking."""
+    client = FakeClient()
+    _patch_client(monkeypatch, client)
+    customer = _make_customer()
+
+    await clinic_tools._prepare_booking(
+        db=AsyncMock(), customer=customer, session_id="s1", current_turn=5,
+        service="Teeth Cleaning", date="2026-10-01", time="10:00",
+        full_name="Jane", phone="9841234567",
+    )
+    await clinic_tools._prepare_booking(
+        db=AsyncMock(), customer=customer, session_id="s1", current_turn=6,
+        service="Teeth Cleaning", date="2026-10-02", time="11:00",
+        full_name="Jane", phone="9841234567",
+    )
+    assert clinic_tools._state("s1")["pending"]["prepared_turn"] == 6
+
+    result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=6)
+    assert result["error"] == "NEEDS_CONFIRMATION"
+    assert client.insert_calls == 0
+
+
+@pytest.mark.asyncio
 async def test_confirm_booking_succeeds_on_later_turn_and_is_idempotent(monkeypatch):
     client = FakeClient()
     _patch_client(monkeypatch, client)
