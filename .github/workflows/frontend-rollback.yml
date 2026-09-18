@@ -37,10 +37,14 @@ jobs:
     steps:
       - name: Rollback via SSH
         uses: appleboy/ssh-action@v1.2.5
+        env:
+          ROLLBACK_SHA: ${{ inputs.commit_sha }}
+          ROLLBACK_REASON: ${{ inputs.reason }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          envs: ROLLBACK_SHA,ROLLBACK_REASON
           script: |
             set -e
 
@@ -79,8 +83,8 @@ jobs:
                 ;;
             esac
 
-            echo "Rolling back ${{ inputs.app }} to ${{ inputs.commit_sha }}"
-            echo "Reason: ${{ inputs.reason }}"
+            echo "Rolling back ${{ inputs.app }} to $ROLLBACK_SHA"
+            echo "Reason: $ROLLBACK_REASON"
 
             if [ ! -d "$DIR/.git" ]; then
               echo "::error::$DIR does not exist yet — nothing to roll back"
@@ -89,7 +93,7 @@ jobs:
             cd "$DIR"
 
             git fetch origin
-            git checkout "${{ inputs.commit_sha }}"
+            git checkout "$ROLLBACK_SHA"
 
             docker compose -f "$COMPOSE_FILE" up -d --build "$SERVICE"
 
@@ -115,7 +119,7 @@ jobs:
             widget-prod) DOMAIN="widget-zunkiree.zunkireelabs.com" ;;
             widget-stage) DOMAIN="dev-widget-zunkiree.zunkireelabs.com" ;;
           esac
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$DOMAIN")
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --retry 5 --retry-delay 10 --retry-connrefused "https://$DOMAIN")
           if [ "$HTTP_CODE" = "200" ]; then
             echo "Rollback verified — $DOMAIN returned HTTP $HTTP_CODE"
           else

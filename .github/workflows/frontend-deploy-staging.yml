@@ -42,7 +42,7 @@ jobs:
             if [ ! -d "$DIR/.git" ]; then
               echo "=== First-time staging bootstrap: cloning repo ==="
               mkdir -p "$(dirname "$DIR")"
-              git clone -b stage git@github.com:Zunkireelabs/zunkiree-search-v1.git "$DIR"
+              git clone -b stage https://github.com/Zunkireelabs/zunkiree-search-v1.git "$DIR"
             fi
             cd "$DIR"
 
@@ -71,7 +71,7 @@ jobs:
 
       - name: Verify Health
         run: |
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://dev-widget-zunkiree.zunkireelabs.com")
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --retry 5 --retry-delay 10 --retry-connrefused "https://dev-widget-zunkiree.zunkireelabs.com")
           if [ "$HTTP_CODE" = "200" ]; then
             echo "Staging health check passed (HTTP $HTTP_CODE)"
           else
