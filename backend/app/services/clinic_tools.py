@@ -381,6 +381,16 @@ async def _check_availability(db: AsyncSession, customer: Customer, service: str
         slots = avail.available_slots_for_date(
             target_date, service_summary["duration_minutes"], chairs, bookings, now_npt, limit=8
         )
+        if not slots:
+            # A full day: name the next days that DO have room instead of
+            # leaving the visitor to guess (voice especially).
+            next_slots = await _next_open_slots(client, branch, treatment, now_npt)
+            return {
+                "service": service_summary, "date": date, "open_times": [],
+                "next_open_slots": next_slots,
+                "message": "No open times on that date. Tell the visitor that, then offer the "
+                           "earliest dates/times in next_open_slots.",
+            }
         return {"service": service_summary, "date": date, "open_times": slots}
 
     next_slots = await _next_open_slots(client, branch, treatment, now_npt)

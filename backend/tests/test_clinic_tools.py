@@ -486,3 +486,20 @@ async def test_stale_unmatched_service_ignored(monkeypatch):
     await clinic_tools._prepare_booking(current_turn=1, service="root canal xyz", **kw)
     ok = await clinic_tools._prepare_booking(current_turn=10, service="Teeth Cleaning", **kw)
     assert ok["pending_booking"]["substituted_for"] is None
+
+
+@pytest.mark.asyncio
+async def test_check_availability_full_day_offers_next_open_slots(monkeypatch):
+    _patch_client(monkeypatch, FakeClient())
+    monkeypatch.setattr(
+        clinic_tools.avail, "available_slots_for_date",
+        lambda day, *a, **kw: [] if day.isoformat() == "2026-10-01" else ["09:00"],
+    )
+    full = await clinic_tools._check_availability(
+        AsyncMock(), _make_customer(), service="Teeth Cleaning", date="2026-10-01")
+    assert full["open_times"] == []
+    assert full["next_open_slots"] and all(s["date"] != "2026-10-01" for s in full["next_open_slots"])
+    assert "next_open_slots" in full["message"]
+    open_day = await clinic_tools._check_availability(
+        AsyncMock(), _make_customer(), service="Teeth Cleaning", date="2026-10-02")
+    assert open_day["open_times"] == ["09:00"] and "next_open_slots" not in open_day
