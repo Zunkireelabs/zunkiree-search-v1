@@ -668,7 +668,10 @@ async def _confirm_booking(db: AsyncSession, customer: Customer, session_id: str
     sig = _signature(pending)
     for entry in state["confirmed"]:
         if entry["signature"] == sig:
-            return {"booking": entry["booking"], "already_booked": True}
+            return {
+                "booking": entry["booking"], "already_booked": True,
+                "confirmed_pending": _pending_public_view(pending),
+            }
 
     try:
         booking = await _execute_booking(db, customer, pending)
@@ -698,4 +701,4 @@ async def _confirm_booking(db: AsyncSession, customer: Customer, session_id: str
     # double-call, IG-8 lesson) must still find prepared_turn + can match the
     # signature above instead of hitting the "no pending booking" guard.
     logger.info("[CLINIC-AGENT] booking_created booking_number=%s", booking.get("booking_number"))
-    return {"booking": booking}
+    return {"booking": booking, "confirmed_pending": _pending_public_view(pending)}
