@@ -143,10 +143,21 @@ def get_awaiting_confirmation(session_id: str | None, current_turn: int) -> dict
     pending = state.get("pending") if state else None
     if not pending or pending["prepared_turn"] >= current_turn:
         return None
+    # The read-back must be the IMMEDIATELY preceding turn's reply, else a
+    # visitor who ignored it and moved on would have a later "okay" force a
+    # booking. Not prepared_turn: a same-slot re-prepare keeps the original.
+    if state.get("readback_turn") != current_turn - 1:
+        return None
     sig = (pending["service_id"], pending["date"], pending["time"])
     if any(e["signature"] == sig for e in state["confirmed"]):
         return None
     return pending
+
+
+def mark_readback(session_id: str | None, turn: int) -> None:
+    """Record the turn whose reply was the code-built read-back."""
+    if session_id:
+        _state(session_id)["readback_turn"] = turn
 
 
 def reset_session_state(session_id: str) -> None:

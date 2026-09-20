@@ -36,6 +36,7 @@ def test_not_confirmations(msg):
 def _seed(session_id, prepared_turn=1):
     clinic_tools.reset_session_state(session_id)
     clinic_tools._state(session_id)["pending"] = {**_PENDING, "prepared_turn": prepared_turn}
+    clinic_tools.mark_readback(session_id, 1)
 
 
 @pytest.mark.asyncio
@@ -69,3 +70,20 @@ async def test_no_forced_confirm_without_pending_or_same_turn():
     _seed(sid, prepared_turn=1)
     assert clinic_tools.get_awaiting_confirmation(sid, 1) is None
     assert clinic_tools.get_awaiting_confirmation(sid, 2) is not None
+
+
+@pytest.mark.asyncio
+async def test_okay_after_unrelated_turn_does_not_force_confirm():
+    """Read-back at turn 1, unrelated turn 2, "okay" at turn 3: no booking."""
+    sid = f"t-{uuid.uuid4()}"
+    _seed(sid)
+    assert clinic_tools.get_awaiting_confirmation(sid, 2) is not None
+    assert clinic_tools.get_awaiting_confirmation(sid, 3) is None
+    from app.services import clinic_agent
+    clinic_agent._TURN_COUNTERS[sid] = 2
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="Dental City", contact_phone=None)
+    service = _service_for_responses([_stream("Sure, anything else?")])
+    ex = AsyncMock()
+    with patch("app.services.clinic_agent.execute_clinic_tool", ex):
+        await _run(service, config, "okay", session_id=sid)
+    ex.assert_not_awaited()

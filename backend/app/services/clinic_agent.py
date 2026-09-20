@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.models.customer import Customer
 from app.models.widget_config import WidgetConfig
-from app.services.clinic_tools import CLINIC_TOOLS, execute_clinic_tool, get_awaiting_confirmation
+from app.services.clinic_tools import CLINIC_TOOLS, execute_clinic_tool, get_awaiting_confirmation, mark_readback
 from app.services.conversation import get_conversation_store
 from app.services.language_detection import detect_language
 
@@ -320,10 +320,10 @@ def _safe_flush_index(text: str, hold_back_tokens: int = 8) -> int:
 _CONFIRM_STRONG = {
     "yes", "yeah", "yep", "yup", "sure", "ok", "okay", "confirm", "confirmed",
     "correct", "right", "book", "proceed",
-    "हुन्छ", "हुन्छ", "हजुर", "हजुरै", "ठीक", "ठिक", "गर्दिनुस्", "गर्नुहोस्", "बुक",
+    "हुन्छ", "हजुर", "हजुरै", "ठीक", "ठिक", "गर्दिनुस्", "गर्नुहोस्", "बुक",
     "ओके", "पक्का", "हो", "जी",
     "huncha", "hunchha", "hajur", "hajurai", "thik", "garidinus", "garnus",
-    "pakka", "ho", "ya", "ha",
+    "pakka", "ho", "ya",
 }
 _CONFIRM_FILLER = {
     "please", "pls", "it", "this", "that", "thats", "go", "ahead", "do", "thanks",
@@ -949,6 +949,7 @@ class ClinicAgentService:
                     )
                     if full_answer:
                         yield {"type": "token", "data": full_answer}
+                        mark_readback(session_id, current_turn)
                     break
 
                 continue
