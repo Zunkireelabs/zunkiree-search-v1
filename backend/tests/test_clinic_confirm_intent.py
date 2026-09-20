@@ -87,3 +87,30 @@ async def test_okay_after_unrelated_turn_does_not_force_confirm():
     with patch("app.services.clinic_agent.execute_clinic_tool", ex):
         await _run(service, config, "okay", session_id=sid)
     ex.assert_not_awaited()
+
+
+# --- NE-4: substitution stated in the read-back ---
+from app.services.clinic_agent import _build_booking_readback
+
+_RB = {
+    "service_name": "General Dentistry", "date": "2026-09-22", "time": "10:00",
+    "full_name": "TEST X", "phone_e164": "+9779800000034", "branch_name": "Main", "price_npr": 2000,
+}
+
+
+@pytest.mark.parametrize("lang,fragment", [
+    ("en", "We don't offer teeth cleaning, but General Dentistry is available."),
+    ("ne_devanagari", "teeth cleaning सेवा उपलब्ध छैन, तर General Dentistry उपलब्ध छ।"),
+    ("ne_romanized", "teeth cleaning sewa uplabdha chaina, tara General Dentistry uplabdha cha."),
+])
+def test_substitution_prefix_then_full_readback(lang, fragment):
+    out = _build_booking_readback({**_RB, "substituted_for": "teeth cleaning"}, lang)
+    assert out.startswith(fragment)
+    assert "9800000034" in out and "TEST X" in out and "10:00" in out
+
+
+@pytest.mark.parametrize("lang", ["en", "ne_devanagari", "ne_romanized"])
+def test_no_prefix_when_service_matches(lang):
+    base = _build_booking_readback(_RB, lang)
+    assert _build_booking_readback({**_RB, "substituted_for": None}, lang) == base
+    assert _build_booking_readback({**_RB, "substituted_for": "general dentistry"}, lang) == base

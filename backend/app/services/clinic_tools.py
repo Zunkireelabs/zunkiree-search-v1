@@ -461,6 +461,8 @@ async def _prepare_booking(
                 "options": [{"id": t["id"], "name": t["name"]} for t in ambiguous_services],
             }
         else:
+            # Only NOT_FOUND counts as "not offered"; AMBIGUOUS means several matched.
+            _state(session_id)["unmatched_service"] = (service, current_turn)
             return {
                 "error": "SERVICE_NOT_FOUND",
                 "message": f"Service not recognised: '{service}'.",
@@ -514,6 +516,15 @@ async def _prepare_booking(
     # against booking a number the visitor never confirmed hearing.
     existing_pending = _state(session_id).get("pending")
     prepared_turn = current_turn
+    # CLINIC-CONFIRM-INTENT NE-4: the service the visitor asked for that did
+    # not resolve (set by an earlier failed prepare, this turn or the last)
+    # — the read-back names the substitution so one yes confirms both. A
+    # same-slot re-prepare inherits it from the existing pending.
+    # Known limit: this is the model's service argument to prepare_booking,
+    # not the visitor's own words, so a garbled internal retry name could be
+    # spoken. Only honoured within one turn of the failed prepare.
+    unmatched = _state(session_id).pop("unmatched_service", None)
+    substituted_for = unmatched[0] if unmatched and current_turn - unmatched[1] <= 1 else None
     if existing_pending and (
         existing_pending["service_id"],
         existing_pending["date"],
@@ -530,6 +541,7 @@ async def _prepare_booking(
         branch["id"],
     ):
         prepared_turn = existing_pending["prepared_turn"]
+        substituted_for = substituted_for or existing_pending.get("substituted_for")
 
     pending = {
         "service_id": treatment["id"],
@@ -544,6 +556,7 @@ async def _prepare_booking(
         "note": (note or "").strip(),
         "price_npr": treatment.get("price_npr"),
         "prepared_turn": prepared_turn,
+        "substituted_for": substituted_for,
     }
     _state(session_id)["pending"] = pending
 
