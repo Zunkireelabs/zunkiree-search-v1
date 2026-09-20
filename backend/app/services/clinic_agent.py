@@ -132,7 +132,27 @@ def _to_local_phone(phone_e164: str | None) -> str:
     return phone_e164.lstrip("+")
 
 
+# NE-4: prepended only when prepare succeeded for a different service than
+# the one the visitor asked for, so a single yes covers the substitution AND
+# the full read-back. {req} is the visitor's own requested service string.
+_SUBSTITUTION_BY_LANG = {
+    "en": "We don't offer {req}, but {service} is available.",
+    "ne_devanagari": "{req} सेवा उपलब्ध छैन, तर {service} उपलब्ध छ।",
+    "mixed_ne_en": "{req} सेवा उपलब्ध छैन, तर {service} उपलब्ध छ।",
+    "ne_romanized": "{req} sewa uplabdha chaina, tara {service} uplabdha cha.",
+}
+
+
 def _build_booking_readback(pending: dict, lang: str) -> str:
+    body = _build_booking_readback_body(pending, lang)
+    req = (pending.get("substituted_for") or "").strip()
+    if not req or req.lower() == (pending.get("service_name") or "").lower():
+        return body
+    tpl = _SUBSTITUTION_BY_LANG.get(lang, _SUBSTITUTION_BY_LANG["en"])
+    return f"{tpl.format(req=req, service=pending.get('service_name') or '')} {body}"
+
+
+def _build_booking_readback_body(pending: dict, lang: str) -> str:
     """Deterministic, per-language confirmation-turn read-back built from
     prepare_booking's structured pending_booking fields. See the note above
     _WEEKDAY_NE_BY_INDEX for why this exists instead of reusing the tool's

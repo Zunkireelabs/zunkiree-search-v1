@@ -445,3 +445,19 @@ async def test_confirm_booking_maps_other_pg_error_to_booking_failed(monkeypatch
     )
     result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=10)
     assert result["error"] == "BOOKING_FAILED"
+
+
+@pytest.mark.asyncio
+async def test_prepare_after_unmatched_service_records_substitution(monkeypatch):
+    _patch_client(monkeypatch, FakeClient())
+    kw = dict(db=AsyncMock(), customer=_make_customer(), session_id="s1", date="2026-10-01",
+              time="10:00", full_name="Jane", phone="9841234567")
+    bad = await clinic_tools._prepare_booking(current_turn=1, service="root canal xyz", **kw)
+    assert bad["error"] == "SERVICE_NOT_FOUND"
+    ok = await clinic_tools._prepare_booking(current_turn=1, service="Teeth Cleaning", **kw)
+    assert ok["pending_booking"]["substituted_for"] == "root canal xyz"
+    # same-slot re-prepare keeps it; a clean prepare in a fresh session has none
+    again = await clinic_tools._prepare_booking(current_turn=2, service="Teeth Cleaning", **kw)
+    assert again["pending_booking"]["substituted_for"] == "root canal xyz"
+    clean = await clinic_tools._prepare_booking(current_turn=1, **{**kw, "session_id": "s2"}, service="Teeth Cleaning")
+    assert clean["pending_booking"]["substituted_for"] is None
