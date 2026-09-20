@@ -152,6 +152,71 @@ def _build_booking_readback(pending: dict, lang: str) -> str:
     return f"{tpl.format(req=req, service=pending.get('service_name') or '')} {body}"
 
 
+def _slot_parts(pending: dict, lang: str) -> tuple[str, str, str]:
+    """(weekday, day, month) for the pending/confirmed slot, in the language's
+    weekday names. Shared by the read-back and the post-booking sentence so
+    both say the date identically (no ISO dates)."""
+    date_str = pending.get("date") or ""
+    try:
+        date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return "", date_str, ""
+    if lang == "ne_romanized":
+        weekday = _WEEKDAY_ROMAN_BY_INDEX[date_obj.weekday()]
+    elif lang in ("ne_devanagari", "mixed_ne_en"):
+        weekday = _WEEKDAY_NE_BY_INDEX[date_obj.weekday()]
+    else:
+        weekday = date_obj.strftime("%A")
+    return weekday, str(date_obj.day), date_obj.strftime("%B")
+
+
+# --- Post-booking sentence (CLINIC-POSTBOOKING-SENTENCE) ---
+#
+# After confirm_booking succeeds, the model used to narrate the result and in
+# live NE-4 runs named the service the visitor ASKED for (teeth cleaning), not
+# the one actually booked. Same fix as the read-back: the sentence is built by
+# code from the confirmed record, per language.
+#
+# One-line switches for Sadin's pending decisions:
+#  - chat replies carry the BK- reference (voice NEVER does);
+#  - the "clinic will confirm" line (kept because the old model line said it;
+#    Sadin is checking whether it is true — set to empty dict values to drop).
+INCLUDE_BOOKING_REF_IN_CHAT = True
+_CLINIC_WILL_CONFIRM = {
+    "en": "The clinic will confirm your appointment.",
+    "ne_devanagari": "क्लिनिकले यसलाई पुष्टि गर्नेछ।",
+    "mixed_ne_en": "क्लिनिकले यसलाई पुष्टि गर्नेछ।",
+    "ne_romanized": "Clinic le yeslai pushti garnechha.",
+}
+_REF_SENTENCE = {
+    "en": "Your reference is {ref}.",
+    "ne_devanagari": "तपाईंको रेफरेन्स {ref} हो।",
+    "mixed_ne_en": "तपाईंको रेफरेन्स {ref} हो।",
+    "ne_romanized": "Tapaiko reference {ref} ho.",
+}
+
+
+def _build_confirmation_sentence(
+    confirmed: dict, booking_number: str | None, lang: str, channel: str
+) -> str:
+    weekday, day, month = _slot_parts(confirmed, lang)
+    service = confirmed.get("service_name") or ""
+    branch = confirmed.get("branch_name") or ""
+    time_str = confirmed.get("time") or ""
+    if lang == "ne_romanized":
+        text = f"Tapaiko {service} {weekday}, {day} {month} maa {time_str} baje {branch} maa book bhayo."
+    elif lang in ("ne_devanagari", "mixed_ne_en"):
+        text = f"तपाईंको {service} {weekday}, {day} {month} मा {time_str} बजे {branch} मा बुक भयो।"
+    else:
+        text = f"You're booked: {service} on {weekday} {day} {month} at {time_str} at {branch}."
+    will_confirm = _CLINIC_WILL_CONFIRM.get(lang, _CLINIC_WILL_CONFIRM["en"])
+    if will_confirm:
+        text += f" {will_confirm}"
+    if INCLUDE_BOOKING_REF_IN_CHAT and channel != "voice" and booking_number:
+        text += " " + _REF_SENTENCE.get(lang, _REF_SENTENCE["en"]).format(ref=booking_number)
+    return text
+
+
 def _build_booking_readback_body(pending: dict, lang: str) -> str:
     """Deterministic, per-language confirmation-turn read-back built from
     prepare_booking's structured pending_booking fields. See the note above
@@ -163,29 +228,20 @@ def _build_booking_readback_body(pending: dict, lang: str) -> str:
     price = pending.get("price_npr")
     local_phone = _to_local_phone(pending.get("phone_e164"))
     time_str = pending.get("time") or ""
-    date_str = pending.get("date") or ""
-    try:
-        date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
-    except (ValueError, TypeError):
-        date_obj = None
-    day = str(date_obj.day) if date_obj else date_str
-    month_en = date_obj.strftime("%B") if date_obj else ""
+    weekday, day, month_en = _slot_parts(pending, lang)
 
     if lang == "ne_romanized":
-        weekday = _WEEKDAY_ROMAN_BY_INDEX[date_obj.weekday()] if date_obj else ""
         price_part = f" Mulya Rs {price}." if price is not None else ""
         return (
             f"{weekday}, {day} {month_en} maa {time_str} baje {service} — {name} ko "
             f"naam maa, phone {local_phone}, {branch} maa.{price_part}"
         )
     if lang in ("ne_devanagari", "mixed_ne_en"):
-        weekday = _WEEKDAY_NE_BY_INDEX[date_obj.weekday()] if date_obj else ""
         price_part = f" मूल्य रु {price}।" if price is not None else ""
         return (
             f"{weekday}, {day} {month_en} मा {time_str} बजे {service} — {name} को "
             f"नाममा, फोन {local_phone}, {branch} मा।{price_part}"
         )
-    weekday = date_obj.strftime("%A") if date_obj else ""
     price_part = f" Price: NPR {price}." if price is not None else ""
     return (
         f"{service} on {weekday} {day} {month_en} at {time_str} for {name} "
@@ -691,6 +747,7 @@ class ClinicAgentService:
         # loop below.
         turn_prepared_pending: dict | None = None
         turn_booking_confirmed = False
+        turn_confirmed: tuple[dict, str] | None = None
 
         if is_clear_confirmation(question) and get_awaiting_confirmation(session_id, current_turn):
             forced_id = f"forced_confirm_{uuid.uuid4().hex[:8]}"
@@ -711,6 +768,16 @@ class ClinicAgentService:
             allowed_phone_digits |= _extract_phone_digits(str(forced_booking.get("booking_number") or ""))
             if forced_booking.get("booking_number"):
                 turn_booking_confirmed = True
+                if forced_result.get("confirmed_pending"):
+                    full_answer = sanitize_phone_numbers(
+                        _build_confirmation_sentence(
+                            forced_result["confirmed_pending"],
+                            forced_booking["booking_number"], detected_lang, channel,
+                        ),
+                        allowed_phone_digits,
+                    )
+                    yield {"type": "token", "data": full_answer}
+                    iteration = MAX_TOOL_ITERATIONS  # code-built answer: skip the model
             messages.append({
                 "role": "assistant",
                 "content": None,
@@ -939,12 +1006,24 @@ class ClinicAgentService:
                         # error must not silence the no-false-claim check below.
                         if booking.get("booking_number"):
                             turn_booking_confirmed = True
+                            if result.get("confirmed_pending"):
+                                turn_confirmed = (result["confirmed_pending"], booking["booking_number"])
 
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc["id"],
                         "content": json.dumps(result),
                     })
+
+                if turn_confirmed is not None:
+                    # Post-booking sentence: built from the confirmed record,
+                    # never narrated by the model (see the note above).
+                    full_answer = sanitize_phone_numbers(
+                        _build_confirmation_sentence(*turn_confirmed, detected_lang, channel),
+                        allowed_phone_digits,
+                    )
+                    yield {"type": "token", "data": full_answer}
+                    break
 
                 if turn_prepared_pending is not None and not turn_booking_confirmed:
                     # F1 (CLINIC-BOOKING-TRUTH-BRIEF): a live run showed the model
