@@ -8,6 +8,7 @@ A stage redeploy wipes it — same tradeoff as ConversationStore.
 """
 import difflib
 import logging
+import time as _time
 import re
 import uuid as uuid_module
 from datetime import datetime, timedelta
@@ -154,10 +155,18 @@ def get_awaiting_confirmation(session_id: str | None, current_turn: int) -> dict
     return pending
 
 
-def mark_readback(session_id: str | None, turn: int) -> None:
-    """Record the turn whose reply was the code-built read-back."""
+def mark_readback(session_id: str | None, turn: int, lang: str | None = None) -> None:
+    """Record the turn whose reply was the code-built read-back, and the
+    language it was spoken in (the confirmation sentence stays in it)."""
     if session_id:
-        _state(session_id)["readback_turn"] = turn
+        st = _state(session_id)
+        st["readback_turn"] = turn
+        st["readback_lang"] = lang
+
+
+def get_readback_lang(session_id: str | None) -> str | None:
+    state = _SESSION_STATE.get(session_id) if session_id else None
+    return state.get("readback_lang") if state else None
 
 
 def reset_session_state(session_id: str) -> None:
@@ -384,7 +393,17 @@ async def _check_availability(db: AsyncSession, customer: Customer, service: str
         if not slots:
             # A full day: name the next days that DO have room instead of
             # leaving the visitor to guess (voice especially).
+            t0 = _time.monotonic()
             next_slots = await _next_open_slots(client, branch, treatment, now_npt)
+            logger.info("[CLINIC-AGENT] full_day_next_open_ms=%.0f found=%d",
+                        (_time.monotonic() - t0) * 1000, len(next_slots))
+            if not next_slots:
+                return {
+                    "service": service_summary, "date": date, "open_times": [],
+                    "next_open_slots": [],
+                    "message": "No open times on that date, and nothing is open in the next "
+                               f"{avail.MAX_DAYS_AHEAD} days either. Say so plainly; do not offer dates.",
+                }
             return {
                 "service": service_summary, "date": date, "open_times": [],
                 "next_open_slots": next_slots,

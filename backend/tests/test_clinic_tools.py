@@ -503,3 +503,13 @@ async def test_check_availability_full_day_offers_next_open_slots(monkeypatch):
     open_day = await clinic_tools._check_availability(
         AsyncMock(), _make_customer(), service="Teeth Cleaning", date="2026-10-02")
     assert open_day["open_times"] == ["09:00"] and "next_open_slots" not in open_day
+
+
+@pytest.mark.asyncio
+async def test_full_day_with_nothing_open_anywhere_says_so_and_offers_no_dates(monkeypatch):
+    _patch_client(monkeypatch, FakeClient())
+    monkeypatch.setattr(clinic_tools.avail, "available_slots_for_date", lambda *a, **kw: [])
+    r = await clinic_tools._check_availability(AsyncMock(), _make_customer(), service="Teeth Cleaning", date="2026-10-01")
+    assert r["next_open_slots"] == []
+    assert "do not offer dates" in r["message"] and "nothing is open" in r["message"]
+    assert "offer the earliest" not in r["message"]
