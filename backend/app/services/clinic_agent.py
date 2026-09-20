@@ -29,6 +29,32 @@ MAX_TOOL_ITERATIONS = 5
 NPT = ZoneInfo("Asia/Kathmandu")
 HOLD_BACK_TOKENS = 8
 
+
+def _usage_to_dict(usage) -> dict | None:
+    """Normalizes an OpenAI `CompletionUsage` object into the plain dict the
+    `usage` SSE event carries. Returns None when the SDK didn't populate it
+    (e.g. a streaming call made without `stream_options.include_usage`)."""
+    if usage is None:
+        return None
+    return {
+        "prompt_tokens": usage.prompt_tokens,
+        "completion_tokens": usage.completion_tokens,
+        "total_tokens": usage.total_tokens,
+    }
+
+
+def _add_usage(totals: dict, usage: dict | None) -> None:
+    """Accumulates one call's usage dict into the turn-level running totals
+    (ZUNKIREE-EMIT-USAGE-BRIEF: sum across every OpenAI call in the turn —
+    the main tool-loop call per iteration, plus the optional escalation
+    translation call — not just the first one)."""
+    if not usage:
+        return
+    totals["prompt_tokens"] += usage["prompt_tokens"]
+    totals["completion_tokens"] += usage["completion_tokens"]
+    totals["total_tokens"] += usage["total_tokens"]
+    totals["seen"] = True
+
 CLINIC_SYSTEM_PROMPT = """You are {brand_name}'s front-desk assistant. Be warm, professional, and brief (1-3 sentences), plain text only (no markdown/bold/lists/links).
 
 Current date/time in Nepal: {now_npt}.
@@ -597,20 +623,22 @@ class ClinicAgentService:
         self.model = settings.llm_model
         self.conversation_store = get_conversation_store()
 
-    async def _translate_escalation_to_devanagari(self, text: str) -> str | None:
+    async def _translate_escalation_to_devanagari(self, text: str) -> tuple[str | None, dict | None]:
         """Escalation-only safety net (CLINIC-ESCALATION-LANGUAGE-BRIEF approach
         B): translate a medical-escalation reply into Devanagari Nepali when both
         the standing LANGUAGE rule and the per-turn directive failed to produce
         it. Non-streaming — this only runs on the rare turn that already failed
         both prompt-level defenses, after the main generation is complete.
 
-        Returns None if the completion was cut off (finish_reason == "length")
-        rather than a possibly-truncated string. Escalations are exempt from
-        the length budget and Devanagari tokenizes expensively, so a long
-        escalation can plausibly hit max_tokens — and a translation cut off
-        mid-sentence (possibly mid-phone-number) is worse than the original
-        wrong-language-but-complete answer. The caller must fall back to the
-        original on None; never trust a truncated translation."""
+        Returns (text_or_None, usage). text is None if the completion was cut
+        off (finish_reason == "length") rather than a possibly-truncated
+        string. Escalations are exempt from the length budget and Devanagari
+        tokenizes expensively, so a long escalation can plausibly hit
+        max_tokens — and a translation cut off mid-sentence (possibly
+        mid-phone-number) is worse than the original wrong-language-but-complete
+        answer. The caller must fall back to the original on None; never trust
+        a truncated translation. usage is returned regardless of truncation —
+        the call still spent real tokens (ZUNKIREE-EMIT-USAGE-BRIEF)."""
         response = await self.client.chat.completions.create(
             model=self.model,
             messages=[
@@ -629,10 +657,11 @@ class ClinicAgentService:
             max_tokens=500,
             temperature=0.0,
         )
+        usage = _usage_to_dict(getattr(response, "usage", None))
         choice = response.choices[0]
         if choice.finish_reason == "length":
-            return None
-        return (choice.message.content or text).strip()
+            return None, usage
+        return (choice.message.content or text).strip(), usage
 
     async def process_agent_stream(
         self,
@@ -748,6 +777,12 @@ class ClinicAgentService:
         turn_prepared_pending: dict | None = None
         turn_booking_confirmed = False
         turn_confirmed: tuple[dict, str] | None = None
+        # ZUNKIREE-EMIT-USAGE-BRIEF: summed across every OpenAI call this turn
+        # makes — one per tool-loop iteration (up to MAX_TOOL_ITERATIONS) plus
+        # the optional escalation-translation call below. "seen" stays False
+        # (no usage event emitted) on turns that never call the model at all,
+        # e.g. the forced-confirmation short-circuit above.
+        turn_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "seen": False}
 
         if is_clear_confirmation(question) and get_awaiting_confirmation(session_id, current_turn):
             forced_id = f"forced_confirm_{uuid.uuid4().hex[:8]}"
@@ -803,6 +838,10 @@ class ClinicAgentService:
                 max_tokens=350,
                 temperature=0.3,
                 stream=True,
+                # ZUNKIREE-EMIT-USAGE-BRIEF: a streaming completion only carries
+                # `usage` at all when this is set — otherwise every chunk's
+                # `.usage` is None, including the last one.
+                stream_options={"include_usage": True},
             )
 
             current_text = ""
@@ -819,6 +858,13 @@ class ClinicAgentService:
             stream_ends_with_space = False
 
             async for chunk in response:
+                # With stream_options.include_usage, the final chunk carries
+                # usage and an empty `choices` list (no delta to read).
+                chunk_usage = _usage_to_dict(getattr(chunk, "usage", None))
+                if chunk_usage:
+                    _add_usage(turn_usage, chunk_usage)
+                if not chunk.choices:
+                    continue
                 delta = chunk.choices[0].delta
 
                 if delta.content:
@@ -890,7 +936,8 @@ class ClinicAgentService:
                     )
                     if escalation_shaped and detect_language(full_answer) != "ne_devanagari":
                         translate_start = time.monotonic()
-                        translated = await self._translate_escalation_to_devanagari(full_answer)
+                        translated, translate_usage = await self._translate_escalation_to_devanagari(full_answer)
+                        _add_usage(turn_usage, translate_usage)
                         latency_ms = (time.monotonic() - translate_start) * 1000
                         if translated is None:
                             # Truncated mid-generation (finish_reason == "length").
@@ -1059,6 +1106,22 @@ class ClinicAgentService:
 
         if full_answer:
             self.conversation_store.add_message(session_id, "assistant", full_answer)
+
+        # ZUNKIREE-EMIT-USAGE-BRIEF: one usage event per turn, after done's
+        # content is decided but emitted before it on the wire (order doesn't
+        # matter to the gateway — it keys usage to the turn, not to `done`).
+        # Skipped entirely on turns that never called the model (e.g. the
+        # forced-confirmation short-circuit) rather than fabricate zeros.
+        if turn_usage["seen"]:
+            yield {
+                "type": "usage",
+                "data": {
+                    "model": self.model,
+                    "prompt_tokens": turn_usage["prompt_tokens"],
+                    "completion_tokens": turn_usage["completion_tokens"],
+                    "total_tokens": turn_usage["total_tokens"],
+                },
+            }
 
         yield {
             "type": "done",
