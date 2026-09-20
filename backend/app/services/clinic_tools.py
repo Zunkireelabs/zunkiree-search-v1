@@ -523,8 +523,15 @@ async def _prepare_booking(
 
     price = treatment.get("price_npr")
     price_str = f" Price: NPR {price}." if price is not None else ""
+    # F2 (CLINIC-BOOKING-TRUTH-BRIEF): the read-back must state the weekday
+    # AND the date together, computed by code — a bare ISO date let "Tuesday,
+    # September 20th" pass as an internally-consistent-looking read-back for
+    # a Sunday, because nothing in the sentence could be checked against the
+    # date itself. Stating "Sunday, 2026-09-20" makes any weekday/date
+    # mismatch audible in the read-back the visitor actually hears.
+    weekday_name = target_date.strftime("%A")
     summary = (
-        f"{treatment['name']} on {date} at {time} for {full_name.strip()} "
+        f"{treatment['name']} on {weekday_name}, {date} at {time} for {full_name.strip()} "
         f"({phone_e164}) at {branch['name']}.{price_str}"
     )
     return {"summary": summary, "pending_booking": _pending_public_view(pending)}

@@ -19,8 +19,11 @@ from app.services.clinic_agent import (
     ClinicAgentService,
     NPT,
     _resolve_relative_date_word,
+    _resolve_weekday_word,
+    _resolve_date_expression,
     _EXPLICIT_DATE_SIGNAL,
     _DATE_ANCHOR,
+    _NEXT_PREFIX_ADDS_DAYS,
     reset_date_anchor,
 )
 
@@ -88,22 +91,79 @@ def test_resolve_relative_date_word_ignores_aajkal_aajabholi_false_positive(text
     assert _resolve_relative_date_word(text, now_npt) is None
 
 
-# --- MUST 2a: weekday / next-week phrases must be treated as explicit,   ---
-# --- never silently overridden by a stale anchor from an earlier turn.   ---
+# --- Generic "next/this week" without a named day is still left to the   ---
+# --- model (explicit signal, anchor steps aside) — there's no single day  ---
+# --- to resolve deterministically.                                       ---
 
 @pytest.mark.parametrize(
     "text",
     [
-        "सोमबार को मिल्छ?",
-        "मंगलबार खाली छ?",
         "अर्को हप्ता आउँछु",
-        "next Monday works for me",
-        "how about this Friday?",
-        "is Monday available?",
+        "next week works for me",
+        "how about this week?",
     ],
 )
-def test_weekday_and_next_week_phrases_are_explicit_date_signals(text):
+def test_generic_next_this_week_is_an_explicit_date_signal(text):
     assert _EXPLICIT_DATE_SIGNAL.search(text) is not None
+
+
+# --- F2 (CLINIC-BOOKING-TRUTH-BRIEF): named weekdays are now resolved      ---
+# --- deterministically, not left to the model — a live run booked         ---
+# --- "Tuesday" onto a Sunday because weekday arithmetic was the model's.  ---
+
+def test_weekday_names_are_no_longer_left_as_explicit_signals():
+    """These used to step aside for the model (PR #64 review MUST 2a); F2
+    resolves them deterministically instead, so they must NOT appear in
+    _EXPLICIT_DATE_SIGNAL any more — that would mean the anchor (or a
+    resolved weekday date) gets silently discarded in favor of nothing."""
+    for text in ("सोमबार को मिल्छ?", "next Monday works for me", "is Monday available?"):
+        assert _EXPLICIT_DATE_SIGNAL.search(text) is None
+
+
+@pytest.mark.parametrize(
+    "text,target_weekday,is_next",
+    [
+        ("सोमबार को मिल्छ?", 0, False),
+        ("मंगलबार खाली छ?", 1, False),
+        ("अर्को सोमबार आउँछु", 0, True),
+        ("Do you have slots on Tuesday?", 1, False),
+        ("next Monday works for me", 0, True),
+        ("how about this Friday?", 4, False),
+        ("is Monday available?", 0, False),
+    ],
+)
+def test_resolve_weekday_word(text, target_weekday, is_next):
+    now_npt = datetime.now(NPT)
+    today_weekday = now_npt.date().weekday()
+    offset = (target_weekday - today_weekday) % 7
+    if is_next:
+        offset += _NEXT_PREFIX_ADDS_DAYS
+    expected = (now_npt.date() + timedelta(days=offset)).isoformat()
+    assert _resolve_weekday_word(text, now_npt) == expected
+
+
+def test_next_prefix_currently_means_the_coming_occurrence_not_a_week_later():
+    """Sadin's call (PR #65 review open question): "next Monday"/"अर्को
+    सोमबार" means the COMING Monday, same as a bare weekday name — not the
+    Monday a week after that."""
+    assert _NEXT_PREFIX_ADDS_DAYS == 0
+
+
+def test_resolve_weekday_word_bare_name_means_today_when_today_is_that_weekday():
+    """Documented rule: a bare weekday name resolves to the nearest
+    occurrence, which is TODAY if today already is that weekday."""
+    now_npt = datetime.now(NPT)
+    today_weekday = now_npt.date().weekday()
+    today_name = [
+        "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    ][today_weekday]
+    assert _resolve_weekday_word(f"is {today_name} available?", now_npt) == now_npt.date().isoformat()
+
+
+def test_resolve_weekday_word_returns_none_for_unrelated_text():
+    now_npt = datetime.now(NPT)
+    assert _resolve_weekday_word("सात बजेको गर्दिनोस्", now_npt) is None
+    assert _resolve_weekday_word("", now_npt) is None
 
 
 # --- Integration: the tool call actually executed gets the resolved date ---
@@ -259,13 +319,18 @@ async def test_explicit_absolute_date_this_turn_is_not_overridden_by_stale_ancho
 
 
 @pytest.mark.asyncio
-async def test_next_monday_this_turn_is_not_overridden_by_stale_bholi_anchor():
-    """PR #64 review MUST 2a: an earlier भोलि anchor must not clobber a
-    later turn that names a weekday/next-week phrase — previously "next
-    Monday" fell through to neither the relative NOR the explicit signal
-    and got silently overridden to the stale anchored date."""
+async def test_next_monday_is_resolved_deterministically_not_left_to_the_model():
+    """F2 (CLINIC-BOOKING-TRUTH-BRIEF): "next Monday" must be resolved
+    code-side and FORCED onto the tool call — not passed through from the
+    model's own (unreliable) guess, and not left clobbered by a stale
+    भोलि anchor from an earlier turn either."""
     config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="Dental City", contact_phone=None)
     customer = _make_customer()
+
+    now_npt = datetime.now(NPT)
+    today_weekday = now_npt.date().weekday()
+    offset = (0 - today_weekday) % 7 + _NEXT_PREFIX_ADDS_DAYS  # "next" Monday
+    correct_date = (now_npt.date() + timedelta(days=offset)).isoformat()
 
     _DATE_ANCHOR["s1"] = _today_plus(1)  # stale "भोलि" anchor from an earlier turn
 
@@ -275,6 +340,9 @@ async def test_next_monday_this_turn_is_not_overridden_by_stale_bholi_anchor():
         captured_calls.append(kwargs)
         return {"service": {"name": "General Dentistry"}, "date": kwargs["tool_args"].get("date"), "open_times": []}
 
+    # The model's own guess ("2026-10-19") is deliberately wrong/unrelated —
+    # the point is that the executed call must use the code-resolved date
+    # regardless of what the model passed.
     responses = [
         _stream_tool_call("call_1", "check_availability", '{"service": "General Dentistry", "date": "2026-10-19"}'),
         _stream("Next Monday works, here are the open times."),
@@ -289,7 +357,7 @@ async def test_next_monday_this_turn_is_not_overridden_by_stale_bholi_anchor():
         ):
             pass
 
-    assert captured_calls[0]["tool_args"]["date"] == "2026-10-19"
+    assert captured_calls[0]["tool_args"]["date"] == correct_date
 
 
 @pytest.mark.asyncio
@@ -339,3 +407,47 @@ async def test_sessionless_turn_does_not_leak_anchor_across_visitors():
     # the model supplied) passes through unmodified rather than being
     # overridden with visitor A's भोलि date.
     assert captured_calls[1]["tool_args"]["date"] == "2099-01-01"
+
+
+# --- MUST B (PR #65 review): in-utterance self-corrections must enforce  ---
+# --- the LAST-mentioned date, not whichever pattern matches first.       ---
+
+def test_self_correction_weekday_to_weekday_resolves_the_corrected_value():
+    """सोमबार होइन, मंगलबार -> Tuesday, not Monday. People correct forward."""
+    now_npt = datetime.now(NPT)
+    today_weekday = now_npt.date().weekday()
+    expected = (now_npt.date() + timedelta(days=(1 - today_weekday) % 7)).isoformat()  # Tuesday
+    assert _resolve_date_expression("सोमबार होइन, मंगलबार", now_npt) == expected
+
+
+def test_self_correction_relative_word_to_relative_word_resolves_the_corrected_value():
+    """पर्सी होइन, भोलि -> tomorrow, not day-after-tomorrow."""
+    now_npt = datetime.now(NPT)
+    expected = (now_npt.date() + timedelta(days=1)).isoformat()  # भोलि
+    assert _resolve_date_expression("पर्सी होइन, भोलि", now_npt) == expected
+
+
+def test_self_correction_english_weekday_resolves_the_corrected_value():
+    """"Monday… actually Tuesday" -> Tuesday. Also documents which way the
+    rule breaks: without an explicit negation word, "Tuesday, not Monday"
+    (negation AFTER the correct value) still resolves to the LAST mention
+    (Monday) — negation-skipping only excludes a value immediately
+    followed by a negation word, it doesn't reorder based on meaning."""
+    now_npt = datetime.now(NPT)
+    today_weekday = now_npt.date().weekday()
+    tuesday = (now_npt.date() + timedelta(days=(1 - today_weekday) % 7)).isoformat()
+    monday = (now_npt.date() + timedelta(days=(0 - today_weekday) % 7)).isoformat()
+    assert _resolve_date_expression("Monday… actually Tuesday", now_npt) == tuesday
+    # Documented breakage direction: negation precedes the corrected value
+    # here, so "not Monday" is skipped (correct), but the mention order
+    # still decides — Tuesday is both last-mentioned AND the intended
+    # value, so this phrasing happens to work. The rule does NOT parse
+    # "not"'s target semantically; see the docstring above.
+    assert _resolve_date_expression("Tuesday, not Monday", now_npt) == monday
+
+
+def test_no_self_correction_single_mention_unaffected():
+    now_npt = datetime.now(NPT)
+    assert _resolve_date_expression("भोलि खाली छ?", now_npt) == _today_plus(1)
+    assert _resolve_date_expression("", now_npt) is None
+    assert _resolve_date_expression("सात बजेको गर्दिनोस्", now_npt) is None
