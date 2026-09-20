@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.models.customer import Customer
 from app.models.widget_config import WidgetConfig
-from app.services.clinic_tools import CLINIC_TOOLS, execute_clinic_tool
+from app.services.clinic_tools import CLINIC_TOOLS, execute_clinic_tool, get_awaiting_confirmation
 from app.services.conversation import get_conversation_store
 from app.services.language_detection import detect_language
 
@@ -303,6 +303,45 @@ def _safe_flush_index(text: str, hold_back_tokens: int = 8) -> int:
     if m:
         boundary = m.start()
     return boundary
+
+# --- Deterministic confirm intent (CLINIC-CONFIRM-INTENT-BRIEF) ---
+#
+# Live runs showed the same "Yes, please book it." after an identical read-back
+# sometimes reaching confirm_booking and sometimes making the model re-run
+# prepare_booking instead — and since the F1 net above ends the turn after any
+# successful prepare, that re-prepare became a silent stall (same question
+# repeated). Which tool the model picks is nondeterministic, so when the
+# visitor's whole message is an unambiguous yes to a read-back that is still
+# awaiting confirmation, code calls confirm_booking itself.
+#
+# Deliberately conservative: EVERY token must be on the allow-list and at least
+# one must be a strong yes. Any extra word ("but", "change", a number, a new
+# date) fails the check and the message goes to the model as before.
+_CONFIRM_STRONG = {
+    "yes", "yeah", "yep", "yup", "sure", "ok", "okay", "confirm", "confirmed",
+    "correct", "right", "book", "proceed",
+    "हुन्छ", "हुन्छ", "हजुर", "हजुरै", "ठीक", "ठिक", "गर्दिनुस्", "गर्नुहोस्", "बुक",
+    "ओके", "पक्का", "हो", "जी",
+    "huncha", "hunchha", "hajur", "hajurai", "thik", "garidinus", "garnus",
+    "pakka", "ho", "ya", "ha",
+}
+_CONFIRM_FILLER = {
+    "please", "pls", "it", "this", "that", "thats", "go", "ahead", "do", "thanks",
+    "thank", "you", "is", "the", "a", "now", "for", "me", "so", "and",
+    "छ", "गर्नु", "गरि", "दिनुस्", "अनि", "धन्यवाद", "यो", "त",
+    "cha", "chha", "ta", "dinus", "garera", "yo", "dhanyabad", "ani",
+}
+_CONFIRM_TOKEN_SPLIT = re.compile(r"[\s,.;:!?।'\"’\-]+")
+
+
+def is_clear_confirmation(message: str) -> bool:
+    tokens = [t for t in _CONFIRM_TOKEN_SPLIT.split((message or "").lower()) if t]
+    if not tokens or len(tokens) > 8:
+        return False
+    if not all(t in _CONFIRM_STRONG or t in _CONFIRM_FILLER for t in tokens):
+        return False
+    return any(t in _CONFIRM_STRONG for t in tokens)
+
 
 _TURN_COUNTERS: dict[str, int] = {}
 
@@ -632,6 +671,36 @@ class ClinicAgentService:
         # loop below.
         turn_prepared_pending: dict | None = None
         turn_booking_confirmed = False
+
+        if is_clear_confirmation(question) and get_awaiting_confirmation(session_id, current_turn):
+            forced_id = f"forced_confirm_{uuid.uuid4().hex[:8]}"
+            yield {"type": "tool_call", "name": "confirm_booking", "status": "running"}
+            forced_result = await execute_clinic_tool(
+                tool_name="confirm_booking",
+                tool_args={},
+                db=db,
+                customer=customer,
+                config=config,
+                site_id=site_id,
+                session_id=session_id,
+                current_turn=current_turn,
+            )
+            yield {"type": "tool_call", "name": "confirm_booking", "status": "done"}
+            logger.info("[CLINIC-AGENT] confirm_forced site_id=%s session_id=%s", site_id, session_id)
+            forced_booking = (forced_result or {}).get("booking") or {}
+            allowed_phone_digits |= _extract_phone_digits(str(forced_booking.get("booking_number") or ""))
+            if forced_booking.get("booking_number"):
+                turn_booking_confirmed = True
+            messages.append({
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{
+                    "id": forced_id,
+                    "type": "function",
+                    "function": {"name": "confirm_booking", "arguments": "{}"},
+                }],
+            })
+            messages.append({"role": "tool", "tool_call_id": forced_id, "content": json.dumps(forced_result)})
 
         while iteration < MAX_TOOL_ITERATIONS:
             iteration += 1
