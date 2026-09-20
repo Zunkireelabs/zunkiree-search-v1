@@ -104,3 +104,43 @@ async def test_confirm_failure_never_says_booked(err):
     with patch("app.services.clinic_agent.execute_clinic_tool", AsyncMock(return_value=err)):
         a = _answer(await _run(svc, CONFIG, "sure thing, book it", session_id=sid))
     assert "You're booked" not in a and a == "Sorry, that slot is gone."
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("confirm,lang,expect", [
+    ("okay", "ne_devanagari", "बुक भयो"),
+    ("yes", "ne_devanagari", "बुक भयो"),
+    ("हुन्छ", "ne_devanagari", "बुक भयो"),
+    ("okay", "ne_romanized", "book bhayo"),
+    ("Yes, please book it.", "en", "You're booked"),
+])
+async def test_confirmation_stays_in_readback_language(confirm, lang, expect):
+    sid = f"t-{uuid.uuid4()}"
+    _seed(sid)
+    clinic_tools.mark_readback(sid, 1, lang)
+    clinic_agent._TURN_COUNTERS[sid] = 1
+    svc = _service([], [])
+    with patch("app.services.clinic_agent.execute_clinic_tool", AsyncMock(return_value=OK)):
+        a = _answer(await _run(svc, CONFIG, confirm, session_id=sid, channel="voice"))
+    assert expect in a
+
+
+@pytest.mark.asyncio
+async def test_in_loop_confirmation_also_uses_readback_language():
+    sid = f"t-{uuid.uuid4()}"
+    clinic_tools.reset_session_state(sid)
+    clinic_tools.mark_readback(sid, 1, "ne_devanagari")
+    svc = _service([_stream_tool_call("c1", "confirm_booking", "{}")], [])
+    with patch("app.services.clinic_agent.execute_clinic_tool", AsyncMock(return_value=OK)):
+        a = _answer(await _run(svc, CONFIG, "sure thing, book it", session_id=sid, channel="voice"))
+    assert "बुक भयो" in a
+
+
+@pytest.mark.asyncio
+async def test_falls_back_to_detected_lang_without_readback_lang():
+    sid = f"t-{uuid.uuid4()}"
+    clinic_tools.reset_session_state(sid)
+    svc = _service([_stream_tool_call("c1", "confirm_booking", "{}")], [])
+    with patch("app.services.clinic_agent.execute_clinic_tool", AsyncMock(return_value=OK)):
+        a = _answer(await _run(svc, CONFIG, "हुन्छ, बुक गर्नुहोस्", session_id=sid, channel="voice"))
+    assert "बुक भयो" in a

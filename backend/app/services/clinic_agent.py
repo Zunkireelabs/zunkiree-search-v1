@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.models.customer import Customer
 from app.models.widget_config import WidgetConfig
-from app.services.clinic_tools import CLINIC_TOOLS, execute_clinic_tool, get_awaiting_confirmation, mark_readback
+from app.services.clinic_tools import CLINIC_TOOLS, execute_clinic_tool, get_awaiting_confirmation, get_readback_lang, mark_readback
 from app.services.conversation import get_conversation_store
 from app.services.language_detection import detect_language
 
@@ -772,7 +772,8 @@ class ClinicAgentService:
                     full_answer = sanitize_phone_numbers(
                         _build_confirmation_sentence(
                             forced_result["confirmed_pending"],
-                            forced_booking["booking_number"], detected_lang, channel,
+                            forced_booking["booking_number"],
+                            get_readback_lang(session_id) or detected_lang, channel,
                         ),
                         allowed_phone_digits,
                     )
@@ -1019,7 +1020,8 @@ class ClinicAgentService:
                     # Post-booking sentence: built from the confirmed record,
                     # never narrated by the model (see the note above).
                     full_answer = sanitize_phone_numbers(
-                        _build_confirmation_sentence(*turn_confirmed, detected_lang, channel),
+                        _build_confirmation_sentence(
+                            *turn_confirmed, get_readback_lang(session_id) or detected_lang, channel),
                         allowed_phone_digits,
                     )
                     yield {"type": "token", "data": full_answer}
@@ -1048,7 +1050,7 @@ class ClinicAgentService:
                     )
                     if full_answer:
                         yield {"type": "token", "data": full_answer}
-                        mark_readback(session_id, current_turn)
+                        mark_readback(session_id, current_turn, detected_lang)
                     break
 
                 continue
