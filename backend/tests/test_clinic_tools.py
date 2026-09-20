@@ -461,3 +461,28 @@ async def test_prepare_after_unmatched_service_records_substitution(monkeypatch)
     assert again["pending_booking"]["substituted_for"] == "root canal xyz"
     clean = await clinic_tools._prepare_booking(current_turn=1, **{**kw, "session_id": "s2"}, service="Teeth Cleaning")
     assert clean["pending_booking"]["substituted_for"] is None
+
+
+@pytest.mark.asyncio
+async def test_substitution_not_set_by_ambiguous_service(monkeypatch):
+    client = FakeClient()
+    _patch_client(monkeypatch, client)
+    kw = dict(db=AsyncMock(), customer=_make_customer(), session_id="s1", date="2026-10-01",
+              time="10:00", full_name="Jane", phone="9841234567")
+    orig = clinic_tools._match_service
+    monkeypatch.setattr(clinic_tools, "_match_service", lambda t, n: (None, list(t)))
+    amb = await clinic_tools._prepare_booking(current_turn=1, service="clean", **kw)
+    assert amb["error"] == "SERVICE_AMBIGUOUS"
+    monkeypatch.setattr(clinic_tools, "_match_service", orig)
+    ok = await clinic_tools._prepare_booking(current_turn=1, service="Teeth Cleaning", **kw)
+    assert ok["pending_booking"]["substituted_for"] is None
+
+
+@pytest.mark.asyncio
+async def test_stale_unmatched_service_ignored(monkeypatch):
+    _patch_client(monkeypatch, FakeClient())
+    kw = dict(db=AsyncMock(), customer=_make_customer(), session_id="s1", date="2026-10-01",
+              time="10:00", full_name="Jane", phone="9841234567")
+    await clinic_tools._prepare_booking(current_turn=1, service="root canal xyz", **kw)
+    ok = await clinic_tools._prepare_booking(current_turn=10, service="Teeth Cleaning", **kw)
+    assert ok["pending_booking"]["substituted_for"] is None
