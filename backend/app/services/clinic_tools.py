@@ -179,6 +179,14 @@ def reset_org_cache() -> None:
     _ORG_CACHE.clear()
 
 
+def phone_is_clinic(phone: str | None, contact_phone: str | None) -> bool:
+    """True when `phone` and the clinic's contact_phone are the same number,
+    comparing normalized digits (last 10, so +977 / local forms match)."""
+    a = re.sub(r"\D", "", str(phone or ""))[-10:]
+    b = re.sub(r"\D", "", str(contact_phone or ""))[-10:]
+    return bool(a) and a == b
+
+
 async def execute_clinic_tool(
     tool_name: str,
     tool_args: dict,
@@ -198,7 +206,16 @@ async def execute_clinic_tool(
         if tool_name == "check_availability":
             return await _check_availability(db, customer, tool_args.get("service", ""), tool_args.get("date"))
         if tool_name == "prepare_booking":
-            return await _prepare_booking(db, customer, session_id, current_turn, **tool_args)
+            result = await _prepare_booking(db, customer, session_id, current_turn, **tool_args)
+            # CLINIC-CALLER-PHONE-BRIEF: permanent regression detector — a caller
+            # whose booking phone equals the clinic's own number means the agent
+            # substituted the clinic's number for the visitor's. Bool only; no digits.
+            logger.info(
+                "[CLINIC-AGENT] tool=prepare_booking status=%s phone_is_clinic=%s",
+                "error" if (result or {}).get("error") else "ok",
+                phone_is_clinic(tool_args.get("phone"), config.contact_phone if config else None),
+            )
+            return result
         if tool_name == "confirm_booking":
             return await _confirm_booking(db, customer, session_id, current_turn)
         return {"error": f"Unknown tool: {tool_name}"}
