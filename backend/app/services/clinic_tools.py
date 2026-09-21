@@ -730,6 +730,16 @@ async def _confirm_locked(db, customer, state, pending, user_message):
                 "confirmed_pending": _pending_public_view(pending),
             }
 
+    # A write for this signature already in flight (its caller was cancelled and
+    # the lock released, or a racing confirm): join THAT write. Starting another
+    # would double-book — the retry's "yes" passes the gate too, and the first
+    # write hasn't reached state["confirmed"] yet. Joining needs no gate: no new
+    # write is authorized by it.
+    inflight = state.setdefault("inflight", {})
+    fut = inflight.get(sig)
+    if fut is not None:
+        return await asyncio.shield(fut)
+
     # CLINIC-CONFIRM-EXPLICIT-YES-BRIEF: the write needs an explicit yes in the
     # CURRENT user message, enforced here in code — not just in the prompt.
     # Fails closed: no message, a filler, a question, or a negation all re-ask.
@@ -742,13 +752,24 @@ async def _confirm_locked(db, customer, state, pending, user_message):
         }
     logger.info("[CLINIC-AGENT] confirm_gate result=pass")
 
-    # Run the write as its own task and shield it: if the caller is cancelled
+    # Run the write as its own task, registered in state["inflight"] INSIDE the
+    # lock before anything awaits it, and shielded: if the caller is cancelled
     # mid-write (gateway restart / disconnect) the write still completes AND is
-    # recorded, so a retried confirm sees already_booked instead of re-booking.
-    return await asyncio.shield(asyncio.ensure_future(_write_and_record(db, customer, state, pending)))
+    # recorded, and any confirm arriving meanwhile awaits this same future (above)
+    # instead of starting a second write. Cleared when it completes; by then a
+    # success is already in state["confirmed"].
+    fut = asyncio.ensure_future(_write_and_record(db, customer, state, pending))
+    inflight[sig] = fut
+    fut.add_done_callback(lambda _f: inflight.pop(sig, None))
+    return await asyncio.shield(fut)
 
 
 async def _write_and_record(db, customer, state, pending):
+    """The ClinicMD write plus bookkeeping. Runs shielded, so it can outlive the
+    request that started it: `db` may already be torn down by then (the
+    _resolve_org lookup before the write, and the SLOT_TAKEN alternatives lookup
+    after it). That fails safe — no write happens, or no alternatives are
+    offered — it never books wrongly."""
     sig = _signature(pending)
     try:
         booking = await _execute_booking(db, customer, pending)

@@ -231,3 +231,30 @@ async def test_gate_logs_result_without_user_text(monkeypatch, caplog):
         await _ct._confirm_booking(None, None, "gate4", 2, "yes")
     lines = [r.getMessage() for r in caplog.records if "confirm_gate" in r.getMessage()]
     assert lines == ["[CLINIC-AGENT] confirm_gate result=reask", "[CLINIC-AGENT] confirm_gate result=pass"]
+
+
+@_pytest.mark.asyncio
+async def test_retry_after_cancelled_caller_joins_inflight_write_not_second_write(monkeypatch):
+    """The gateway cancels the run mid-write and re-sends the turn: the lock is
+    free again, the same "yes" passes the gate, and the first write has not
+    reached state["confirmed"] yet. The retry must join the in-flight write."""
+    st = _stage_pending("gate5")
+    writes = []
+
+    async def slow_exec(*a, **k):
+        writes.append(1)
+        await asyncio.sleep(0.15)
+        return {"booking_number": "BK-1"}
+
+    monkeypatch.setattr(_ct, "_execute_booking", slow_exec)
+    first = asyncio.ensure_future(_ct._confirm_booking(None, None, "gate5", 2, "yes"))
+    await asyncio.sleep(0.03)
+    first.cancel()
+    with _pytest.raises(asyncio.CancelledError):
+        await first
+    assert st["confirmed"] == []  # write genuinely still in flight
+    retry = await _ct._confirm_booking(None, None, "gate5", 2, "yes")
+    assert writes == [1]  # ClinicMD called exactly once
+    assert retry["booking"]["booking_number"] == "BK-1"
+    assert st["confirmed"][0]["booking"] == retry["booking"]
+    assert st["inflight"] == {}
