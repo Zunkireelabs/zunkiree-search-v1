@@ -269,7 +269,7 @@ async def test_confirm_booking_refuses_empty_session_id(monkeypatch):
 @pytest.mark.asyncio
 async def test_confirm_booking_refuses_when_no_pending(monkeypatch):
     customer = _make_customer()
-    result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=1)
+    result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=1, user_message="yes")
     assert result["error"] == "NO_PENDING_BOOKING"
 
 
@@ -284,7 +284,7 @@ async def test_confirm_booking_refuses_same_turn(monkeypatch):
         service="Teeth Cleaning", date="2026-10-01", time="10:00",
         full_name="Jane", phone="9841234567",
     )
-    result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=2)
+    result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=2, user_message="yes")
     assert result["error"] == "NEEDS_CONFIRMATION"
     assert client.insert_calls == 0
 
@@ -314,7 +314,7 @@ async def test_repeat_prepare_same_slot_preserves_original_prepared_turn(monkeyp
     )
     assert clinic_tools._state("s1")["pending"]["prepared_turn"] == 5
 
-    result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=6)
+    result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=6, user_message="yes")
     assert "booking" in result
     assert client.insert_calls == 1
 
@@ -344,7 +344,7 @@ async def test_repeat_prepare_same_slot_but_changed_phone_resets_prepared_turn(m
     )
     assert clinic_tools._state("s1")["pending"]["prepared_turn"] == 6
 
-    result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=6)
+    result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=6, user_message="yes")
     assert result["error"] == "NEEDS_CONFIRMATION"
     assert client.insert_calls == 0
 
@@ -370,7 +370,7 @@ async def test_repeat_prepare_different_slot_resets_prepared_turn(monkeypatch):
     )
     assert clinic_tools._state("s1")["pending"]["prepared_turn"] == 6
 
-    result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=6)
+    result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=6, user_message="yes")
     assert result["error"] == "NEEDS_CONFIRMATION"
     assert client.insert_calls == 0
 
@@ -387,13 +387,13 @@ async def test_confirm_booking_succeeds_on_later_turn_and_is_idempotent(monkeypa
         full_name="Jane", phone="9841234567",
     )
 
-    first = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=4)
+    first = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=4, user_message="yes")
     assert "booking" in first
     assert client.insert_calls == 1
 
     # Double call (LLM re-invokes confirm_booking in the same or later turn):
     # must NOT insert again, must return the same booking.
-    second = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=4)
+    second = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=4, user_message="yes")
     assert second["booking"] == first["booking"]
     assert second.get("already_booked") is True
     assert client.insert_calls == 1
@@ -412,7 +412,7 @@ async def test_confirm_booking_maps_p0003_to_slot_taken_with_alternatives(monkey
         service="Teeth Cleaning", date="2026-10-01", time="10:00",
         full_name="Jane", phone="9841234567",
     )
-    result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=6)
+    result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=6, user_message="yes")
     assert result["error"] == "SLOT_TAKEN"
     assert "alternatives" in result
 
@@ -428,7 +428,7 @@ async def test_confirm_booking_maps_p0005_to_slot_taken(monkeypatch):
         service="Teeth Cleaning", date="2026-10-01", time="10:00",
         full_name="Jane", phone="9841234567",
     )
-    result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=8)
+    result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=8, user_message="yes")
     assert result["error"] == "SLOT_TAKEN"
 
 
@@ -443,7 +443,7 @@ async def test_confirm_booking_maps_other_pg_error_to_booking_failed(monkeypatch
         service="Teeth Cleaning", date="2026-10-01", time="10:00",
         full_name="Jane", phone="9841234567",
     )
-    result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=10)
+    result = await clinic_tools._confirm_booking(AsyncMock(), customer, "s1", current_turn=10, user_message="yes")
     assert result["error"] == "BOOKING_FAILED"
 
 

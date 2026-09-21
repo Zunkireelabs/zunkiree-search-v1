@@ -9,6 +9,7 @@ A stage redeploy wipes it — same tradeoff as ConversationStore.
 import difflib
 import logging
 import time as _time
+import asyncio
 import re
 import uuid as uuid_module
 from datetime import datetime, timedelta
@@ -196,6 +197,7 @@ async def execute_clinic_tool(
     site_id: str,
     session_id: str,
     current_turn: int,
+    user_message: str | None = None,
 ) -> dict:
     logger.info("[CLINIC-AGENT] tool=%s args=%s", tool_name, {k: v for k, v in tool_args.items() if k not in ("phone", "email", "full_name", "note")})
     try:
@@ -217,7 +219,7 @@ async def execute_clinic_tool(
             )
             return result
         if tool_name == "confirm_booking":
-            return await _confirm_booking(db, customer, session_id, current_turn)
+            return await _confirm_booking(db, customer, session_id, current_turn, user_message)
         return {"error": f"Unknown tool: {tool_name}"}
     except ClinicMdNotConfigured:
         return {"error": "NOT_CONFIGURED", "message": "Booking system isn't connected right now — please call the clinic directly."}
@@ -692,7 +694,7 @@ def _signature(pending: dict) -> tuple:
     return (pending["service_id"], pending["date"], pending["time"])
 
 
-async def _confirm_booking(db: AsyncSession, customer: Customer, session_id: str, current_turn: int) -> dict:
+async def _confirm_booking(db: AsyncSession, customer: Customer, session_id: str, current_turn: int, user_message: str | None = None) -> dict:
     if not session_id or not session_id.strip():
         return {"error": "MISSING_SESSION", "message": "A session is required to confirm a booking."}
 
@@ -711,6 +713,15 @@ async def _confirm_booking(db: AsyncSession, customer: Customer, session_id: str
             "message": "The visitor hasn't replied to the booking summary yet. Read it back and wait for their explicit yes before confirming.",
         }
 
+    # Serialize per session: two racing confirm_booking calls (the same turn run
+    # twice, an LLM double-call) must not both reach ClinicMD. The loser waits,
+    # then finds the signature in state["confirmed"] and returns already_booked.
+    lock = state.setdefault("lock", asyncio.Lock())
+    async with lock:
+        return await _confirm_locked(db, customer, state, pending, user_message)
+
+
+async def _confirm_locked(db, customer, state, pending, user_message):
     sig = _signature(pending)
     for entry in state["confirmed"]:
         if entry["signature"] == sig:
@@ -719,6 +730,47 @@ async def _confirm_booking(db: AsyncSession, customer: Customer, session_id: str
                 "confirmed_pending": _pending_public_view(pending),
             }
 
+    # A write for this signature already in flight (its caller was cancelled and
+    # the lock released, or a racing confirm): join THAT write. Starting another
+    # would double-book — the retry's "yes" passes the gate too, and the first
+    # write hasn't reached state["confirmed"] yet. Joining needs no gate: no new
+    # write is authorized by it.
+    inflight = state.setdefault("inflight", {})
+    fut = inflight.get(sig)
+    if fut is not None:
+        return await asyncio.shield(fut)
+
+    # CLINIC-CONFIRM-EXPLICIT-YES-BRIEF: the write needs an explicit yes in the
+    # CURRENT user message, enforced here in code — not just in the prompt.
+    # Fails closed: no message, a filler, a question, or a negation all re-ask.
+    from app.services.clinic_confirm import is_explicit_yes
+    if not is_explicit_yes(user_message or ""):
+        logger.info("[CLINIC-AGENT] confirm_gate result=reask")
+        return {
+            "error": "NEEDS_EXPLICIT_YES",
+            "message": "The visitor has not clearly said yes. Do NOT book. Ask once, in their language: \"Shall I book this? Please say yes or no.\"",
+        }
+    logger.info("[CLINIC-AGENT] confirm_gate result=pass")
+
+    # Run the write as its own task, registered in state["inflight"] INSIDE the
+    # lock before anything awaits it, and shielded: if the caller is cancelled
+    # mid-write (gateway restart / disconnect) the write still completes AND is
+    # recorded, and any confirm arriving meanwhile awaits this same future (above)
+    # instead of starting a second write. Cleared when it completes; by then a
+    # success is already in state["confirmed"].
+    fut = asyncio.ensure_future(_write_and_record(db, customer, state, pending))
+    inflight[sig] = fut
+    fut.add_done_callback(lambda _f: inflight.pop(sig, None))
+    return await asyncio.shield(fut)
+
+
+async def _write_and_record(db, customer, state, pending):
+    """The ClinicMD write plus bookkeeping. Runs shielded, so it can outlive the
+    request that started it: `db` may already be torn down by then (the
+    _resolve_org lookup before the write, and the SLOT_TAKEN alternatives lookup
+    after it). That fails safe — no write happens, or no alternatives are
+    offered — it never books wrongly."""
+    sig = _signature(pending)
     try:
         booking = await _execute_booking(db, customer, pending)
     except ClinicMdError as e:

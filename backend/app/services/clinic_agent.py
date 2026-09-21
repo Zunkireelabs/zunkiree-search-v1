@@ -19,6 +19,7 @@ from app.config import get_settings
 from app.models.customer import Customer
 from app.models.widget_config import WidgetConfig
 from app.services.clinic_tools import CLINIC_TOOLS, execute_clinic_tool, get_awaiting_confirmation, get_readback_lang, mark_readback
+from app.services.clinic_confirm import is_clear_confirmation  # noqa: F401 (re-exported)
 from app.services.conversation import get_conversation_store
 from app.services.language_detection import detect_language
 
@@ -433,45 +434,6 @@ def _safe_flush_index(text: str, hold_back_tokens: int = 8) -> int:
         boundary = m.start()
     return boundary
 
-# --- Deterministic confirm intent (CLINIC-CONFIRM-INTENT-BRIEF) ---
-#
-# Live runs showed the same "Yes, please book it." after an identical read-back
-# sometimes reaching confirm_booking and sometimes making the model re-run
-# prepare_booking instead — and since the F1 net above ends the turn after any
-# successful prepare, that re-prepare became a silent stall (same question
-# repeated). Which tool the model picks is nondeterministic, so when the
-# visitor's whole message is an unambiguous yes to a read-back that is still
-# awaiting confirmation, code calls confirm_booking itself.
-#
-# Deliberately conservative: EVERY token must be on the allow-list and at least
-# one must be a strong yes. Any extra word ("but", "change", a number, a new
-# date) fails the check and the message goes to the model as before.
-_CONFIRM_STRONG = {
-    "yes", "yeah", "yep", "yup", "sure", "ok", "okay", "confirm", "confirmed",
-    "correct", "right", "book", "proceed",
-    "हुन्छ", "हजुर", "हजुरै", "ठीक", "ठिक", "गर्दिनुस्", "गर्नुहोस्", "बुक",
-    "ओके", "पक्का", "हो", "जी",
-    "huncha", "hunchha", "hajur", "hajurai", "thik", "garidinus", "garnus",
-    "pakka", "ho", "ya",
-}
-_CONFIRM_FILLER = {
-    "please", "pls", "it", "this", "that", "thats", "go", "ahead", "do", "thanks",
-    "thank", "you", "is", "the", "a", "now", "for", "me", "so", "and",
-    "छ", "गर्नु", "गरि", "दिनुस्", "अनि", "धन्यवाद", "यो", "त",
-    "cha", "chha", "ta", "dinus", "garera", "yo", "dhanyabad", "ani",
-}
-_CONFIRM_TOKEN_SPLIT = re.compile(r"[\s,.;:!?।'\"’\-]+")
-
-
-def is_clear_confirmation(message: str) -> bool:
-    tokens = [t for t in _CONFIRM_TOKEN_SPLIT.split((message or "").lower()) if t]
-    if not tokens or len(tokens) > 8:
-        return False
-    if not all(t in _CONFIRM_STRONG or t in _CONFIRM_FILLER for t in tokens):
-        return False
-    return any(t in _CONFIRM_STRONG for t in tokens)
-
-
 _TURN_COUNTERS: dict[str, int] = {}
 
 
@@ -711,6 +673,9 @@ class ClinicAgentService:
         and carries no prompts/tools/logic of its own (VOICE-CHANNEL-
         RESPONSE-BRIEF §4/§7).
         """
+        # `question` is later rebound to the booking read-back question below; the
+        # confirm gate needs the visitor's ORIGINAL words.
+        user_message = question
         now_npt_dt = datetime.now(NPT)
         now_npt = now_npt_dt.strftime("%A, %Y-%m-%d %H:%M")
         channel_block = _VOICE_CHANNEL_BLOCK if channel == "voice" else ""
@@ -814,6 +779,7 @@ class ClinicAgentService:
                 site_id=site_id,
                 session_id=session_id,
                 current_turn=current_turn,
+                user_message=user_message,
             )
             yield {"type": "tool_call", "name": "confirm_booking", "status": "done"}
             logger.info("[CLINIC-AGENT] confirm_forced site_id=%s session_id=%s", site_id, session_id)
@@ -1040,6 +1006,7 @@ class ClinicAgentService:
                         site_id=site_id,
                         session_id=session_id,
                         current_turn=current_turn,
+                        user_message=user_message,
                     )
 
                     yield {"type": "tool_call", "name": tool_name, "status": "done"}
