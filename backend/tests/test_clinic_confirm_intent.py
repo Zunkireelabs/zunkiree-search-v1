@@ -114,3 +114,120 @@ def test_no_prefix_when_service_matches(lang):
     base = _build_booking_readback(_RB, lang)
     assert _build_booking_readback({**_RB, "substituted_for": None}, lang) == base
     assert _build_booking_readback({**_RB, "substituted_for": "general dentistry"}, lang) == base
+
+
+# --- CLINIC-CONFIRM-EXPLICIT-YES-BRIEF: gate corpus ---
+import asyncio  # noqa: E402
+
+import pytest as _pytest  # noqa: E402
+
+from app.services import clinic_tools as _ct  # noqa: E402
+
+_YES = [
+    "yes", "Yes, please book it.", "yeah", "sure", "book it", "confirm", "ok", "okay",
+    "हो", "हुन्छ", "हस्", "हजुर", "हाँ", "हाँ, हुन्छ, बुक गर्दिनु", "गर्नुहोस्", "गर्दिनुस्",
+    "ठीक छ", "huncha", "ho", "has", "hajur", "garidinus", "thik cha",
+]
+_REASK = [
+    "हुँ।", "हुँ", "hmm", "uh", "अँ", "ok?", "okay?", "हो?", "yes?", "",
+    "no", "not yet", "wait", "होइन", "नगर्नुस्", "गर्दिनँ", "hoina", "yes but change the time",
+    "what time is it?", "can you book it?", "book it for friday", "गर्दिन",
+]
+
+
+@_pytest.mark.parametrize("msg", _YES)
+def test_gate_allow_list_passes(msg):
+    assert is_clear_confirmation(msg), msg
+
+
+@_pytest.mark.parametrize("msg", _REASK)
+def test_gate_fillers_negations_questions_reask(msg):
+    assert not is_clear_confirmation(msg), msg
+
+
+def test_one_letter_trap_gardinu_vs_gardinam():
+    assert is_clear_confirmation("बुक गर्दिनु")
+    assert not is_clear_confirmation("बुक गर्दिनँ")
+
+
+def _stage_pending(sid):
+    _ct.reset_session_state(sid)
+    st = _ct._state(sid)
+    st["pending"] = {
+        "service_id": "svc", "date": "2026-09-25", "time": "10:00", "prepared_turn": 1,
+        "branch_id": "b", "full_name": "Probe Test", "phone_e164": "+9779812345678",
+    }
+    return st
+
+
+@_pytest.mark.asyncio
+async def test_confirm_reasks_on_filler_and_never_writes(monkeypatch):
+    _stage_pending("gate1")
+    writes = []
+
+    async def fake_exec(*a, **k):
+        writes.append(1)
+        return {"booking_number": "BK-1"}
+
+    monkeypatch.setattr(_ct, "_execute_booking", fake_exec)
+    for msg in ("हुँ।", "hmm", None):
+        r = await _ct._confirm_booking(None, None, "gate1", 2, msg)
+        assert r["error"] == "NEEDS_EXPLICIT_YES"
+    assert writes == []
+
+
+@_pytest.mark.asyncio
+async def test_concurrent_double_confirm_writes_at_most_once(monkeypatch):
+    _stage_pending("gate2")
+    writes = []
+
+    async def slow_exec(*a, **k):
+        writes.append(1)
+        await asyncio.sleep(0.05)  # both confirms are in flight during the write
+        return {"booking_number": "BK-1"}
+
+    monkeypatch.setattr(_ct, "_execute_booking", slow_exec)
+    a, b = await asyncio.gather(
+        _ct._confirm_booking(None, None, "gate2", 2, "yes"),
+        _ct._confirm_booking(None, None, "gate2", 2, "हुन्छ"),
+    )
+    assert len(writes) == 1
+    assert sorted(bool(r.get("already_booked")) for r in (a, b)) == [False, True]
+
+
+@_pytest.mark.asyncio
+async def test_write_survives_caller_cancellation_and_is_recorded(monkeypatch):
+    st = _stage_pending("gate3")
+    writes = []
+
+    async def slow_exec(*a, **k):
+        writes.append(1)
+        await asyncio.sleep(0.1)
+        return {"booking_number": "BK-1"}
+
+    monkeypatch.setattr(_ct, "_execute_booking", slow_exec)
+    t = asyncio.ensure_future(_ct._confirm_booking(None, None, "gate3", 2, "yes"))
+    await asyncio.sleep(0.02)
+    t.cancel()
+    with _pytest.raises(asyncio.CancelledError):
+        await t
+    await asyncio.sleep(0.2)  # the shielded write finishes on its own
+    assert len(st["confirmed"]) == 1
+    retry = await _ct._confirm_booking(None, None, "gate3", 3, "yes")
+    assert retry["already_booked"] is True and writes == [1]
+
+
+@_pytest.mark.asyncio
+async def test_gate_logs_result_without_user_text(monkeypatch, caplog):
+    import logging
+    _stage_pending("gate4")
+
+    async def fake_exec(*a, **k):
+        return {"booking_number": "BK-1"}
+
+    monkeypatch.setattr(_ct, "_execute_booking", fake_exec)
+    with caplog.at_level(logging.INFO):
+        await _ct._confirm_booking(None, None, "gate4", 2, "हुँ।")
+        await _ct._confirm_booking(None, None, "gate4", 2, "yes")
+    lines = [r.getMessage() for r in caplog.records if "confirm_gate" in r.getMessage()]
+    assert lines == ["[CLINIC-AGENT] confirm_gate result=reask", "[CLINIC-AGENT] confirm_gate result=pass"]
