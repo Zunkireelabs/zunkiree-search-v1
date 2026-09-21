@@ -242,7 +242,7 @@ zunkiree-search-v1/
 
 ### Pinecone (Vector Database)
 ```
-PINECONE_API_KEY=pcsk_3gJP6a_4zricZw7kWKLY8eP1u5ShPwM4NXBNxqSUTqxRcAf4raCBCBBYRSJag8suQKteSf
+PINECONE_API_KEY=pcsk_<REDACTED>
 PINECONE_HOST=https://zunkiree-search-vuzid6w.svc.aped-4627-b74a.pinecone.io
 PINECONE_INDEX_NAME=zunkiree-search
 ```
@@ -254,7 +254,7 @@ PINECONE_INDEX_NAME=zunkiree-search
 
 ### Supabase (PostgreSQL)
 ```
-DATABASE_URL=postgresql+asyncpg://postgres:r4HuWLWPegFBjTq4t803@db.qzgcowcrtggmttfczbdo.supabase.co:5432/postgres
+DATABASE_URL=postgresql+asyncpg://postgres:<REDACTED>@db.qzgcowcrtggmttfczbdo.supabase.co:5432/postgres
 ```
 - Project: zunkiree-search
 - Region: Asia-Pacific
@@ -262,7 +262,7 @@ DATABASE_URL=postgresql+asyncpg://postgres:r4HuWLWPegFBjTq4t803@db.qzgcowcrtggmt
 
 ### OpenAI
 ```
-OPENAI_API_KEY=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
+OPENAI_API_KEY=sk-proj-<REDACTED>
 ```
 - Status: **NEEDS CREDITS** - Add $5-10 at https://platform.openai.com/settings/organization/billing/overview
 
