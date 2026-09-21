@@ -71,7 +71,7 @@ _CALLER_PHONE_CLAUSE = (
 def _build_phone_fact_line(contact_phone: str | None) -> str:
     if contact_phone:
         return (
-            f"The clinic's own phone number is {contact_phone}. When giving the CLINIC's "
+            f"The clinic's own verified phone number is {contact_phone}. When giving the CLINIC's "
             "number, give only this one — never alter or invent digits. "
             + _CALLER_PHONE_CLAUSE
         )
