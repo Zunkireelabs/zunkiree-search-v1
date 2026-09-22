@@ -50,3 +50,6 @@ Thumbs.db
 # Windows reserved names
 nul
 NUL
+
+# MCP client config — holds connection strings/credentials; keep local only
+.mcp.json
