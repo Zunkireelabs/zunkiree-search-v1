@@ -42,9 +42,15 @@ This repo's `docs/archive/main-session-log.md` and `docs/archive/session-log/*` 
 
 When the brain folder hands off work to the Zunkiree repo Window, the canonical brief lives in the brain folder:
 
-```
-~/Projects/sadin-stark-brain/docs/stella+zunkireesearch/<CONTEXT>-BRIEF.md
-```
+- **Orca / Dental City / clinic-agent briefs**:
+  ```
+  ~/Projects/sadin-stark-brain/docs/orca-platform/dental-city/<CONTEXT>-BRIEF.md
+  ```
+  (shipped ones in `docs/orca-platform/archive/clinic-agent/`)
+- **Stella / commerce / IG / infra briefs** (unchanged):
+  ```
+  ~/Projects/sadin-stark-brain/docs/stella+zunkireesearch/<CONTEXT>-BRIEF.md
+  ```
 
 In-flight briefs specific to a multi-PR feature in this repo may live here under `docs/briefs/<feature>/`. When the feature ships → `git mv` to `docs/archive/<feature>/`.
 

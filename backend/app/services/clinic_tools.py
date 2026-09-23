@@ -1,6 +1,6 @@
 """
 OpenAI function-calling tool definitions and executors for the ClinicAgentService
-(website_type == "clinic"). See docs/stella+zunkireesearch/ZUNKIREE-CLINIC-AGENT-BRIEF.md
+(website_type == "clinic"). See docs/orca-platform/archive/clinic-agent/ZUNKIREE-CLINIC-AGENT-BRIEF.md
 (brain folder) for the full spec.
 
 Session state (pending/confirmed bookings) is in-memory, keyed by session_id.
