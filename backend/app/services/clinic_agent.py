@@ -2,7 +2,7 @@
 Agentic AI service with tool-calling for clinic (dental/medical) front-desk assistant.
 Answers from KB + ClinicMD live data, and books a real Pending appointment in ClinicMD
 after explicit visitor confirmation. See brain folder
-docs/stella+zunkireesearch/ZUNKIREE-CLINIC-AGENT-BRIEF.md.
+docs/orca-platform/archive/clinic-agent/ZUNKIREE-CLINIC-AGENT-BRIEF.md.
 """
 import asyncio
 import json

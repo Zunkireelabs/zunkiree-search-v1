@@ -10,6 +10,18 @@ Currently 5 IG chatbot fixes shipped 2026-05-18 (IG-3, IG-2, IG-6, IG-8, IG-9, I
 
 ---
 
+## Orca relationship
+
+Read `~/Projects/sadin-stark-brain/docs/orca-platform/ORCA-PLATFORM-VISION.md` before any change to the clinic agent's architecture.
+
+**Today this repo holds the brain behind Orca's seam**: Orca's voice channel calls `POST /api/v1/query/stream`. **Decided 2026-09-23 (vision §8.11):** all of Zunkiree Search becomes agents built on Orca. Each of the four agents here (chosen by `website_type`) becomes an agent defined in Orca's brain, configured per tenant rather than hardcoded per industry, and the widget, IG and Messenger channels become Orca adapters. Which runtime runs the brain is still open (vision O1).
+
+**Decided 2026-09-23 (vision §8.12): everything stays live during the move.** Orca goes in front one channel and one tenant at a time; a Zunkiree path is switched off only after its Orca replacement is proven for that tenant. **Never break a live tenant or demo for platform work**: `dental-city`'s widget, `kasa-clothing` on Instagram (prod), and Stella merchants keep working exactly as now.
+
+**Consequences for work here:** keep the clinic agent channel-agnostic (shape per channel, never per-channel logic); don't build new *platform* machinery here (fleet, cross-tenant cost panels, eval tooling), because that belongs in Orca; tools/writes belong to the product that owns the data (ClinicMD) and will eventually be reached over MCP.
+
+---
+
 ## Multi-Window Workflow
 
 **This repo is operated jointly with the brain folder.** Two Claude Code windows run in parallel:
@@ -23,7 +35,7 @@ Currently 5 IG chatbot fixes shipped 2026-05-18 (IG-3, IG-2, IG-6, IG-8, IG-9, I
 | Updates `SESSION-LOG.md` (brain folder) | Smokes locally + reports back |
 | Saves cross-session memories | |
 
-**Briefs live at**: `~/Projects/sadin-stark-brain/docs/stella+zunkireesearch/<CONTEXT>-BRIEF.md`. When the brain folder hands off work, expect a brief with: target branch, exact diff, verification steps, traps to watch for. Read the brief end-to-end before editing.
+**Briefs live at**: **Orca / Dental City / clinic-agent briefs** → `~/Projects/sadin-stark-brain/docs/orca-platform/dental-city/<CONTEXT>-BRIEF.md` (shipped ones in `docs/orca-platform/archive/clinic-agent/`). **Stella / commerce / IG / infra briefs** → `~/Projects/sadin-stark-brain/docs/stella+zunkireesearch/<CONTEXT>-BRIEF.md` (unchanged). When the brain folder hands off work, expect a brief with: target branch, exact diff, verification steps, traps to watch for. Read the brief end-to-end before editing.
 
 **Session log lives in brain folder**: `~/Projects/sadin-stark-brain/docs/stella+zunkireesearch/SESSION-LOG.md`. **Do not start a new session log in this repo.** The old logs in `docs/archive/` and `docs/archive/session-log/` are frozen historical record.
 
