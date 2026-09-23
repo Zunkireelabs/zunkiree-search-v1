@@ -41,8 +41,10 @@ def _make_customer() -> Customer:
 @pytest.fixture(autouse=True)
 def _reset_state():
     clinic_tools.reset_org_cache()
+    clinic_tools.reset_quick_facts_cache()
     yield
     clinic_tools.reset_org_cache()
+    clinic_tools.reset_quick_facts_cache()
     clinic_tools.reset_session_state("s1")
 
 
