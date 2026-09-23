@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.customer import Customer
 from app.models.widget_config import WidgetConfig
 from app.models.tenant_backend_credentials import TenantBackendCredentials
+from app.models.tenant_quick_fact import TenantQuickFact
 from app.services import clinic_availability as avail
 from app.services.clinicmd_client import (
     ClinicMdError,
@@ -180,6 +181,11 @@ def reset_org_cache() -> None:
     _ORG_CACHE.clear()
 
 
+def reset_quick_facts_cache() -> None:
+    """Test helper — clear the per-tenant quick-facts cache."""
+    _QUICK_FACTS_CACHE.clear()
+
+
 def phone_is_clinic(phone: str | None, contact_phone: str | None) -> bool:
     """True when `phone` and the clinic's contact_phone are the same number,
     comparing normalized digits (last 10, so +977 / local forms match)."""
@@ -230,9 +236,79 @@ async def execute_clinic_tool(
 
 # --- Knowledge ---
 
+# ZUNKIREE-FAST-FACTS-BRIEF: search_knowledge's embeddings call runs 16-20s
+# and costs a live voice call (tracker 2026-09-21, call d7e0c73c..., turn 8).
+# Most questions that reach search_knowledge are static facts (hours,
+# address, contact, staff, a services overview) a clinic rarely changes.
+# _quick_fact_lookup answers those directly — no embeddings call, no
+# Pinecone round trip, no RAG at all — and returns None for anything else,
+# which falls through to the unchanged RAG path below.
+_QUICK_FACTS_CACHE: dict[str, list[dict]] = {}
+
+
+async def _load_quick_facts(db: AsyncSession, customer: Customer) -> list[dict]:
+    cached = _QUICK_FACTS_CACHE.get(customer.site_id)
+    if cached is not None:
+        return cached
+    result = await db.execute(
+        select(TenantQuickFact).where(
+            TenantQuickFact.customer_id == customer.id,
+            TenantQuickFact.is_active == True,  # noqa: E712
+        )
+    )
+    facts = [
+        {"category": r.category, "keywords": [str(k).lower() for k in (r.keywords or [])], "answer": r.answer}
+        for r in result.scalars().all()
+    ]
+    _QUICK_FACTS_CACHE[customer.site_id] = facts
+    return facts
+
+
+def _hours_from_clinicmd_branch(customer: Customer) -> str | None:
+    """S4-TENANT-CONFIG-BRIEF finding #3: booking hours are ClinicMD's, not
+    ours to duplicate. If this tenant's branch is already cached (resolved
+    by an earlier tool call this turn/session — never fetched here, to keep
+    this a zero-extra-round-trip fast path) AND ClinicMD actually has
+    open_time/close_time populated for it, prefer that live value over the
+    stored quick-fact so the two can never drift apart."""
+    cached_org = _ORG_CACHE.get(customer.site_id)
+    if not cached_org:
+        return None
+    branch = _default_branch(cached_org["branches"])
+    if not branch or not branch.get("open_time") or not branch.get("close_time"):
+        return None
+    return f"{branch['name']} is open {branch['open_time']} to {branch['close_time']} ({branch.get('timezone') or 'Asia/Kathmandu'})."
+
+
+async def _quick_fact_lookup(db: AsyncSession, customer: Customer, query: str) -> dict | None:
+    facts = await _load_quick_facts(db, customer)
+    if not facts:
+        return None
+    q = query.lower()
+    best, best_score = None, 0
+    for fact in facts:
+        score = sum(1 for kw in fact["keywords"] if kw and kw in q)
+        if score > best_score:
+            best, best_score = fact, score
+    if best is None:
+        return None
+    if best["category"] == "hours":
+        live_hours = _hours_from_clinicmd_branch(customer)
+        if live_hours:
+            return {"category": "hours", "answer": live_hours}
+    return best
+
+
 async def _search_knowledge(db: AsyncSession, customer: Customer, config: WidgetConfig | None, site_id: str, query: str) -> dict:
     if not query:
         return {"chunks": []}
+
+    fact = await _quick_fact_lookup(db, customer, query)
+    if fact:
+        logger.info("[CLINIC-AGENT] quick_facts hit category=%s site_id=%s", fact["category"], site_id)
+        return {"chunks": [{"content": fact["answer"]}]}
+    logger.info("[CLINIC-AGENT] quick_facts miss site_id=%s - falling through to search_knowledge RAG", site_id)
+
     from app.services.query import get_query_service
 
     retrieval = await get_query_service()._retrieve_and_rank(db, customer, config, site_id, query)
