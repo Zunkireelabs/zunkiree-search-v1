@@ -4,6 +4,7 @@ Answers from KB + ClinicMD live data, and books a real Pending appointment in Cl
 after explicit visitor confirmation. See brain folder
 docs/stella+zunkireesearch/ZUNKIREE-CLINIC-AGENT-BRIEF.md.
 """
+import asyncio
 import json
 import logging
 import re
@@ -1006,6 +1007,12 @@ class ClinicAgentService:
                     "tool_calls": tool_calls_list,
                 })
 
+                # LLM-ROUNDTRIP-BRIEF §1.3: prep every call's args (date
+                # anchoring included) up front — this is pure argument
+                # resolution against `enforce_date`/`anchor_key`, no tool
+                # has run yet, so doing it for all N calls before any of
+                # them execute is equivalent to doing it per-call inline.
+                prepped: list[tuple[dict, str, dict]] = []
                 for tc in tool_calls_list:
                     tool_name = tc["function"]["name"]
                     try:
@@ -1028,10 +1035,14 @@ class ClinicAgentService:
                         if used_date and anchor_key:
                             _DATE_ANCHOR[anchor_key] = used_date
 
+                    prepped.append((tc, tool_name, tool_args))
+
+                for tc, tool_name, _ in prepped:
                     yield {"type": "tool_call", "name": tool_name, "status": "running"}
 
-                    tool_call_start = time.monotonic()
-                    result = await execute_clinic_tool(
+                async def _run_tool(tool_name: str, tool_args: dict) -> tuple[dict, float]:
+                    start = time.monotonic()
+                    tool_result = await execute_clinic_tool(
                         tool_name=tool_name,
                         tool_args=tool_args,
                         db=db,
@@ -1043,11 +1054,32 @@ class ClinicAgentService:
                         user_message=user_message,
                         trace_id=trace_id,
                     )
+                    return tool_result, (time.monotonic() - start) * 1000
+
+                # LLM-ROUNDTRIP-BRIEF §1.3: a turn that names the same date-
+                # checking tool more than once in one iteration (e.g. "is
+                # Tuesday or Wednesday open") awaited them one at a time —
+                # 3 sequential check_availability calls measured 1.17s +
+                # 0.42s + 0.08s = 1.67s serial. check_availability is a pure
+                # read (ClinicMD reads + the read-through `_ORG_CACHE`), and
+                # the only write-path lock (PR #75, `_confirm_locked`) is on
+                # confirm_booking, a different tool entirely — so it's safe
+                # to fan these out concurrently. Scoped narrowly to the
+                # all-check_availability case measured in the brief; any
+                # other mix (including prepare_booking/confirm_booking)
+                # still runs exactly as before, one at a time, in order.
+                if len(prepped) > 1 and all(name == "check_availability" for _, name, _ in prepped):
+                    gathered = await asyncio.gather(
+                        *(_run_tool(name, args) for _, name, args in prepped)
+                    )
+                else:
+                    gathered = [await _run_tool(name, args) for _, name, args in prepped]
+
+                for (tc, tool_name, tool_args), (result, latency_ms) in zip(prepped, gathered):
                     logger.info(
                         "[CLINIC-LATENCY] tool_call trace_id=%s site_id=%s session_id=%s "
                         "iteration=%d tool=%s latency_ms=%.0f",
-                        trace_id, site_id, session_id, iteration, tool_name,
-                        (time.monotonic() - tool_call_start) * 1000,
+                        trace_id, site_id, session_id, iteration, tool_name, latency_ms,
                     )
 
                     yield {"type": "tool_call", "name": tool_name, "status": "done"}
