@@ -646,6 +646,13 @@ async def submit_query_stream(
     origin = request.headers.get("origin")
     user_agent = request.headers.get("user-agent")
     ip_address = request.client.host if request.client else None
+    # AGENT-PLATFORM-LATENCY-BREAKDOWN-BRIEF §2/§3: correlate with the
+    # gateway's own leg. There's no traceparent HTTP header on this
+    # request — orca-gateway/src/orca_gateway/backends/zunkiree.py doesn't
+    # send one — but the gateway already puts the same trace-id (its
+    # `conversation_id`, itself ElevenLabs' traceparent) in the JSON body
+    # as `session_id`, so key off that instead.
+    trace_id = query.session_id
 
     # Release the pooler connection checked out for the lookups above before
     # entering the long LLM/tool phase below (which can run 10-20s for voice
@@ -701,6 +708,7 @@ async def submit_query_stream(
                     config=config,
                     brand_name=brand_name,
                     channel=query.channel or "chat",
+                    trace_id=trace_id,
                 ):
                     yield f"data: {json.dumps(event)}\n\n"
                 return

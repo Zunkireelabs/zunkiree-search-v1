@@ -204,11 +204,12 @@ async def execute_clinic_tool(
     session_id: str,
     current_turn: int,
     user_message: str | None = None,
+    trace_id: str | None = None,
 ) -> dict:
     logger.info("[CLINIC-AGENT] tool=%s args=%s", tool_name, {k: v for k, v in tool_args.items() if k not in ("phone", "email", "full_name", "note")})
     try:
         if tool_name == "search_knowledge":
-            return await _search_knowledge(db, customer, config, site_id, tool_args.get("query", ""))
+            return await _search_knowledge(db, customer, config, site_id, tool_args.get("query", ""), trace_id=trace_id)
         if tool_name == "list_services":
             return await _list_services(db, customer, tool_args.get("query"))
         if tool_name == "check_availability":
@@ -299,19 +300,27 @@ async def _quick_fact_lookup(db: AsyncSession, customer: Customer, query: str) -
     return best
 
 
-async def _search_knowledge(db: AsyncSession, customer: Customer, config: WidgetConfig | None, site_id: str, query: str) -> dict:
+async def _search_knowledge(db: AsyncSession, customer: Customer, config: WidgetConfig | None, site_id: str, query: str, trace_id: str | None = None) -> dict:
     if not query:
         return {"chunks": []}
 
     fact = await _quick_fact_lookup(db, customer, query)
     if fact:
-        logger.info("[CLINIC-AGENT] quick_facts hit category=%s site_id=%s", fact["category"], site_id)
+        logger.info("[CLINIC-AGENT] quick_facts hit category=%s site_id=%s trace_id=%s", fact["category"], site_id, trace_id)
         return {"chunks": [{"content": fact["answer"]}]}
-    logger.info("[CLINIC-AGENT] quick_facts miss site_id=%s - falling through to search_knowledge RAG", site_id)
+    logger.info("[CLINIC-AGENT] quick_facts miss site_id=%s trace_id=%s - falling through to search_knowledge RAG", site_id, trace_id)
 
     from app.services.query import get_query_service
 
+    # AGENT-PLATFORM-LATENCY-BREAKDOWN-BRIEF §2: RAG fallthrough is the other
+    # branch of search_knowledge worth breaking out separately from a
+    # quick-facts hit — this is the embeddings + Pinecone + rerank leg.
+    rag_start = _time.monotonic()
     retrieval = await get_query_service()._retrieve_and_rank(db, customer, config, site_id, query)
+    logger.info(
+        "[CLINIC-LATENCY] rag_retrieve trace_id=%s site_id=%s latency_ms=%.0f",
+        trace_id, site_id, (_time.monotonic() - rag_start) * 1000,
+    )
     chunks = retrieval.get("chunks_for_llm") or []
     if not chunks:
         return {"chunks": [], "message": "Nothing found in the knowledge base for this."}
