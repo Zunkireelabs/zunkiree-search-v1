@@ -159,3 +159,56 @@ async def test_no_query_returns_empty_without_db_hit():
     result = await clinic_tools._search_knowledge(db, customer, config=None, site_id="dental-city", query="")
     assert result == {"chunks": []}
     db.execute.assert_not_awaited()
+
+
+# --- ZUNKIREE-FAST-FACTS-NEPALI-BRIEF: Devanagari keywords ---
+# The matching mechanism is a plain substring check, already language-agnostic
+# with zero code change — these just prove the Nepali keyword content works
+# the same way the English keywords already did.
+
+@pytest.mark.asyncio
+async def test_nepali_keyword_matches_hours_fact(monkeypatch):
+    rows = [_fact_row("hours", ["hour", "open", "खुल्ने", "खुल्छ", "समय"], "Dental City is open every day, 10:00 AM to 8:00 PM.")]
+    db = _fake_db(rows)
+    customer = _make_customer()
+
+    result = await clinic_tools._search_knowledge(db, customer, config=None, site_id="dental-city", query="तपाईंको खुल्ने समय कति हो?")
+
+    assert result["chunks"] == [{"content": "Dental City is open every day, 10:00 AM to 8:00 PM."}]
+
+
+@pytest.mark.asyncio
+async def test_nepali_keyword_matches_address_fact():
+    rows = [_fact_row("address", ["located", "address", "ठेगाना", "कहाँ"], "Dental City is located in Thimi, Bhaktapur, Nepal.")]
+    db = _fake_db(rows)
+    customer = _make_customer()
+
+    result = await clinic_tools._quick_fact_lookup(db, customer, "क्लिनिकको ठेगाना के हो?")
+
+    assert result == {"category": "address", "keywords": rows[0].keywords, "answer": "Dental City is located in Thimi, Bhaktapur, Nepal."}
+
+
+@pytest.mark.asyncio
+async def test_nepali_and_english_keywords_coexist_on_same_fact():
+    """Adding Nepali variants must not disturb the English matches PR #77 already proved."""
+    rows = [_fact_row("hours", ["hour", "hours", "open", "खुल्ने", "समय"], "Dental City is open every day, 10:00 AM to 8:00 PM.")]
+    db = _fake_db(rows)
+    customer = _make_customer()
+
+    en_result = await clinic_tools._quick_fact_lookup(db, customer, "What time do you open?")
+    clinic_tools.reset_quick_facts_cache()
+    ne_result = await clinic_tools._quick_fact_lookup(_fake_db(rows), customer, "खुल्ने समय के हो?")
+
+    assert en_result["answer"] == ne_result["answer"] == "Dental City is open every day, 10:00 AM to 8:00 PM."
+
+
+@pytest.mark.asyncio
+async def test_devanagari_query_with_no_keyword_match_falls_through():
+    rows = [_fact_row("hours", ["hour", "open", "खुल्ने"], "Dental City is open every day, 10:00 AM to 8:00 PM.")]
+    db = _fake_db(rows)
+    customer = _make_customer()
+
+    # "पार्किङ" (parking) isn't covered by any fact/keyword.
+    result = await clinic_tools._quick_fact_lookup(db, customer, "पार्किङ छ कि छैन?")
+
+    assert result is None
