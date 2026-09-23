@@ -663,6 +663,7 @@ class ClinicAgentService:
         config: WidgetConfig | None,
         brand_name: str,
         channel: str = "chat",
+        trace_id: str | None = None,
     ):
         """
         Process a query through the clinic agentic pipeline.
@@ -672,10 +673,20 @@ class ClinicAgentService:
         "voice") — it selects a response-shape profile in the prompt below
         and carries no prompts/tools/logic of its own (VOICE-CHANNEL-
         RESPONSE-BRIEF §4/§7).
+
+        `trace_id` (AGENT-PLATFORM-LATENCY-BREAKDOWN-BRIEF §2/§3): the
+        caller's `session_id` from the request body, which on voice turns
+        IS the gateway's own trace-id (its `conversation_id`, itself
+        ElevenLabs' traceparent) — there's no separate traceparent HTTP
+        header on this request. Logged alongside every timing line below
+        so this turn's LLM/tool breakdown can be correlated with the
+        gateway's own leg. Diagnostic only.
         """
         # `question` is later rebound to the booking read-back question below; the
         # confirm gate needs the visitor's ORIGINAL words.
         user_message = question
+        turn_start_ts = time.monotonic()
+        logger.info("[CLINIC-LATENCY] turn_start trace_id=%s site_id=%s session_id=%s", trace_id, site_id, session_id)
         now_npt_dt = datetime.now(NPT)
         now_npt = now_npt_dt.strftime("%A, %Y-%m-%d %H:%M")
         channel_block = _VOICE_CHANNEL_BLOCK if channel == "voice" else ""
@@ -770,6 +781,7 @@ class ClinicAgentService:
         if is_clear_confirmation(question) and get_awaiting_confirmation(session_id, current_turn):
             forced_id = f"forced_confirm_{uuid.uuid4().hex[:8]}"
             yield {"type": "tool_call", "name": "confirm_booking", "status": "running"}
+            forced_tool_start = time.monotonic()
             forced_result = await execute_clinic_tool(
                 tool_name="confirm_booking",
                 tool_args={},
@@ -780,6 +792,13 @@ class ClinicAgentService:
                 session_id=session_id,
                 current_turn=current_turn,
                 user_message=user_message,
+                trace_id=trace_id,
+            )
+            logger.info(
+                "[CLINIC-LATENCY] tool_call trace_id=%s site_id=%s session_id=%s "
+                "iteration=0 tool=confirm_booking latency_ms=%.0f",
+                trace_id, site_id, session_id,
+                (time.monotonic() - forced_tool_start) * 1000,
             )
             yield {"type": "tool_call", "name": "confirm_booking", "status": "done"}
             logger.info("[CLINIC-AGENT] confirm_forced site_id=%s session_id=%s", site_id, session_id)
@@ -815,6 +834,11 @@ class ClinicAgentService:
             # Release the pooler connection before each LLM round-trip. See C1 notes.
             await db.commit()
 
+            # AGENT-PLATFORM-LATENCY-BREAKDOWN-BRIEF §2: one LLM round trip
+            # per tool-loop iteration (up to MAX_TOOL_ITERATIONS) — timed
+            # start-to-first-byte-of-stream-exhausted below, since the
+            # OpenAI SDK call itself just opens the stream.
+            llm_call_start = time.monotonic()
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
@@ -882,6 +906,15 @@ class ClinicAgentService:
                                 tool_calls_data[idx]["name"] = tc.function.name
                             if tc.function.arguments:
                                 tool_calls_data[idx]["arguments"] += tc.function.arguments
+
+            llm_call_ms = (time.monotonic() - llm_call_start) * 1000
+            logger.info(
+                "[CLINIC-LATENCY] llm_call trace_id=%s site_id=%s session_id=%s iteration=%d "
+                "kind=%s latency_ms=%.0f",
+                trace_id, site_id, session_id, iteration,
+                "tool_call" if tool_calls_data else "final_answer",
+                llm_call_ms,
+            )
 
             if current_text and not tool_calls_data:
                 full_answer = sanitize_phone_numbers(current_text, allowed_phone_digits)
@@ -997,6 +1030,7 @@ class ClinicAgentService:
 
                     yield {"type": "tool_call", "name": tool_name, "status": "running"}
 
+                    tool_call_start = time.monotonic()
                     result = await execute_clinic_tool(
                         tool_name=tool_name,
                         tool_args=tool_args,
@@ -1007,6 +1041,13 @@ class ClinicAgentService:
                         session_id=session_id,
                         current_turn=current_turn,
                         user_message=user_message,
+                        trace_id=trace_id,
+                    )
+                    logger.info(
+                        "[CLINIC-LATENCY] tool_call trace_id=%s site_id=%s session_id=%s "
+                        "iteration=%d tool=%s latency_ms=%.0f",
+                        trace_id, site_id, session_id, iteration, tool_name,
+                        (time.monotonic() - tool_call_start) * 1000,
                     )
 
                     yield {"type": "tool_call", "name": tool_name, "status": "done"}
@@ -1107,6 +1148,13 @@ class ClinicAgentService:
                     "total_tokens": turn_usage["total_tokens"],
                 },
             }
+
+        logger.info(
+            "[CLINIC-LATENCY] turn_end trace_id=%s site_id=%s session_id=%s "
+            "total_ms=%.0f iterations=%d",
+            trace_id, site_id, session_id,
+            (time.monotonic() - turn_start_ts) * 1000, iteration,
+        )
 
         yield {
             "type": "done",
