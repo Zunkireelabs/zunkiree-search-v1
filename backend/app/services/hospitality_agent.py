@@ -31,7 +31,7 @@ You can also answer questions about the hotel's amenities, policies, location, d
 
 class HospitalityAgentService:
     def __init__(self):
-        self.client = get_openai_client("chat")
+        self.client = get_openai_client("chat_retry")
         self.model = settings.llm_model
         self.conversation_store = get_conversation_store()
 

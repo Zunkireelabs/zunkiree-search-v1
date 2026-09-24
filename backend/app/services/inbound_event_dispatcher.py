@@ -47,7 +47,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import async_session_maker
 from app.models import Customer, InboundWebhookEvent
 from app.services.connectors.resolver import ConnectorResolver
-from app.services.embeddings import get_embedding_service
+from app.services.embeddings import get_background_embedding_service
 from app.services.vector_store import get_vector_store_service
 
 logger = logging.getLogger("zunkiree.inbound_dispatcher")
@@ -125,7 +125,7 @@ async def handle_product_change(db: AsyncSession, event: InboundWebhookEvent) ->
         )
         return
 
-    embeddings = await get_embedding_service().create_embeddings([embedding_text])
+    embeddings = await get_background_embedding_service().create_embeddings([embedding_text])
     if not embeddings:
         raise RuntimeError(f"embedding service returned no vectors for product {external_id}")
 

@@ -33,7 +33,7 @@ TOOLS: product_search, add_to_cart, get_cart, remove_from_cart, checkout, add_to
 
 class AgentService:
     def __init__(self):
-        self.client = get_openai_client("chat")
+        self.client = get_openai_client("chat_retry")
         self.model = settings.llm_model
         self.conversation_store = get_conversation_store()
 

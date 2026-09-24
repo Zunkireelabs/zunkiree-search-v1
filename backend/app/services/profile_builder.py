@@ -74,7 +74,7 @@ class ProfileBuilderService:
 
     def __init__(self):
         from app.services.openai_client import get_openai_client
-        self.client = get_openai_client("chat")
+        self.client = get_openai_client("background")
 
     async def build_profile(
         self,

@@ -229,7 +229,7 @@ async def test_handle_product_change_calls_get_product_then_upserts_vector():
 
     with (
         patch.object(dispatcher_mod.ConnectorResolver, "for_tenant", fake_resolver),
-        patch.object(dispatcher_mod, "get_embedding_service", lambda: fake_embed_service),
+        patch.object(dispatcher_mod, "get_background_embedding_service", lambda: fake_embed_service),
         patch.object(dispatcher_mod, "get_vector_store_service", lambda: fake_vector_store),
     ):
         await handle_product_change(session, event)
