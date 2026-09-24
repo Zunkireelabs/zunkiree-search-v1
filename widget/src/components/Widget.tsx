@@ -6,6 +6,7 @@ import { ExpandedPanel } from './ExpandedPanel'
 import { DockedPanel } from './DockedPanel'
 import { bootstrap, destroy, getDockPanel } from '../layout/LayoutManager'
 import { enterDock, exitDock, DOCK_MIN_WIDTH } from '../layout/DockStateManager'
+import { fetchStream, assertOkOrThrow, shouldRetryDirect } from '../lib/streamFallback'
 
 interface Product {
   id: string
@@ -225,16 +226,13 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     }
 
     const runStream = async (streamUrl: string) => {
-      const response = await fetch(streamUrl, {
+      const response = await fetchStream(streamUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
 
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}))
-        throw new Error(data.detail?.message || 'Failed to get answer')
-      }
+      await assertOkOrThrow(response)
 
       const reader = response.body?.getReader()
       if (!reader) throw new Error('No response body')
@@ -332,12 +330,14 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       try {
         await runStream(chatStreamUrl)
       } catch (err) {
-        // Keep-live fallback (brief D3): a gateway outage before the first
-        // token must never make the widget go dead. Retry once, direct to
-        // Zunkiree. Skip the retry entirely once a token has been shown
-        // (would duplicate content) or when there's nowhere else to go
-        // (chat_stream_url unset, so we already tried the direct path).
-        if (firstTokenReceived || chatStreamUrl === directStreamUrl) throw err
+        // Keep-live fallback (brief D3, tightened per roadmap review
+        // session 52): only a fetch rejection or an HTTP 5xx from
+        // chat_stream_url is "the gateway is down" — retry once, direct
+        // to Zunkiree. A kill-switch SSE {"type":"error"} frame or any
+        // 4xx is a final answer from a reachable service and must never
+        // be retried, or an Orca kill switch / spend cap would silently
+        // not apply to chat. See shouldRetryDirect in lib/streamFallback.
+        if (!shouldRetryDirect(err, firstTokenReceived, chatStreamUrl === directStreamUrl)) throw err
         console.warn('[zunkiree-widget] chat_stream_url failed before first token, retrying direct path', err)
         await runStream(directStreamUrl)
       }
