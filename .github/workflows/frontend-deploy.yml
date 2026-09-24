@@ -15,15 +15,11 @@
 
 name: Deploy Frontend to Production
 
+# Dispatch-only: the Vercel -> VPS cutover for these frontends is Sadin's
+# decision, not something B1 (or any automated agent) should ship on its
+# own by pushing to main. Trigger manually via workflow_dispatch until
+# that decision is made.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'admin/**'
-      - 'legal/**'
-      - 'widget/**'
-      - 'docker-compose.frontend.yml'
-      - '.github/workflows/frontend-deploy.yml'
   workflow_dispatch: {}
 
 concurrency:
