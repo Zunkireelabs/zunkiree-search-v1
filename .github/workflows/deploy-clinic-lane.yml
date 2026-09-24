@@ -89,10 +89,10 @@ jobs:
               echo "::error::CLINICMD_SUPABASE_URL and/or CLINICMD_SUPABASE_ANON_KEY secrets are empty. Sadin sets these in the production environment before dispatching."
               exit 1
             fi
-            cat > backend/.env.clinic-prod <<ENVEOF
-CLINICMD_SUPABASE_URL=$CLINICMD_SUPABASE_URL
-CLINICMD_SUPABASE_ANON_KEY=$CLINICMD_SUPABASE_ANON_KEY
-ENVEOF
+            {
+              printf '%s=%s\n' CLINICMD_SUPABASE_URL "$CLINICMD_SUPABASE_URL"
+              printf '%s=%s\n' CLINICMD_SUPABASE_ANON_KEY "$CLINICMD_SUPABASE_ANON_KEY"
+            } > backend/.env.clinic-prod
             chmod 600 backend/.env.clinic-prod
 
             echo "=== Logging in to GHCR ==="
