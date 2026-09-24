@@ -23,6 +23,7 @@ class WidgetConfigResponse(BaseModel):
     supported_languages: list[str] = []
     website_type: str | None = None
     enable_shopping: bool = False
+    chat_stream_url: str | None = None
 
 
 @router.get("/config/{site_id}", response_model=WidgetConfigResponse)
@@ -99,4 +100,5 @@ async def get_widget_config(
         supported_languages=supported_languages,
         website_type=customer.website_type,
         enable_shopping=config.enable_shopping,
+        chat_stream_url=config.chat_stream_url,
     )

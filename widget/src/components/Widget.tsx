@@ -6,6 +6,7 @@ import { ExpandedPanel } from './ExpandedPanel'
 import { DockedPanel } from './DockedPanel'
 import { bootstrap, destroy, getDockPanel } from '../layout/LayoutManager'
 import { enterDock, exitDock, DOCK_MIN_WIDTH } from '../layout/DockStateManager'
+import { fetchStream, assertOkOrThrow, shouldRetryDirect } from '../lib/streamFallback'
 
 interface Product {
   id: string
@@ -85,6 +86,10 @@ interface WidgetConfig {
   supported_languages?: string[]
   website_type?: string | null
   enable_shopping?: boolean
+  // P3-WIDGET-THROUGH-ORCA-BRIEF Part B (B2). When set, chat turns go here
+  // instead of {apiUrl}/api/v1/query/stream. Nothing else (config,
+  // autocomplete, feedback, payments) ever reads this field.
+  chat_stream_url?: string | null
 }
 
 interface WidgetProps {
@@ -193,38 +198,46 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     }
     if (imageData) payload.image_data = imageData
 
-    try {
-      const response = await fetch(`${apiUrl}/api/v1/query/stream`, {
+    // B2: chat turns go to config.chat_stream_url (Orca) when the tenant
+    // has opted in, else the direct Zunkiree path — same SSE shape either
+    // way, so the widget doesn't need to know which one answered.
+    const directStreamUrl = `${apiUrl}/api/v1/query/stream`
+    const chatStreamUrl = config?.chat_stream_url || directStreamUrl
+
+    const decoder = new TextDecoder()
+    let streamingContent = ''
+    let addedMessage = false
+    // Never true until a token has actually reached the visitor — that's
+    // the line past which a retry would duplicate content instead of
+    // recovering silently (brief D3: "never after a token has been shown").
+    let firstTokenReceived = false
+
+    // Add empty assistant message once — then update DOM directly
+    const ensureMessage = () => {
+      if (!addedMessage) {
+        addedMessage = true
+        streamingRef.current = { id: assistantId, content: '' }
+        setMessages(prev => [...prev, {
+          id: assistantId,
+          role: 'assistant',
+          content: '',
+        }])
+      }
+    }
+
+    const runStream = async (streamUrl: string) => {
+      const response = await fetchStream(streamUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
 
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}))
-        throw new Error(data.detail?.message || 'Failed to get answer')
-      }
+      await assertOkOrThrow(response)
 
       const reader = response.body?.getReader()
       if (!reader) throw new Error('No response body')
 
-      const decoder = new TextDecoder()
       let buffer = ''
-      let streamingContent = ''
-      let addedMessage = false
-
-      // Add empty assistant message once — then update DOM directly
-      const ensureMessage = () => {
-        if (!addedMessage) {
-          addedMessage = true
-          streamingRef.current = { id: assistantId, content: '' }
-          setMessages(prev => [...prev, {
-            id: assistantId,
-            role: 'assistant',
-            content: '',
-          }])
-        }
-      }
 
       while (true) {
         const { done, value } = await reader.read()
@@ -243,6 +256,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
             const event = JSON.parse(jsonStr)
 
             if (event.type === 'token') {
+              firstTokenReceived = true
               ensureMessage()
               streamingContent += event.data
               // Direct DOM update — zero React overhead
@@ -309,6 +323,23 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
             throw parseErr
           }
         }
+      }
+    }
+
+    try {
+      try {
+        await runStream(chatStreamUrl)
+      } catch (err) {
+        // Keep-live fallback (brief D3, tightened per roadmap review
+        // session 52): only a fetch rejection or an HTTP 5xx from
+        // chat_stream_url is "the gateway is down" — retry once, direct
+        // to Zunkiree. A kill-switch SSE {"type":"error"} frame or any
+        // 4xx is a final answer from a reachable service and must never
+        // be retried, or an Orca kill switch / spend cap would silently
+        // not apply to chat. See shouldRetryDirect in lib/streamFallback.
+        if (!shouldRetryDirect(err, firstTokenReceived, chatStreamUrl === directStreamUrl)) throw err
+        console.warn('[zunkiree-widget] chat_stream_url failed before first token, retrying direct path', err)
+        await runStream(directStreamUrl)
       }
     } catch (error) {
       streamingRef.current = null
