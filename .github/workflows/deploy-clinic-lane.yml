@@ -1,0 +1,139 @@
+# Clinic lane (P2 brief §4 B2) — a dedicated single-purpose prod container
+# (zunkiree-clinic-prod) serving only the clinic agent, reachable by Orca
+# prod only. Deploys by manual dispatch ONLY, with an explicit sha — never
+# on push, and never as a side effect of the main deploy.yml push trigger.
+# During the Nov 1-10 freeze (P2 brief §7) nobody dispatches this except to
+# fix. Same image as the prod API — built from `main` by release.yml — and
+# the same VPS checkout as prod (backend/.env.clinic-prod layers the
+# ClinicMD-only vars on top of backend/.env; see .env.clinic-prod.example).
+
+name: Deploy Clinic Lane
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag (commit sha on main) to deploy"
+        required: true
+      skip_migrations:
+        description: "Skip database migrations"
+        required: false
+        default: "true"
+
+# Prevent concurrent deploys of this lane; independent of the prod API's
+# own deploy-production concurrency group so the two never block each other.
+concurrency:
+  group: deploy-clinic-lane
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          SKIP_MIGRATIONS: ${{ inputs.skip_migrations }}
+          CLINICMD_SUPABASE_URL: ${{ secrets.CLINICMD_SUPABASE_URL }}
+          CLINICMD_SUPABASE_ANON_KEY: ${{ secrets.CLINICMD_SUPABASE_ANON_KEY }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: GHCR_TOKEN,GHCR_USER,IMAGE_TAG,SKIP_MIGRATIONS,CLINICMD_SUPABASE_URL,CLINICMD_SUPABASE_ANON_KEY
+          script: |
+            set -e
+            cd /home/zunkireelabs/devprojects/zunkiree-search-v1
+
+            echo "=== Verifying working tree matches origin/main (no drift) ==="
+            # Unlike deploy.yml, this workflow does NOT reset the working
+            # tree — the prod API's own deploy already keeps it pinned to
+            # origin/main, and resetting it here mid-way through an
+            # unrelated deploy would be a surprise side effect on a shared
+            # checkout. Refuse instead of silently deploying stale code.
+            git fetch origin main
+            LOCAL_SHA=$(git rev-parse HEAD)
+            REMOTE_SHA=$(git rev-parse origin/main)
+            if [ "$LOCAL_SHA" != "$REMOTE_SHA" ]; then
+              echo "::error::VPS checkout ($LOCAL_SHA) does not match origin/main ($REMOTE_SHA). Run the prod deploy first, or investigate drift before dispatching the clinic lane."
+              exit 1
+            fi
+            if ! git diff --quiet || ! git diff --cached --quiet; then
+              echo "::error::VPS checkout has uncommitted changes. Refusing to deploy the clinic lane against a dirty tree."
+              exit 1
+            fi
+
+            echo "=== Verifying image_tag matches origin/main sha ==="
+            # The clinic lane runs the same image as the prod API, built
+            # from main by release.yml. Refuse anything else outright —
+            # no dispatching an arbitrary or stale tag onto this lane.
+            if [ "$IMAGE_TAG" != "$REMOTE_SHA" ]; then
+              echo "::error::image_tag ($IMAGE_TAG) does not match origin/main ($REMOTE_SHA). Dispatch with the current main sha."
+              exit 1
+            fi
+
+            echo "=== Rendering backend/.env.clinic-prod from secrets ==="
+            # Generated fresh on every deploy — never hand-edited on the
+            # VPS (see backend/.env.clinic-prod.example). Values come only
+            # from GitHub secrets in the production environment; never
+            # echoed or logged.
+            if [ -z "$CLINICMD_SUPABASE_URL" ] || [ -z "$CLINICMD_SUPABASE_ANON_KEY" ]; then
+              echo "::error::CLINICMD_SUPABASE_URL and/or CLINICMD_SUPABASE_ANON_KEY secrets are empty. Sadin sets these in the production environment before dispatching."
+              exit 1
+            fi
+            {
+              printf '%s=%s\n' CLINICMD_SUPABASE_URL "$CLINICMD_SUPABASE_URL"
+              printf '%s=%s\n' CLINICMD_SUPABASE_ANON_KEY "$CLINICMD_SUPABASE_ANON_KEY"
+            } > backend/.env.clinic-prod
+            chmod 600 backend/.env.clinic-prod
+
+            echo "=== Logging in to GHCR ==="
+            printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+            echo "=== Pulling image ghcr.io/zunkireelabs/zunkiree-search-api:$IMAGE_TAG ==="
+            docker pull "ghcr.io/zunkireelabs/zunkiree-search-api:$IMAGE_TAG"
+
+            echo "=== Running migrations ==="
+            # Same shared Supabase project as prod + stage — migrations are
+            # additive/idempotent by repo convention, safe to re-run here.
+            if [ "$SKIP_MIGRATIONS" != "true" ]; then
+              DB_URL=$(grep -E '^DATABASE_URL=' backend/.env | head -1 | cut -d'=' -f2-)
+              if [ -z "$DB_URL" ]; then
+                echo "::error::Could not read DATABASE_URL from backend/.env — refusing to deploy without verifying migrations ran"
+                exit 1
+              fi
+              ./scripts/migrate.sh "$DB_URL"
+            else
+              echo "Skipping migrations (manual override)"
+            fi
+
+            echo "=== Restarting clinic lane with pulled image ==="
+            IMAGE_TAG="$IMAGE_TAG" docker compose --profile clinic up -d --no-build --force-recreate zunkiree-clinic-prod
+
+            echo "=== Verifying health ==="
+            sleep 10
+            for i in 1 2 3 4 5; do
+              if docker exec zunkiree-clinic-prod python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" 2>/dev/null; then
+                echo "Clinic lane health check passed"
+                docker logout ghcr.io || true
+                exit 0
+              fi
+              echo "Attempt $i failed, waiting 10s..."
+              sleep 10
+            done
+            echo "ERROR: Clinic lane health check failed after 5 attempts"
+            docker logs zunkiree-clinic-prod --tail 30
+            docker logout ghcr.io || true
+            exit 1
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "::error::Clinic lane deploy failed! Check VPS logs."

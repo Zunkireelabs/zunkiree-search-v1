@@ -97,6 +97,54 @@ services:
     # --workers here must match UVICORN_WORKERS above.
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
 
+  # Clinic lane (P2 brief §4 B2) — a dedicated single-purpose container
+  # serving ONLY the clinic agent (dental-city, and Client #2 once its
+  # channels/dates are known — see §7b), reachable from Orca prod only. Same
+  # image as the prod API, same Supabase project, but:
+  #   - 1 worker: in-process state (ConversationStore, the confirmation gate
+  #     in clinic_tools.py) is only correct with one worker per process — see
+  #     the comments at those two spots.
+  #   - its own 2-socket DB budget (DB_POOL_SIZE/DB_MAX_OVERFLOW), sized from
+  #     the B0 measurement in the brief, not guessed — see database.py's
+  #     ceiling comment for the three-environment arithmetic (10+2+2=14/15).
+  #   - the inbound webhook dispatcher OFF (ENABLE_INBOUND_DISPATCHER=false)
+  #     — that's Stella work and belongs to the prod API container, not here.
+  #   - CLINICMD_* set only here, in backend/.env.clinic-prod (gitignored;
+  #     Sadin sets the values — see .env.clinic-prod.example for the names).
+  # No Traefik labels: not given a public host route. It joins the same
+  # `hosting` network as everything else on this VPS, so another container
+  # on that network (Orca prod) reaches it by Docker DNS at
+  # http://zunkiree-clinic-prod:8000 — private-network reachability, not a
+  # new public surface. Deploys by manual workflow_dispatch only (see
+  # .github/workflows/deploy-clinic-lane.yml), same dispatch-only rule as
+  # Orca prod. Built from `main`, same as the prod API.
+  zunkiree-clinic-prod:
+    image: ghcr.io/zunkireelabs/zunkiree-search-api:${IMAGE_TAG:?IMAGE_TAG must be set or use docker-compose.override.yml for local dev}
+    container_name: zunkiree-clinic-prod
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+      - ./backend/.env.clinic-prod
+    environment:
+      - ENVIRONMENT=production
+      - UVICORN_WORKERS=1
+      - DB_POOL_SIZE=2
+      - DB_MAX_OVERFLOW=0
+      - ENABLE_INBOUND_DISPATCHER=false
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - hosting
+    profiles:
+      - clinic
+    # --workers here must match UVICORN_WORKERS above — see the note atop
+    # this service and backend/Dockerfile's pool-sizing comment.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+
   zunkiree-backup:
     image: postgres:16-alpine
     container_name: zunkiree-backup

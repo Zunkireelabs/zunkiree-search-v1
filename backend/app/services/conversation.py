@@ -12,6 +12,12 @@ TTL_SECONDS = 4 * 60 * 60  # 4 hours
 
 
 class ConversationStore:
+    # in-process state: correct only with one worker per serving process;
+    # see P2 brief. Two turns of the same session can land on different
+    # workers/containers otherwise, and the second worker won't have this
+    # history — see clinic_agent.py's ConversationStore/confirmation-gate
+    # usage and clinic_tools.py's get_awaiting_confirmation for the sharpest
+    # case (a caller's "yes" reaching a worker that never asked the question).
     def __init__(self):
         self._store: dict[str, dict] = {}
 

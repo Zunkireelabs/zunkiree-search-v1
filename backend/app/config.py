@@ -33,6 +33,15 @@ class Settings(BaseSettings):
     # current documented worker counts (prod=2, staging=1).
     uvicorn_workers: int | None = None
 
+    # Z4 inbound webhook dispatcher — one asyncio task per container, started
+    # in main.py's lifespan. On by default everywhere (stage + prod both run
+    # it; SKIP LOCKED keeps concurrent pickers correct against the shared
+    # Supabase). The P2 clinic lane (a single-purpose container serving only
+    # the clinic agent) sets this false: the dispatcher would otherwise spend
+    # the lane's 2-socket DB budget and CPU doing Stella work that belongs to
+    # the main prod API container. One lane, one job. See P2 brief §4 B2.
+    enable_inbound_dispatcher: bool = True
+
     @model_validator(mode="after")
     def fix_database_url(self):
         if self.database_url.startswith("postgresql://"):
