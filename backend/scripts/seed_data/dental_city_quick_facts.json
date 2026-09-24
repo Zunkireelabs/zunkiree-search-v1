@@ -1,0 +1,47 @@
+[
+  {
+    "category": "hours",
+    "keywords": [
+      "hour", "hours", "open", "opening", "close", "closing", "timing", "time are you",
+      "खुल्ने", "खुल्छ", "खुल्दा", "बन्द", "समय"
+    ],
+    "answer": "Dental City is open every day, 10:00 AM to 8:00 PM."
+  },
+  {
+    "category": "address",
+    "keywords": [
+      "located", "location", "address", "where are you", "where is",
+      "ठेगाना", "कहाँ", "स्थित"
+    ],
+    "answer": "Dental City is located in Thimi, Bhaktapur, Nepal."
+  },
+  {
+    "category": "contact",
+    "keywords": [
+      "phone", "number", "call you", "contact",
+      "फोन", "नम्बर", "सम्पर्क"
+    ],
+    "answer": "You can reach Dental City at 980-1222339."
+  },
+  {
+    "category": "contact",
+    "keywords": ["email", "इमेल", "मेल"],
+    "answer": "You can email Dental City at thedentalcity@gmail.com."
+  },
+  {
+    "category": "staff",
+    "keywords": [
+      "dentist", "doctor", "who is the", "lead dentist",
+      "डाक्टर", "दन्त चिकित्सक", "चिकित्सक"
+    ],
+    "answer": "Dr. Bidhan Shrestha is the lead dentist at Dental City."
+  },
+  {
+    "category": "services_overview",
+    "keywords": [
+      "what services", "what do you offer", "what treatments", "services do you", "what kind of",
+      "सेवा", "उपचार"
+    ],
+    "answer": "Dental City, led by Dr. Bidhan Shrestha, offers General Dentistry (preventive care like exams and cleanings), Cosmetic Dentistry, Restorative Dentistry (repairing damaged or missing teeth), and Oral Surgery. Ask about a specific treatment for its price and duration."
+  }
+]
