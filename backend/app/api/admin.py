@@ -1412,20 +1412,46 @@ async def delete_product(
     """Delete a product."""
     customer = await _resolve_customer(site_id, db)
 
-    result = await db.execute(
-        delete(Product).where(
+    # Look the product up first (rather than a blind DELETE) so we have its
+    # vector_id to also remove from Pinecone -- a deleted Product row whose
+    # Pinecone vector survives is an orphan the default-RAG path can never
+    # resolve to content (vector orphans brief, 2026-09-24 session 53).
+    product_result = await db.execute(
+        select(Product).where(
             Product.id == uuid.UUID(product_id),
             Product.customer_id == customer.id,
         )
     )
+    product = product_result.scalar_one_or_none()
 
-    if result.rowcount == 0:
+    if product is None:
         raise HTTPException(
             status_code=404,
             detail={"code": "PRODUCT_NOT_FOUND", "message": "Product not found"},
         )
 
+    vector_id = product.vector_id
+
+    await db.execute(
+        delete(Product).where(
+            Product.id == uuid.UUID(product_id),
+            Product.customer_id == customer.id,
+        )
+    )
     await db.commit()
+
+    # The Postgres delete already stands -- a Pinecone failure here doesn't
+    # roll it back, it's logged and swallowed (matches the dispatcher's
+    # per-handler error isolation).
+    if vector_id:
+        try:
+            await get_vector_store_service().delete_vectors([vector_id], namespace=site_id)
+        except Exception as e:
+            logger.warning(
+                "[VECTOR-ORPHAN] product delete left vector_id=%s namespace=%s undeleted: %s",
+                vector_id, site_id, e,
+            )
+
     return {"message": "Product deleted successfully"}
 
 
