@@ -575,11 +575,19 @@ class IngestionService:
             )
             db.add(doc_chunk)
 
+        # Commit document chunks to Postgres FIRST, then upsert to Pinecone.
+        # If the Pinecone call fails or times out after this point, the
+        # DocumentChunk rows already exist -- a row with no vector, which is
+        # harmless (full-text/keyword search still finds it, and a retried
+        # ingest or later upsert can backfill the vector). The reverse order
+        # (upsert first, commit after) let a failure between the two calls
+        # leave a Pinecone vector with no matching Postgres row forever --
+        # the root cause of kasa-clothing's CHUNK_MISMATCH orphans (vector
+        # orphans brief, 2026-09-24 session 53).
+        await db.commit()
+
         # Upsert to Pinecone
         await self.vector_store.upsert_vectors(vectors, namespace=site_id)
-
-        # Commit document chunks
-        await db.commit()
 
         # Backfill search_vector for full-text search
         vector_ids = [v["id"] for v in vectors]

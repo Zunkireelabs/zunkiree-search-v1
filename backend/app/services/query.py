@@ -158,7 +158,16 @@ class QueryService:
 
         logger.warning("[QUERY-TRACE] postgres_chunks=%d customer_id=%s vector_ids_requested=%d", len(db_chunks), customer.id, len(fused_ids))
         if len(db_chunks) < len(fused_ids):
-            logger.warning("[QUERY-TRACE] CHUNK_MISMATCH missing_count=%d", len(fused_ids) - len(db_chunks))
+            found_vector_ids = {chunk.vector_id for chunk in db_chunks}
+            missing_ids = [vid for vid in fused_ids if vid not in found_vector_ids]
+            # Log every missing id (capped at 50) -- previously only the
+            # count was logged, which was enough to see a mismatch but not
+            # to diagnose which vectors were orphaned (vector orphans brief,
+            # 2026-09-24 session 53).
+            logger.warning(
+                "[QUERY-TRACE] CHUNK_MISMATCH missing_count=%d missing_ids=%s",
+                len(missing_ids), missing_ids[:50],
+            )
 
         # Build ordered chunk list preserving RRF fusion ranking
         fused_rank = {vid: idx for idx, vid in enumerate(fused_ids)}

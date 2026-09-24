@@ -17,6 +17,7 @@ from sqlalchemy import select, func, text, desc
 from app.database import get_db
 from app.models import Customer, Product, WidgetConfig
 from app.models.order import Order
+from app.services.vector_store import get_vector_store_service
 
 logger = logging.getLogger("zunkiree.ecommerce_dashboard")
 
@@ -320,8 +321,24 @@ async def delete_product(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
+    vector_id = product.vector_id
+
     await db.delete(product)
     await db.commit()
+
+    # The Postgres delete already stands -- a Pinecone failure here doesn't
+    # roll it back, it's logged and swallowed (matches the dispatcher's
+    # per-handler error isolation). A deleted Product row whose Pinecone
+    # vector survives is an orphan the default-RAG path can never resolve
+    # to content (vector orphans brief, 2026-09-24 session 53).
+    if vector_id:
+        try:
+            await get_vector_store_service().delete_vectors([vector_id], namespace=customer.site_id)
+        except Exception as e:
+            logger.warning(
+                "[VECTOR-ORPHAN] product delete left vector_id=%s namespace=%s undeleted: %s",
+                vector_id, customer.site_id, e,
+            )
 
     return {"detail": "Product deleted"}
 
