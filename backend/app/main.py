@@ -47,9 +47,13 @@ async def lifespan(app: FastAPI):
     # Z4 inbound webhook dispatcher — single asyncio task per container.
     # Both stage and prod replicas run it; SELECT ... FOR UPDATE SKIP LOCKED
     # in the dispatcher's batch picker prevents duplicate row processing
-    # against the shared Supabase (locked Z4 §1.5).
+    # against the shared Supabase (locked Z4 §1.5). ENABLE_INBOUND_DISPATCHER
+    # defaults true so every existing container is unchanged; the P2 clinic
+    # lane sets it false — one lane, one job (see config.py, P2 brief §4 B2).
     stop_event = asyncio.Event()
-    dispatcher_task = asyncio.create_task(run_dispatcher_loop(stop_event))
+    dispatcher_task: asyncio.Task | None = None
+    if settings.enable_inbound_dispatcher:
+        dispatcher_task = asyncio.create_task(run_dispatcher_loop(stop_event))
     app.state.inbound_dispatcher_stop_event = stop_event
     app.state.inbound_dispatcher_task = dispatcher_task
 
@@ -58,14 +62,15 @@ async def lifespan(app: FastAPI):
     # Shutdown
     print("Shutting down Zunkiree Search API...")
     stop_event.set()
-    try:
-        await asyncio.wait_for(dispatcher_task, timeout=10)
-    except asyncio.TimeoutError:
-        dispatcher_task.cancel()
+    if dispatcher_task is not None:
         try:
-            await dispatcher_task
-        except (asyncio.CancelledError, Exception):
-            pass
+            await asyncio.wait_for(dispatcher_task, timeout=10)
+        except asyncio.TimeoutError:
+            dispatcher_task.cancel()
+            try:
+                await dispatcher_task
+            except (asyncio.CancelledError, Exception):
+                pass
 
 
 app = FastAPI(

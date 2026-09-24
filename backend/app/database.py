@@ -21,10 +21,14 @@ settings = get_settings()
 # Total socket budget per environment (pool_size + max_overflow, summed
 # across all workers), leaving headroom for psql, migrations, the background
 # dispatcher, and the Supabase dashboard against the shared 15-connection
-# ceiling:
-#   prod:    10 (currently 2 workers x (pool_size=2 + max_overflow=3))
-#   staging: 2  (currently 1 worker  x (pool_size=1 + max_overflow=1))
-#   total:   12 of 15 -> 3 connections of headroom
+# ceiling. Three environments share this ceiling as of the P2 clinic lane
+# (brief §4 B2, §7b):
+#   prod API:    10 (currently 2 workers x (pool_size=2 + max_overflow=3))
+#   staging:      2 (currently 1 worker  x (pool_size=1 + max_overflow=1))
+#   clinic lane:  2 (1 worker x (DB_POOL_SIZE=2 + DB_MAX_OVERFLOW=0), set
+#                    explicitly via env — see P2 brief §7b B0 measurement:
+#                    1 socket per turn, held only on a cold per-process cache)
+#   total:       14 of 15 -> 1 connection of headroom (§5's abort line)
 #
 # Prod's budget was raised from 8 to 10 after staging verification of PR #56:
 # prod was observed holding 10 pooler connections steadily (sampled three

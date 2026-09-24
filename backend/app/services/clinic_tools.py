@@ -129,6 +129,12 @@ CLINIC_TOOLS = [
     },
 ]
 
+# in-process state: correct only with one worker per serving process; see
+# P2 brief. The confirmation gate below (get_awaiting_confirmation) reads
+# this dict — a booking "prepared" on one worker is invisible to another, so
+# a caller's "yes" can reach a worker that never staged the booking. Do not
+# raise this process's worker count without moving this state to a shared
+# store first (see also conversation.py's ConversationStore).
 _SESSION_STATE: dict[str, dict] = {}
 _ORG_CACHE: dict[str, dict] = {}
 
@@ -344,9 +350,18 @@ async def _resolve_org(db: AsyncSession, customer: Customer) -> tuple[str, list[
     row = result.scalar_one_or_none()
     if not row:
         raise ClinicMdError("No ClinicMD org mapping configured for this tenant.", code="NOT_CONFIGURED")
+    remote_site_id = row.remote_site_id
+
+    # Release the DB session before the ClinicMD HTTP call, so a cold-cache
+    # turn doesn't hold a pooler socket for the ~1.3-1.5s get_org/list_branches
+    # round trip. Read the credential, commit, then call out. Measured on
+    # stage: this was the only >0-socket hold in the B0 probe (P2 brief §7b) —
+    # on the clinic lane's 2-socket budget, 5 concurrent cold-start turns
+    # would otherwise queue on it.
+    await db.commit()
 
     client = get_clinicmd_client()
-    org = await client.get_org(row.remote_site_id)
+    org = await client.get_org(remote_site_id)
     if not org:
         raise ClinicMdError(f"ClinicMD org '{row.remote_site_id}' not found or inactive.", code="ORG_NOT_FOUND")
 
