@@ -517,7 +517,13 @@ async def submit_query_stream(
     """
     Submit a question and receive a streamed AI-generated answer via SSE.
     """
-    logger.warning("[QUERY-STREAM] site_id=%s question=%r", query.site_id, query.question[:80])
+    # channel is logged here (not just deep in clinic_agent's turn_start) so
+    # an Orca-forwarded chat turn and a direct widget turn can be proven to
+    # take the same path straight from this one line — brief B3, exit test 1.
+    logger.warning(
+        "[QUERY-STREAM] site_id=%s channel=%s question=%r",
+        query.site_id, query.channel or "chat", query.question[:80],
+    )
 
     if not query.question or not query.question.strip():
         raise HTTPException(

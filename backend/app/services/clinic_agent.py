@@ -687,7 +687,10 @@ class ClinicAgentService:
         # confirm gate needs the visitor's ORIGINAL words.
         user_message = question
         turn_start_ts = time.monotonic()
-        logger.info("[CLINIC-LATENCY] turn_start trace_id=%s site_id=%s session_id=%s", trace_id, site_id, session_id)
+        logger.info(
+            "[CLINIC-LATENCY] turn_start trace_id=%s site_id=%s session_id=%s channel=%s",
+            trace_id, site_id, session_id, channel,
+        )
         now_npt_dt = datetime.now(NPT)
         now_npt = now_npt_dt.strftime("%A, %Y-%m-%d %H:%M")
         channel_block = _VOICE_CHANNEL_BLOCK if channel == "voice" else ""

@@ -45,6 +45,10 @@ class WidgetConfig(Base):
     stripe_account_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     payment_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     shipping_countries: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array of country codes
+    # P3-WIDGET-THROUGH-ORCA-BRIEF Part B (B1): when set, the widget sends
+    # chat turns here instead of {apiUrl}/api/v1/query/stream. Absent by
+    # default; clearing it is the rollback (see migration 039).
+    chat_stream_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

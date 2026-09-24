@@ -5,7 +5,7 @@ import io
 import secrets
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Header, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import Integer, select, func, case, delete
 
@@ -117,6 +117,17 @@ class UpdateConfigRequest(BaseModel):
     product_source: str | None = Field(None, pattern="^(scraped|storefront)$")
     storefront_fetch_mode: str | None = Field(None, pattern="^(realtime|synced)$")
     checkout_mode: str | None = Field(None, pattern="^(redirect|in-app|inquiry)$")
+    # P3-WIDGET-THROUGH-ORCA-BRIEF Part B (B1). Explicit null clears it
+    # (rollback) — see update_config below, which special-cases this field
+    # since the generic loop skips None values.
+    chat_stream_url: str | None = None
+
+    @field_validator("chat_stream_url")
+    @classmethod
+    def _validate_chat_stream_url(cls, v: str | None) -> str | None:
+        if v is not None and not v.startswith("https://"):
+            raise ValueError("chat_stream_url must be an https:// URL")
+        return v
 
 
 class JobInfo(BaseModel):
@@ -951,6 +962,11 @@ async def update_config(
 
     # Update fields
     update_data = request.model_dump(exclude_unset=True)
+    # chat_stream_url is the one field an explicit null must actually clear
+    # (brief §2: "Rollback = clear the field"). Handled before the generic
+    # loop, which skips None values by design for every other field.
+    if "chat_stream_url" in update_data:
+        config.chat_stream_url = update_data.pop("chat_stream_url")
     for field, value in update_data.items():
         if value is not None:
             setattr(config, field, value)
