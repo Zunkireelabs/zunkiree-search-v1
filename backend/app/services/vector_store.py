@@ -14,14 +14,39 @@ settings = get_settings()
 # P2 brief §7c B4 stage hang. Every call below runs in a thread via
 # asyncio.to_thread (so the loop stays free) and under asyncio.wait_for (so
 # a stalled call still fails within a bound instead of pinning a thread-pool
-# slot indefinitely). Queries/upserts/deletes are normally sub-second, so
-# the bound has generous headroom without pushing a voice turn's total
-# latency close to Orca's 25s run timeout.
+# slot indefinitely).
+#
+# Two bounds:
+# - PINECONE_TIMEOUT_SECONDS (6s): the hot query path (query_vectors), which
+#   sits in a voice-budgeted /query/stream turn — same rationale as before.
+# - PINECONE_WRITE_TIMEOUT_SECONDS (60s): upsert_vectors and
+#   delete_namespace/delete_vectors, called from ingestion and the inbound
+#   dispatcher, neither of which is voice-budgeted. A 50-vector upsert batch
+#   or a full-namespace delete can legitimately take longer than the 6s
+#   query bound allows, and failing an ingest/dispatcher write outright is
+#   worse than it taking longer (P2 brief §7c B4 follow-up, 2026-09-24).
+#   Passed as a per-call `timeout=` kwarg (upsert/delete both support one,
+#   overriding the client-level default) rather than raising the client's
+#   own wire-level timeout, so the hot query path's wire-level bound stays
+#   at 6s.
 PINECONE_TIMEOUT_SECONDS = 6.0
+PINECONE_WRITE_TIMEOUT_SECONDS = 60.0
 
 
-async def _run_bounded(fn, *args, **kwargs):
-    return await asyncio.wait_for(asyncio.to_thread(fn, *args, **kwargs), timeout=PINECONE_TIMEOUT_SECONDS)
+async def _run_bounded(fn, *args, _bound: float | None = None, **kwargs):
+    """Run `fn` in a thread under an asyncio.wait_for bound.
+
+    `_bound` is this wrapper's own asyncio-level deadline (leading
+    underscore so it can't collide with a `timeout` kwarg meant for `fn`
+    itself, e.g. the SDK's own per-call `timeout=` on upsert/delete — every
+    other kwarg passes straight through to `fn`). Defaults to
+    PINECONE_TIMEOUT_SECONDS, read from module scope at call time (not as
+    a function-default) so monkeypatching that module attribute still
+    takes effect for callers that don't pass `_bound` explicitly.
+    """
+    if _bound is None:
+        _bound = PINECONE_TIMEOUT_SECONDS
+    return await asyncio.wait_for(asyncio.to_thread(fn, *args, **kwargs), timeout=_bound)
 
 
 class VectorStoreService:
@@ -58,7 +83,13 @@ class VectorStoreService:
         batch_size = 50
         for i in range(0, len(vectors), batch_size):
             batch = vectors[i:i + batch_size]
-            await _run_bounded(self.index.upsert, vectors=batch, namespace=namespace)
+            await _run_bounded(
+                self.index.upsert,
+                vectors=batch,
+                namespace=namespace,
+                timeout=PINECONE_WRITE_TIMEOUT_SECONDS,
+                _bound=PINECONE_WRITE_TIMEOUT_SECONDS,
+            )
         return len(vectors)
 
     async def query_vectors(
@@ -122,12 +153,24 @@ class VectorStoreService:
 
     async def delete_namespace(self, namespace: str) -> None:
         """Delete all vectors in a namespace."""
-        await _run_bounded(self.index.delete, delete_all=True, namespace=namespace)
+        await _run_bounded(
+            self.index.delete,
+            delete_all=True,
+            namespace=namespace,
+            timeout=PINECONE_WRITE_TIMEOUT_SECONDS,
+            _bound=PINECONE_WRITE_TIMEOUT_SECONDS,
+        )
 
     async def delete_vectors(self, ids: list[str], namespace: str) -> None:
         """Delete specific vectors by ID."""
         if ids:
-            await _run_bounded(self.index.delete, ids=ids, namespace=namespace)
+            await _run_bounded(
+                self.index.delete,
+                ids=ids,
+                namespace=namespace,
+                timeout=PINECONE_WRITE_TIMEOUT_SECONDS,
+                _bound=PINECONE_WRITE_TIMEOUT_SECONDS,
+            )
 
 
 # Singleton instance

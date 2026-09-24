@@ -6,6 +6,8 @@ profiles: "embeddings" and "chat" (voice-budgeted), "chat_retry" (async
 DM/hospitality agents, not voice-budgeted, SDK-style retries restored),
 and "background" (ingestion/profile-builder/inbound-dispatcher bulk work).
 """
+import pytest
+
 from app.services.openai_client import (
     BACKGROUND_MAX_RETRIES,
     BACKGROUND_TIMEOUT_SECONDS,
@@ -71,11 +73,13 @@ def test_voice_budget_profiles_keep_zero_or_one_retry():
         assert client.max_retries < 2
 
 
-def test_unknown_kind_falls_back_to_chat_profile():
-    client = get_openai_client("not-a-real-profile")
-    chat_client = get_openai_client("chat")
-    assert client.timeout == chat_client.timeout
-    assert client.max_retries == chat_client.max_retries
+def test_unknown_kind_raises_instead_of_silently_falling_back():
+    # A silent fallback to "chat" would mean a call site with a typo'd kind
+    # (or one referencing a profile that got renamed) quietly runs under
+    # the wrong timeout/retry budget instead of failing loudly at the call
+    # site that introduced the typo (P2 brief §7c B4 follow-up, 2026-09-24).
+    with pytest.raises(ValueError, match="not-a-real-profile"):
+        get_openai_client("not-a-real-profile")
 
 
 def test_api_key_override_is_used():
