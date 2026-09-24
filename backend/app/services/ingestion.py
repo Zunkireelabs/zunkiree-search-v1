@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 
 from app.models import Customer, IngestionJob, DocumentChunk, Product
-from app.services.embeddings import get_embedding_service
+from app.services.embeddings import get_background_embedding_service
 from app.services.vector_store import get_vector_store_service
 from app.utils.chunking import chunk_text
 from app.utils.crawling import crawl_url, extract_text_from_pdf
@@ -19,7 +19,7 @@ MIN_CONTENT_LENGTH = 300
 
 class IngestionService:
     def __init__(self):
-        self.embedding_service = get_embedding_service()
+        self.embedding_service = get_background_embedding_service()
         self.vector_store = get_vector_store_service()
 
     async def _scrape_and_store_products(

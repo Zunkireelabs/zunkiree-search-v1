@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import logging
 from pinecone import Pinecone
 from app.config import get_settings
@@ -6,10 +7,29 @@ from app.config import get_settings
 logger = logging.getLogger("zunkiree.vector_store")
 settings = get_settings()
 
+# The Pinecone SDK's Index methods are synchronous (blocking) HTTP calls.
+# Called directly from an `async def`, a slow Pinecone response freezes the
+# *entire* single-worker event loop (not just the one request) for as long
+# as it takes — matching the "container idle, not looping" symptom in the
+# P2 brief §7c B4 stage hang. Every call below runs in a thread via
+# asyncio.to_thread (so the loop stays free) and under asyncio.wait_for (so
+# a stalled call still fails within a bound instead of pinning a thread-pool
+# slot indefinitely). Queries/upserts/deletes are normally sub-second, so
+# the bound has generous headroom without pushing a voice turn's total
+# latency close to Orca's 25s run timeout.
+PINECONE_TIMEOUT_SECONDS = 6.0
+
+
+async def _run_bounded(fn, *args, **kwargs):
+    return await asyncio.wait_for(asyncio.to_thread(fn, *args, **kwargs), timeout=PINECONE_TIMEOUT_SECONDS)
+
 
 class VectorStoreService:
     def __init__(self):
-        self.pc = Pinecone(api_key=settings.pinecone_api_key)
+        # Also tighten the client's own wire-level timeout (default 30s) so
+        # the underlying HTTP call is bounded even independent of the
+        # to_thread wrapper above.
+        self.pc = Pinecone(api_key=settings.pinecone_api_key, timeout=PINECONE_TIMEOUT_SECONDS)
         self.index = self.pc.Index(
             name=settings.pinecone_index_name,
             host=settings.pinecone_host,
@@ -38,10 +58,7 @@ class VectorStoreService:
         batch_size = 50
         for i in range(0, len(vectors), batch_size):
             batch = vectors[i:i + batch_size]
-            self.index.upsert(
-                vectors=batch,
-                namespace=namespace,
-            )
+            await _run_bounded(self.index.upsert, vectors=batch, namespace=namespace)
         return len(vectors)
 
     async def query_vectors(
@@ -82,7 +99,8 @@ class VectorStoreService:
         # [TEMP-LOG] Log Pinecone query details
         logger.warning("[QUERY-TRACE] pinecone_query namespace=%s top_k=%d filter=%s index=%s", namespace, top_k, query_filter, settings.pinecone_index_name)
 
-        results = self.index.query(
+        results = await _run_bounded(
+            self.index.query,
             vector=query_vector,
             namespace=namespace,
             top_k=top_k,
@@ -104,12 +122,12 @@ class VectorStoreService:
 
     async def delete_namespace(self, namespace: str) -> None:
         """Delete all vectors in a namespace."""
-        self.index.delete(delete_all=True, namespace=namespace)
+        await _run_bounded(self.index.delete, delete_all=True, namespace=namespace)
 
     async def delete_vectors(self, ids: list[str], namespace: str) -> None:
         """Delete specific vectors by ID."""
         if ids:
-            self.index.delete(ids=ids, namespace=namespace)
+            await _run_bounded(self.index.delete, ids=ids, namespace=namespace)
 
 
 # Singleton instance

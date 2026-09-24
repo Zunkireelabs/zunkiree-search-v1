@@ -15,6 +15,14 @@ Background asyncio task started in `app.main.lifespan`. Every tick:
    and leave `processed_at` NULL (next tick retries — bounded by 24h).
 4. Commit once per batch, releasing the row locks.
 
+Per-row bound: handle_product_change's embeddings + Pinecone upsert calls
+inherit their bound from the shared OpenAI client (app/services/openai_client.py)
+and vector_store's asyncio.to_thread wrapper — no dispatcher-specific timeout
+code needed. A stalled row now raises within that bound instead of hanging;
+the existing per-handler `except Exception` below still catches it, marks
+processing_error, and moves on (transaction shape unchanged, per P2 brief
+§7c B4 item 5).
+
 Locked decisions (Z4 §1.3 hybrid):
 - handle_product_change + handle_product_deleted: full implementation —
   re-fetch from connector, re-embed via existing embeddings/vector_store
@@ -39,7 +47,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import async_session_maker
 from app.models import Customer, InboundWebhookEvent
 from app.services.connectors.resolver import ConnectorResolver
-from app.services.embeddings import get_embedding_service
+from app.services.embeddings import get_background_embedding_service
 from app.services.vector_store import get_vector_store_service
 
 logger = logging.getLogger("zunkiree.inbound_dispatcher")
@@ -117,7 +125,7 @@ async def handle_product_change(db: AsyncSession, event: InboundWebhookEvent) ->
         )
         return
 
-    embeddings = await get_embedding_service().create_embeddings([embedding_text])
+    embeddings = await get_background_embedding_service().create_embeddings([embedding_text])
     if not embeddings:
         raise RuntimeError(f"embedding service returned no vectors for product {external_id}")
 

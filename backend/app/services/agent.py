@@ -6,12 +6,12 @@ Handles multi-turn conversations, product search, cart management, wishlist, and
 import json
 import logging
 import uuid
-from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.conversation import get_conversation_store
 from app.services.tools import ECOMMERCE_TOOLS, execute_tool
 from app.config import get_settings
+from app.services.openai_client import get_openai_client
 
 logger = logging.getLogger("zunkiree.agent")
 settings = get_settings()
@@ -33,7 +33,7 @@ TOOLS: product_search, add_to_cart, get_cart, remove_from_cart, checkout, add_to
 
 class AgentService:
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self.client = get_openai_client("chat_retry")
         self.model = settings.llm_model
         self.conversation_store = get_conversation_store()
 

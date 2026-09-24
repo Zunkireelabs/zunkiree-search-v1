@@ -1,13 +1,13 @@
 from __future__ import annotations
-from openai import AsyncOpenAI
 from app.config import get_settings
+from app.services.openai_client import get_openai_client
 
 settings = get_settings()
 
 
 class EmbeddingService:
-    def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
+    def __init__(self, kind: str = "embeddings"):
+        self.client = get_openai_client(kind)
         self.model = settings.embedding_model
         self.dimensions = settings.embedding_dimensions
 
@@ -33,8 +33,14 @@ class EmbeddingService:
         return [item.embedding for item in response.data]
 
 
-# Singleton instance
+# Singleton instance — bound to the "embeddings" profile (8s timeout, 1
+# retry). Used by the hot RAG retrieval path, which is voice-budgeted.
 _embedding_service: EmbeddingService | None = None
+
+# Singleton instance for background/bulk work — bound to the "background"
+# profile (120s timeout, 2 retries) so a single-item ingest or an inbound
+# webhook's per-row embed doesn't fail outright on a slow OpenAI call.
+_background_embedding_service: EmbeddingService | None = None
 
 
 def get_embedding_service() -> EmbeddingService:
@@ -42,3 +48,10 @@ def get_embedding_service() -> EmbeddingService:
     if _embedding_service is None:
         _embedding_service = EmbeddingService()
     return _embedding_service
+
+
+def get_background_embedding_service() -> EmbeddingService:
+    global _background_embedding_service
+    if _background_embedding_service is None:
+        _background_embedding_service = EmbeddingService(kind="background")
+    return _background_embedding_service
