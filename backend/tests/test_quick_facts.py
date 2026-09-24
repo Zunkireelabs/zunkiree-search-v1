@@ -114,10 +114,10 @@ async def test_hours_prefers_live_clinicmd_branch_when_populated():
     db = _fake_db(rows)
     customer = _make_customer()
 
-    clinic_tools._ORG_CACHE["dental-city"] = {
+    clinic_tools._cache_set(clinic_tools._ORG_CACHE, "dental-city", {
         "org_id": "org-1",
         "branches": [{"id": "b1", "name": "Main Branch", "open_time": "10:00", "close_time": "20:00", "timezone": "Asia/Kathmandu"}],
-    }
+    })
 
     result = await clinic_tools._search_knowledge(db, customer, config=None, site_id="dental-city", query="What are your hours?")
 
@@ -130,10 +130,10 @@ async def test_hours_uses_stored_fact_when_clinicmd_branch_not_populated():
     db = _fake_db(rows)
     customer = _make_customer()
 
-    clinic_tools._ORG_CACHE["dental-city"] = {
+    clinic_tools._cache_set(clinic_tools._ORG_CACHE, "dental-city", {
         "org_id": "org-1",
         "branches": [{"id": "b1", "name": "Main Branch", "open_time": None, "close_time": None, "timezone": "Asia/Kathmandu"}],
-    }
+    })
 
     result = await clinic_tools._search_knowledge(db, customer, config=None, site_id="dental-city", query="What are your hours?")
 
@@ -150,6 +150,103 @@ async def test_facts_cached_per_tenant_no_repeat_db_hit():
     await clinic_tools._quick_fact_lookup(db, customer, "What's your address?")
 
     assert db.execute.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_quick_facts_cache_reloads_after_ttl_expiry(monkeypatch):
+    """S53-CACHE-EXPIRY-BRIEF: an entry older than the 60s TTL reloads from
+    the DB on the next lookup, instead of serving stale facts forever."""
+    rows = [_fact_row("address", ["located", "address"], "Dental City is located in Thimi, Bhaktapur, Nepal.")]
+    db = _fake_db(rows)
+    customer = _make_customer()
+
+    await clinic_tools._quick_fact_lookup(db, customer, "Where are you located?")
+    assert db.execute.await_count == 1
+
+    # Age the cached entry past the TTL without waiting real time.
+    facts, _cached_at = clinic_tools._QUICK_FACTS_CACHE["dental-city"]
+    stale_at = clinic_tools._time.monotonic() - clinic_tools._QUICK_FACTS_CACHE_TTL_SECONDS - 1
+    clinic_tools._QUICK_FACTS_CACHE["dental-city"] = (facts, stale_at)
+
+    await clinic_tools._quick_fact_lookup(db, customer, "What's your address?")
+    assert db.execute.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_quick_facts_cache_reuses_entry_within_ttl():
+    """A fresh (within-TTL) entry is served from cache, not reloaded."""
+    rows = [_fact_row("address", ["located", "address"], "Dental City is located in Thimi, Bhaktapur, Nepal.")]
+    db = _fake_db(rows)
+    customer = _make_customer()
+
+    await clinic_tools._quick_fact_lookup(db, customer, "Where are you located?")
+    assert db.execute.await_count == 1
+
+    await clinic_tools._quick_fact_lookup(db, customer, "What's your address?")
+    assert db.execute.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_org_cache_reloads_after_ttl_expiry(monkeypatch):
+    """Same treatment for _ORG_CACHE, at its own (longer) TTL."""
+    customer = _make_customer()
+    call_count = {"n": 0}
+
+    class FakeClient:
+        async def get_org(self, remote_site_id):
+            call_count["n"] += 1
+            return {"id": f"org-{call_count['n']}"}
+
+        async def list_branches(self, org_id):
+            return [{"id": "b1", "name": "Main Branch"}]
+
+    creds_row = SimpleNamespace(remote_site_id="remote-1")
+    db = AsyncMock()
+    result = SimpleNamespace(scalar_one_or_none=lambda: creds_row)
+    db.execute = AsyncMock(return_value=result)
+    db.commit = AsyncMock()
+
+    monkeypatch.setattr(clinic_tools, "get_clinicmd_client", lambda: FakeClient())
+
+    org_id, _branches = await clinic_tools._resolve_org(db, customer)
+    assert org_id == "org-1"
+    assert call_count["n"] == 1
+
+    cached, cached_at = clinic_tools._ORG_CACHE["dental-city"]
+    stale_at = clinic_tools._time.monotonic() - clinic_tools._ORG_CACHE_TTL_SECONDS - 1
+    clinic_tools._ORG_CACHE["dental-city"] = (cached, stale_at)
+
+    org_id, _branches = await clinic_tools._resolve_org(db, customer)
+    assert org_id == "org-2"
+    assert call_count["n"] == 2
+
+
+@pytest.mark.asyncio
+async def test_org_cache_reuses_entry_within_ttl(monkeypatch):
+    customer = _make_customer()
+    call_count = {"n": 0}
+
+    class FakeClient:
+        async def get_org(self, remote_site_id):
+            call_count["n"] += 1
+            return {"id": f"org-{call_count['n']}"}
+
+        async def list_branches(self, org_id):
+            return [{"id": "b1", "name": "Main Branch"}]
+
+    creds_row = SimpleNamespace(remote_site_id="remote-1")
+    db = AsyncMock()
+    result = SimpleNamespace(scalar_one_or_none=lambda: creds_row)
+    db.execute = AsyncMock(return_value=result)
+    db.commit = AsyncMock()
+
+    monkeypatch.setattr(clinic_tools, "get_clinicmd_client", lambda: FakeClient())
+
+    await clinic_tools._resolve_org(db, customer)
+    org_id, _branches = await clinic_tools._resolve_org(db, customer)
+
+    assert org_id == "org-1"
+    assert call_count["n"] == 1
 
 
 @pytest.mark.asyncio

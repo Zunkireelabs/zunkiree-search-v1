@@ -5,7 +5,7 @@
       "hour", "hours", "open", "opening", "close", "closing", "timing", "time are you",
       "खुल्ने", "खुल्छ", "खुल्दा", "बन्द", "समय"
     ],
-    "answer": "Dental City is open every day, 10:00 AM to 8:00 PM."
+    "answer": "Dental City is open Sunday to Friday, 9:00 AM to 5:00 PM, and closed on Saturdays."
   },
   {
     "category": "address",

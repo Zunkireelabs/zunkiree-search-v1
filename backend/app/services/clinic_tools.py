@@ -137,7 +137,22 @@ CLINIC_TOOLS = [
 # raise this process's worker count without moving this state to a shared
 # store first (see also conversation.py's ConversationStore).
 _SESSION_STATE: dict[str, dict] = {}
-_ORG_CACHE: dict[str, dict] = {}
+
+# S53-CACHE-EXPIRY-BRIEF: both caches below were load-once-forever, so an
+# edit to a tenant's quick facts (or ClinicMD org/branches) never reached a
+# running process without a restart — that's what made the hours reseed
+# invisible on stage until `docker restart`. Both now carry (value, cached_at)
+# and expire on read; reset_*_cache() stays for tests.
+_ORG_CACHE_TTL_SECONDS = 600
+# _ORG_CACHE holds the ClinicMD org id + branch list (hours, name, id — not
+# session state). P2 B0 measured the cold path (DB credential read + ClinicMD
+# get_org/list_branches) at ~1.3-1.5s holding a pooler socket, the only
+# >0-socket hold on the clinic lane's 2-socket budget. A 60s TTL — same as
+# quick facts — would force that cold hold onto every tenant's first turn
+# each minute; org/branch data changes far less often than that (a clinic
+# adds a branch or changes hours rarely, not every minute), so 10 min bounds
+# staleness without adding a socket hold anywhere near that often.
+_ORG_CACHE: dict[str, tuple[dict, float]] = {}
 
 
 def _state(session_id: str) -> dict:
@@ -191,6 +206,23 @@ def reset_org_cache() -> None:
 def reset_quick_facts_cache() -> None:
     """Test helper — clear the per-tenant quick-facts cache."""
     _QUICK_FACTS_CACHE.clear()
+
+
+def _cache_get(cache: dict, key: str, ttl_seconds: float):
+    """Return the cached value for `key`, or None if absent or older than
+    `ttl_seconds`. Expired entries are left in place — the next _cache_set
+    for that key overwrites them; nothing here needs to sweep the dict."""
+    entry = cache.get(key)
+    if entry is None:
+        return None
+    value, cached_at = entry
+    if _time.monotonic() - cached_at > ttl_seconds:
+        return None
+    return value
+
+
+def _cache_set(cache: dict, key: str, value) -> None:
+    cache[key] = (value, _time.monotonic())
 
 
 def phone_is_clinic(phone: str | None, contact_phone: str | None) -> bool:
@@ -251,11 +283,12 @@ async def execute_clinic_tool(
 # _quick_fact_lookup answers those directly — no embeddings call, no
 # Pinecone round trip, no RAG at all — and returns None for anything else,
 # which falls through to the unchanged RAG path below.
-_QUICK_FACTS_CACHE: dict[str, list[dict]] = {}
+_QUICK_FACTS_CACHE_TTL_SECONDS = 60
+_QUICK_FACTS_CACHE: dict[str, tuple[list[dict], float]] = {}
 
 
 async def _load_quick_facts(db: AsyncSession, customer: Customer) -> list[dict]:
-    cached = _QUICK_FACTS_CACHE.get(customer.site_id)
+    cached = _cache_get(_QUICK_FACTS_CACHE, customer.site_id, _QUICK_FACTS_CACHE_TTL_SECONDS)
     if cached is not None:
         return cached
     result = await db.execute(
@@ -268,7 +301,7 @@ async def _load_quick_facts(db: AsyncSession, customer: Customer) -> list[dict]:
         {"category": r.category, "keywords": [str(k).lower() for k in (r.keywords or [])], "answer": r.answer}
         for r in result.scalars().all()
     ]
-    _QUICK_FACTS_CACHE[customer.site_id] = facts
+    _cache_set(_QUICK_FACTS_CACHE, customer.site_id, facts)
     return facts
 
 
@@ -279,7 +312,7 @@ def _hours_from_clinicmd_branch(customer: Customer) -> str | None:
     this a zero-extra-round-trip fast path) AND ClinicMD actually has
     open_time/close_time populated for it, prefer that live value over the
     stored quick-fact so the two can never drift apart."""
-    cached_org = _ORG_CACHE.get(customer.site_id)
+    cached_org = _cache_get(_ORG_CACHE, customer.site_id, _ORG_CACHE_TTL_SECONDS)
     if not cached_org:
         return None
     branch = _default_branch(cached_org["branches"])
@@ -337,7 +370,7 @@ async def _search_knowledge(db: AsyncSession, customer: Customer, config: Widget
 # --- Org / branch resolution ---
 
 async def _resolve_org(db: AsyncSession, customer: Customer) -> tuple[str, list[dict]]:
-    cached = _ORG_CACHE.get(customer.site_id)
+    cached = _cache_get(_ORG_CACHE, customer.site_id, _ORG_CACHE_TTL_SECONDS)
     if cached:
         current_org_id.set(cached["org_id"])
         return cached["org_id"], cached["branches"]
@@ -368,7 +401,7 @@ async def _resolve_org(db: AsyncSession, customer: Customer) -> tuple[str, list[
         raise ClinicMdError(f"ClinicMD org '{row.remote_site_id}' not found or inactive.", code="ORG_NOT_FOUND")
 
     branches = await client.list_branches(org["id"])
-    _ORG_CACHE[customer.site_id] = {"org_id": org["id"], "branches": branches}
+    _cache_set(_ORG_CACHE, customer.site_id, {"org_id": org["id"], "branches": branches})
     current_org_id.set(org["id"])
     return org["id"], branches
 
