@@ -127,3 +127,23 @@ def test_get_clinicmd_client_raises_when_not_configured(monkeypatch):
 
     with pytest.raises(mod.ClinicMdNotConfigured):
         mod.get_clinicmd_client()
+
+
+@pytest.mark.asyncio
+async def test_every_call_logs_org_id(monkeypatch, client, caplog):
+    from app.services.clinicmd_client import current_org_id
+
+    _install_handler(monkeypatch, lambda request: httpx.Response(200, json=[]))
+    token = current_org_id.set("org-ctx")
+    try:
+        with caplog.at_level("INFO", logger="zunkiree.clinicmd_client"):
+            await client.list_treatments("org-explicit")  # explicit org param wins
+            await client.list_chairs("branch-1")  # falls back to task context org
+            await client.bookings_range("branch-1", "2026-10-01", "2026-10-01")
+    finally:
+        current_org_id.reset(token)
+
+    lines = [r.getMessage() for r in caplog.records if "[CLINICMD] call" in r.getMessage()]
+    assert "org_id=org-explicit" in lines[0]
+    assert "org_id=org-ctx" in lines[1] and "branch_id=branch-1" in lines[1]
+    assert "org_id=org-ctx" in lines[2]

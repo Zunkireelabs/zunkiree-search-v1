@@ -10,6 +10,7 @@ applies.
 
 Mirrors clinic-md/src/services/api.js. Anon key only — never service_role.
 """
+import contextvars
 import logging
 import uuid
 from typing import Any
@@ -21,6 +22,15 @@ from app.config import get_settings
 logger = logging.getLogger("zunkiree.clinicmd_client")
 
 TIMEOUT_SECONDS = 10.0
+
+# ClinicMD org the current task is acting for. Set by clinic_tools._resolve_org;
+# logged on every client call so tenant isolation is provable from logs.
+current_org_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("clinicmd_org_id", default=None)
+
+
+def _log_call(op: str, org_id: str | None = None, **ids: Any) -> None:
+    extra = "".join(f" {k}={v}" for k, v in ids.items() if v)
+    logger.info("[CLINICMD] call op=%s org_id=%s%s", op, org_id or current_org_id.get() or "-", extra)
 
 
 class ClinicMdError(Exception):
@@ -53,12 +63,17 @@ class ClinicMdClient:
         return headers
 
     async def _get(self, path: str, params: dict[str, Any]) -> Any:
+        explicit_org = str(params.get("org_id", "")).removeprefix("eq.") or None
+        _log_call(f"GET {path}", explicit_org, slug=str(params.get("slug", "")).removeprefix("eq."),
+                  branch_id=str(params.get("branch_id", "")).removeprefix("eq."))
         async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
             resp = await client.get(f"{self.base_url}{path}", params=params, headers=self._headers())
         self._raise_for_status(resp)
         return resp.json()
 
     async def _post_rpc(self, fn_name: str, payload: dict[str, Any]) -> Any:
+        _log_call(f"rpc {fn_name}", payload.get("p_org_id"), branch_id=payload.get("p_branch_id"),
+                  booking_id=payload.get("p_booking_id"))
         async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
             resp = await client.post(
                 f"{self.base_url}/rest/v1/rpc/{fn_name}", json=payload, headers=self._headers()
@@ -158,6 +173,7 @@ class ClinicMdClient:
             return None
 
     async def insert_booking(self, row: dict[str, Any]) -> None:
+        _log_call("POST /rest/v1/bookings", None, branch_id=row.get("branch_id"), booking_id=row.get("id"))
         async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
             resp = await client.post(
                 f"{self.base_url}/rest/v1/bookings",

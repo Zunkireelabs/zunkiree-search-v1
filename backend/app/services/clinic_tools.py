@@ -26,6 +26,7 @@ from app.services import clinic_availability as avail
 from app.services.clinicmd_client import (
     ClinicMdError,
     ClinicMdNotConfigured,
+    current_org_id,
     get_clinicmd_client,
     new_booking_id,
 )
@@ -338,6 +339,7 @@ async def _search_knowledge(db: AsyncSession, customer: Customer, config: Widget
 async def _resolve_org(db: AsyncSession, customer: Customer) -> tuple[str, list[dict]]:
     cached = _ORG_CACHE.get(customer.site_id)
     if cached:
+        current_org_id.set(cached["org_id"])
         return cached["org_id"], cached["branches"]
 
     result = await db.execute(
@@ -367,6 +369,7 @@ async def _resolve_org(db: AsyncSession, customer: Customer) -> tuple[str, list[
 
     branches = await client.list_branches(org["id"])
     _ORG_CACHE[customer.site_id] = {"org_id": org["id"], "branches": branches}
+    current_org_id.set(org["id"])
     return org["id"], branches
 
 
