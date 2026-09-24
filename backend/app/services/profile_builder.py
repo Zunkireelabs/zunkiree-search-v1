@@ -73,8 +73,8 @@ class ProfileBuilderService:
     """
 
     def __init__(self):
-        from openai import AsyncOpenAI
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
+        from app.services.openai_client import get_openai_client
+        self.client = get_openai_client("chat")
 
     async def build_profile(
         self,

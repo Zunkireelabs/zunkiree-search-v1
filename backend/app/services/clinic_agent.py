@@ -13,10 +13,10 @@ import uuid
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.services.openai_client import get_openai_client
 from app.models.customer import Customer
 from app.models.widget_config import WidgetConfig
 from app.services.clinic_tools import CLINIC_TOOLS, execute_clinic_tool, get_awaiting_confirmation, get_readback_lang, mark_readback
@@ -609,7 +609,7 @@ def reset_date_anchor(session_id: str) -> None:
 
 class ClinicAgentService:
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self.client = get_openai_client("chat")
         self.model = settings.llm_model
         self.conversation_store = get_conversation_store()
 

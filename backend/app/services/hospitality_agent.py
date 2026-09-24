@@ -5,12 +5,12 @@ Handles room browsing, availability inquiries, and booking lead capture.
 import json
 import logging
 import uuid
-from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.conversation import get_conversation_store
 from app.services.hospitality_tools import HOSPITALITY_TOOLS, execute_hospitality_tool
 from app.config import get_settings
+from app.services.openai_client import get_openai_client
 
 logger = logging.getLogger("zunkiree.hospitality_agent")
 settings = get_settings()
@@ -31,7 +31,7 @@ You can also answer questions about the hotel's amenities, policies, location, d
 
 class HospitalityAgentService:
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self.client = get_openai_client("chat")
         self.model = settings.llm_model
         self.conversation_store = get_conversation_store()
 

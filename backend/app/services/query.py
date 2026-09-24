@@ -270,6 +270,14 @@ class QueryService:
         config = await self._get_widget_config(db, customer.id)
         profile = await self._get_business_profile(db, customer.id)
 
+        # Release the pooler connection before retrieval: _retrieve_and_rank's
+        # first call is the embeddings request (bounded, but still a network
+        # call), and leaving the session's transaction open across it pins
+        # the connection idle-in-transaction for the whole call. Reacquired
+        # lazily by _retrieve_and_rank's own db.execute calls (keyword
+        # search, chunk fetch). See P2 brief §7c B4.
+        await db.commit()
+
         # Shared retrieval pipeline
         retrieval = await self._retrieve_and_rank(db, customer, config, site_id, question, user_email)
 
@@ -374,6 +382,16 @@ class QueryService:
 
         config = await self._get_widget_config(db, customer.id)
         profile = await self._get_business_profile(db, customer.id)
+
+        # Release the pooler connection before retrieval: _retrieve_and_rank's
+        # first call is the embeddings request (bounded, but still a network
+        # call), and leaving the session's transaction open across it pins
+        # the connection idle-in-transaction for the whole call. Reacquired
+        # lazily by _retrieve_and_rank's own db.execute calls (keyword
+        # search, chunk fetch). See P2 brief §7c B4 — reproduced live on
+        # stage 2026-09-24: a stalled embeddings call held a business_profiles
+        # transaction open (idle in transaction) for 50+s on a 2-socket pool.
+        await db.commit()
 
         # Shared retrieval pipeline
         retrieval = await self._retrieve_and_rank(db, customer, config, site_id, question, user_email)

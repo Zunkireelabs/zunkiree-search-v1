@@ -1,8 +1,8 @@
 from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
-from openai import AsyncOpenAI
 from app.config import get_settings
+from app.services.openai_client import get_openai_client
 from app.utils.chunking import count_tokens
 
 logger = logging.getLogger("zunkiree.llm.service")
@@ -135,7 +135,7 @@ class OpenAIProvider(BaseLLMProvider):
     """OpenAI GPT provider implementation."""
 
     def __init__(self, api_key: str, model: str):
-        self.client = AsyncOpenAI(api_key=api_key)
+        self.client = get_openai_client("chat", api_key=api_key)
         self.model = model
 
     async def generate(

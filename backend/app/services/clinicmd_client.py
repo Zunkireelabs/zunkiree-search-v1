@@ -21,6 +21,9 @@ from app.config import get_settings
 
 logger = logging.getLogger("zunkiree.clinicmd_client")
 
+# Already bounded — every httpx.AsyncClient call in this file passes this as
+# its timeout (see _get/_post_rpc/insert_booking below). Reviewed under P2
+# brief §7c B4 alongside the OpenAI/Pinecone timeout audit; no change needed.
 TIMEOUT_SECONDS = 10.0
 
 # ClinicMD org the current task is acting for. Set by clinic_tools._resolve_org;

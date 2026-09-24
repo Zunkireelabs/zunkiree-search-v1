@@ -1,13 +1,13 @@
 from __future__ import annotations
-from openai import AsyncOpenAI
 from app.config import get_settings
+from app.services.openai_client import get_openai_client
 
 settings = get_settings()
 
 
 class EmbeddingService:
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
+        self.client = get_openai_client("embeddings")
         self.model = settings.embedding_model
         self.dimensions = settings.embedding_dimensions
 
