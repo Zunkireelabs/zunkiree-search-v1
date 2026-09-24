@@ -75,7 +75,11 @@ def get_openai_client(kind: str = "chat", api_key: str | None = None) -> AsyncOp
             Picks the timeout/retry profile.
         api_key: Overrides `settings.openai_api_key` (e.g. a per-tenant key).
     """
+    if kind not in _PROFILES:
+        raise ValueError(
+            f"get_openai_client: unknown profile kind={kind!r}, expected one of {sorted(_PROFILES)}"
+        )
     settings = get_settings()
     key = api_key or settings.openai_api_key
-    timeout, max_retries = _PROFILES.get(kind, _PROFILES["chat"])
+    timeout, max_retries = _PROFILES[kind]
     return AsyncOpenAI(api_key=key, timeout=timeout, max_retries=max_retries)
