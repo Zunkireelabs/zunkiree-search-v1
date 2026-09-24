@@ -26,8 +26,9 @@ def test_flatten_orphan_ids_sorts_and_flattens():
 def test_flatten_orphan_ids_refuses_stella_product_ids():
     # Defensive re-check: reconcile() should never produce these, but the
     # cleanup script must refuse rather than delete them if it somehow did.
+    # An explicit raise, not assert -- assert is stripped under `python -O`.
     report = _report({"stella_product_": ["stella_product_ext-1"]})
-    with pytest.raises(AssertionError, match="stella_product_"):
+    with pytest.raises(ValueError, match="stella_product_"):
         cleanup._flatten_orphan_ids(report)
 
 

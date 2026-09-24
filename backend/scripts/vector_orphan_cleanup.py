@@ -26,8 +26,12 @@ Usage (from backend/):
     .venv311/bin/python -m scripts.vector_orphan_cleanup <site_id> --execute --expect-count 660
 
 Export files land in ~/backups/vector-orphans/<site_id>-<UTC timestamp>.jsonl
-(override with --export-dir). Never commit these; never copy them to a
-laptop.
+inside the container (override with --export-dir). Neither the prod nor the
+staging container has that path host-mounted (see docker-compose.yml), so
+the export does NOT survive on its own -- immediately after every run,
+`docker cp <container>:<path printed below> ~/backups/vector-orphans/` on
+the VPS HOST to get it out before the container is ever removed/recreated.
+Never commit these; never copy them to a laptop.
 """
 import argparse
 import asyncio
@@ -59,9 +63,10 @@ def _flatten_orphan_ids(report: dict) -> list[str]:
         for vid in prefix_ids
     )
     for vid in ids:
-        assert not vid.startswith("stella_product_"), (
-            f"refusing: stella_product_ id in orphan list: {vid}"
-        )
+        if vid.startswith("stella_product_"):
+            # Explicit raise, not assert -- asserts are stripped under
+            # `python -O`, which would silently disable this guard.
+            raise ValueError(f"refusing: stella_product_ id in orphan list: {vid}")
     return ids
 
 
@@ -102,6 +107,10 @@ async def _export(site_id: str, ids: list[str], export_dir: Path) -> tuple[Path,
     metadata_by_id = await _fetch_metadata(vector_store, ids, namespace=site_id)
     path = _export_path(site_id, export_dir)
     line_count = _write_export(path, ids, metadata_by_id)
+    print(
+        f"  ^ that path is INSIDE this container, not host-mounted. Run now, on the VPS host:\n"
+        f"    docker cp <container>:{path} ~/backups/vector-orphans/"
+    )
     return path, line_count
 
 
