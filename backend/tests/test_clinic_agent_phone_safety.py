@@ -363,7 +363,7 @@ async def test_voice_channel_prompt_carries_budget_and_safety_exemptions():
     hide a wiring bug."""
     for _ in range(3):
         service, captured = _service_capturing_prompts("Sure, we're open 9-5.")
-        await _run(service, config=None, channel="voice")
+        await _run(service, config=None, channel="voice", question="What are your hours?")
 
         assert len(captured) == 1
         system_prompt = captured[0][0]["content"]
