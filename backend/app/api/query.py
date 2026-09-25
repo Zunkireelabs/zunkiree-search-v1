@@ -195,6 +195,11 @@ class QueryRequest(BaseModel):
         pattern="^(chat|voice)$",
         description="Response channel: 'chat' (default) or 'voice' — selects a response-shape profile",
     )
+    # P4 (Orca A2): tenant context from the gateway. All optional; absent = today's behaviour.
+    channel_open: bool | None = Field(None, description="False when the channel is closed (no handoff possible)")
+    closed_reason: str | None = Field(None, description="closed_date | closed_weekday | outside_handoff_hours | null")
+    spoken_brand_name: str | None = Field(None, description="Brand name as it should be spoken (voice)")
+    handoff_target: str | None = Field(None, description="Where a handoff goes; empty/null = no handoff available")
 
 
 class SourceInfo(BaseModel):
@@ -715,6 +720,11 @@ async def submit_query_stream(
                     brand_name=brand_name,
                     channel=query.channel or "chat",
                     trace_id=trace_id,
+                    channel_open=query.channel_open,
+                    closed_reason=query.closed_reason,
+                    spoken_brand_name=query.spoken_brand_name,
+                    handoff_target=query.handoff_target,
+                    handoff_target_sent="handoff_target" in query.model_fields_set,
                 ):
                     yield f"data: {json.dumps(event)}\n\n"
                 return
