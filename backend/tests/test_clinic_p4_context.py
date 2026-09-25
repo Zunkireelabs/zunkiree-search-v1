@@ -174,7 +174,7 @@ async def test_voice_escalation_drops_length_block_and_raises_cap():
     await _run(svc, question="I have severe pain and swelling")
     p = calls[0]["messages"][0]["content"]
     assert "under 80 characters" not in p
-    assert "Do NOT shorten" in p
+    assert "No length limit applies" in p
     assert calls[0]["max_tokens"] == 700
 
 

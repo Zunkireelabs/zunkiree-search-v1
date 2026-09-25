@@ -129,7 +129,7 @@ VOICE: This is a live phone call — the visitor is listening, not reading. Answ
 # VOICE's, and a larger completion cap, so neither the directive nor
 # max_tokens can cut the safety guidance or the clinic number short.
 _VOICE_ESCALATION_BLOCK = """
-VOICE: This is a live phone call — the visitor is listening, not reading — and this is a medical safety situation. Speak in plain sentences with no lists. Do NOT shorten this reply: tell them clearly to call the clinic immediately, give the clinic's verified phone number if one appears above, and say what to do until then.
+VOICE: This is a live phone call and a medical safety situation. No length limit applies to the safety instruction: never cut short or drop the instruction to call the clinic immediately, or the clinic's verified phone number if one appears above. Say only that, plainly, with no lists, no sympathy padding and no medical advice.
 """
 _ESCALATION_MAX_TOKENS = 700
 _DEFAULT_MAX_TOKENS = 350
