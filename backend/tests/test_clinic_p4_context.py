@@ -230,13 +230,13 @@ async def test_stream_endpoint_forwards_orca_context(payload, expect):
     request = AsyncMock()
     request.headers = {}
     request.client = None
-    query = QueryRequest(site_id="s", question="hi", session_id=None, channel="voice", **payload)
+    query = QueryRequest(site_id="s", question="What services do you offer?", session_id=None, channel="voice", **payload)
     with patch("app.api.query.get_query_service") as gq, \
          patch("app.services.clinic_agent.get_clinic_agent_service", return_value=clinic):
         gq.return_value._get_customer = AsyncMock(return_value=customer)
         gq.return_value._get_widget_config = AsyncMock(return_value=_config())
         resp = await submit_query_stream(request, query, db=AsyncMock())
-        async for _ in resp.body_iterator:
-            pass
+        body = "".join([c async for c in resp.body_iterator])
+    assert seen, body
     for k, v in expect.items():
         assert seen[k] == v
