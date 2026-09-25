@@ -12,6 +12,7 @@ import time as _time
 import asyncio
 import re
 import uuid as uuid_module
+import weakref
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -369,12 +370,37 @@ async def _search_knowledge(db: AsyncSession, customer: Customer, config: Widget
 
 # --- Org / branch resolution ---
 
+# One AsyncSession cannot run two operations at once (SQLAlchemy raises "This
+# session is provisioning a new connection; concurrent operations are not
+# permitted"). check_availability calls fan out with asyncio.gather on the
+# request's single `db` (clinic_agent, LLM-ROUNDTRIP-BRIEF §1.3), and the
+# cache-miss path below is the only db use inside that tool. So the miss path
+# is serialised per session: the first task reads the credential and fills
+# _ORG_CACHE, the rest wait, re-check the cache and never touch the session.
+# Keyed weakly by session so a lock dies with its request and is never shared
+# across event loops.
+_ORG_RESOLVE_LOCKS: "weakref.WeakKeyDictionary[AsyncSession, asyncio.Lock]" = weakref.WeakKeyDictionary()
+
+
 async def _resolve_org(db: AsyncSession, customer: Customer) -> tuple[str, list[dict]]:
     cached = _cache_get(_ORG_CACHE, customer.site_id, _ORG_CACHE_TTL_SECONDS)
     if cached:
         current_org_id.set(cached["org_id"])
         return cached["org_id"], cached["branches"]
 
+    lock = _ORG_RESOLVE_LOCKS.get(db)
+    if lock is None:
+        lock = _ORG_RESOLVE_LOCKS.setdefault(db, asyncio.Lock())
+    async with lock:
+        # A concurrent caller may have filled the cache while we waited.
+        cached = _cache_get(_ORG_CACHE, customer.site_id, _ORG_CACHE_TTL_SECONDS)
+        if cached:
+            current_org_id.set(cached["org_id"])
+            return cached["org_id"], cached["branches"]
+        return await _resolve_org_uncached(db, customer)
+
+
+async def _resolve_org_uncached(db: AsyncSession, customer: Customer) -> tuple[str, list[dict]]:
     result = await db.execute(
         select(TenantBackendCredentials).where(
             TenantBackendCredentials.customer_id == customer.id,
