@@ -122,15 +122,11 @@ _VOICE_CHANNEL_BLOCK = """
 VOICE: This is a live phone call — the visitor is listening, not reading. Answer in ONE short sentence, under 80 characters, as a receptionist would say it aloud on the phone. No lists, no preamble, no closing offers of further help. EXCEPTION, never shortened: a medical safety escalation, and the clinic's phone number whenever you tell someone to call.
 """
 
-# P4 B2: a medical escalation is never compressed. The VOICE block above only
-# *asks* the model to keep escalations whole (a prompt mandate, which is not
-# an enforcement mechanism). This is the code-side exemption: an escalation-
-# shaped question on a voice turn gets a block with NO length budget instead of
-# VOICE's, and a larger completion cap, so neither the directive nor
-# max_tokens can cut the safety guidance or the clinic number short.
-_VOICE_ESCALATION_BLOCK = """
-VOICE: This is a live phone call and a medical safety situation. No length limit applies to the safety instruction: never cut short or drop the instruction to call the clinic immediately, or the clinic's verified phone number if one appears above. Say only that, plainly, with no lists, no sympathy padding and no medical advice.
-"""
+# P4 B2: escalation-shaped voice turns keep the normal VOICE block (its own
+# EXCEPTION clause keeps the safety instruction whole) but get a larger
+# completion cap so max_tokens can never cut the safety guidance short. A
+# dedicated escalation block was tried and removed: the baseline was complete
+# (0/90 truncated) and the block only added padding.
 _ESCALATION_MAX_TOKENS = 700
 _DEFAULT_MAX_TOKENS = 350
 
@@ -185,10 +181,12 @@ def _build_availability_line(
         lines.append(f"The clinic is currently closed{reason}.")
     if not handoff_available:
         lines.append(
-            "No live transfer or call handoff is available right now: never offer to transfer, "
-            "connect or forward the visitor to anyone. Help them yourself, or tell them the "
-            "clinic will be reachable when it reopens."
+            "No live transfer or call handoff is available: never offer to transfer, connect or "
+            "forward the visitor to anyone. Telling the visitor to phone the clinic's number is "
+            "NOT a transfer, and it stays required for medical escalations."
         )
+        if channel_open is False:
+            lines.append("Help them yourself, or tell them the clinic will be reachable when it reopens.")
     return ("\nAVAILABILITY: " + " ".join(lines) + "\n") if lines else ""
 
 
@@ -772,7 +770,7 @@ class ClinicAgentService:
         escalation_turn = channel == "voice" and is_medical_escalation_question(question)
         channel_block = ""
         if channel == "voice":
-            channel_block = _VOICE_ESCALATION_BLOCK if escalation_turn else _VOICE_CHANNEL_BLOCK
+            channel_block = _VOICE_CHANNEL_BLOCK
         max_completion_tokens = _ESCALATION_MAX_TOKENS if escalation_turn else _DEFAULT_MAX_TOKENS
         # P4 B1: Orca's tenant context (all optional; absent = today's behaviour).
         handoff_available = resolve_handoff_available(channel_open, handoff_target, handoff_target_sent)

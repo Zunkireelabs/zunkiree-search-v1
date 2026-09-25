@@ -95,6 +95,8 @@ async def test_closed_channel_states_facts_and_forbids_transfer():
     p = calls[0]["messages"][0]["content"]
     assert "currently closed (closed_date)" in p
     assert "never offer to transfer" in p
+    assert "reopens" in p
+    assert "NOT a transfer" in p
 
 
 @pytest.mark.asyncio
@@ -104,6 +106,8 @@ async def test_empty_handoff_target_forbids_transfer_even_when_open():
     p = calls[0]["messages"][0]["content"]
     assert "never offer to transfer" in p
     assert "currently closed" not in p
+    assert "reopens" not in p
+    assert "NOT a transfer" in p
 
 
 @pytest.mark.asyncio
@@ -169,12 +173,12 @@ def test_ordinary_questions_not_escalation(q):
 
 
 @pytest.mark.asyncio
-async def test_voice_escalation_drops_length_block_and_raises_cap():
+async def test_voice_escalation_keeps_voice_block_and_raises_cap():
     svc, calls = _service("Call now.")
     await _run(svc, question="I have severe pain and swelling")
     p = calls[0]["messages"][0]["content"]
-    assert "under 80 characters" not in p
-    assert "No length limit applies" in p
+    assert "under 80 characters" in p
+    assert "No length limit applies" not in p
     assert calls[0]["max_tokens"] == 700
 
 
