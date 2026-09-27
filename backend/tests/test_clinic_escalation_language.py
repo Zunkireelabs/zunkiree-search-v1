@@ -6,7 +6,7 @@ escalation-only Devanagari safety net (approach B).
 """
 import uuid
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -41,21 +41,38 @@ def _completion(text: str, finish_reason: str = "stop"):
     )
 
 
+def _mock_db() -> AsyncMock:
+    """A db mock whose `execute().scalars().all()` (the P4 B4 knowledge-fast-
+    path's TenantQuickFact lookup) returns an empty list rather than a bare
+    AsyncMock, whose `.scalars()` would otherwise be an unawaited coroutine."""
+    db = AsyncMock()
+    empty_result = MagicMock()
+    empty_result.scalars.return_value.all.return_value = []
+    db.execute = AsyncMock(return_value=empty_result)
+    return db
+
+
 async def _run(service, config, question, channel="chat", session_id="s1"):
     customer = _make_customer()
     events = []
-    async for event in service.process_agent_stream(
-        db=AsyncMock(),
-        site_id="dental-city",
-        session_id=session_id,
-        question=question,
-        customer_id=customer.id,
-        customer=customer,
-        config=config,
-        brand_name="Dental City",
-        channel=channel,
-    ):
-        events.append(event)
+    # P4 B4: a plain FAQ question now prefetches search_knowledge before the
+    # model call, which falls through to the real RAG retrieval service on a
+    # TenantQuickFact miss (as here). Stub only that retrieval leg so it
+    # doesn't reach a real OpenAI call.
+    with patch("app.services.query.get_query_service") as mock_gqs:
+        mock_gqs.return_value._retrieve_and_rank = AsyncMock(return_value={"chunks_for_llm": []})
+        async for event in service.process_agent_stream(
+            db=_mock_db(),
+            site_id="dental-city",
+            session_id=session_id,
+            question=question,
+            customer_id=customer.id,
+            customer=customer,
+            config=config,
+            brand_name="Dental City",
+            channel=channel,
+        ):
+            events.append(event)
     return events
 
 
