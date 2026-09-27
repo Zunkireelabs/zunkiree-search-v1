@@ -383,9 +383,11 @@ _ORG_RESOLVE_LOCKS: "weakref.WeakKeyDictionary[AsyncSession, asyncio.Lock]" = we
 
 
 async def _resolve_org(db: AsyncSession, customer: Customer) -> tuple[str, list[dict]]:
+    t0 = _time.monotonic()
     cached = _cache_get(_ORG_CACHE, customer.site_id, _ORG_CACHE_TTL_SECONDS)
     if cached:
         current_org_id.set(cached["org_id"])
+        _log_resolve_org(customer.site_id, "hit", t0)
         return cached["org_id"], cached["branches"]
 
     lock = _ORG_RESOLVE_LOCKS.get(db)
@@ -396,8 +398,22 @@ async def _resolve_org(db: AsyncSession, customer: Customer) -> tuple[str, list[
         cached = _cache_get(_ORG_CACHE, customer.site_id, _ORG_CACHE_TTL_SECONDS)
         if cached:
             current_org_id.set(cached["org_id"])
+            _log_resolve_org(customer.site_id, "hit_after_wait", t0)
             return cached["org_id"], cached["branches"]
-        return await _resolve_org_uncached(db, customer)
+        result = await _resolve_org_uncached(db, customer)
+        _log_resolve_org(customer.site_id, "miss", t0)
+        return result
+
+
+def _log_resolve_org(site_id: str, outcome: str, t0: float) -> None:
+    """B3 instrument: cold (miss, incl. DB credential read + ClinicMD HTTP) vs
+    warm (hit) org resolution, with the cache entry's age against the TTL."""
+    entry = _ORG_CACHE.get(site_id)
+    age_s = _time.monotonic() - entry[1] if entry else -1
+    logger.info(
+        "[CLINIC-LATENCY] resolve_org site_id=%s cache=%s latency_ms=%.0f age_s=%.0f ttl_s=%d",
+        site_id, outcome, (_time.monotonic() - t0) * 1000, age_s, _ORG_CACHE_TTL_SECONDS,
+    )
 
 
 async def _resolve_org_uncached(db: AsyncSession, customer: Customer) -> tuple[str, list[dict]]:
