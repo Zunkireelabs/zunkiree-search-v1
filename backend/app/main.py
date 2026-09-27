@@ -20,6 +20,7 @@ from app.api.admin_inbound_webhooks import router as admin_inbound_webhooks_rout
 from app.api.admin_tenants import router as admin_tenants_router
 from app.middleware.correlation import CorrelationMiddleware
 from app.services.inbound_event_dispatcher import run_dispatcher_loop
+from app.services.clinic_prewarm import run_clinic_prewarm_loop
 
 # --- Logging configuration (before anything else) ---
 logging.basicConfig(
@@ -57,11 +58,21 @@ async def lifespan(app: FastAPI):
     app.state.inbound_dispatcher_stop_event = stop_event
     app.state.inbound_dispatcher_task = dispatcher_task
 
+    # P4 B2: clinic lane cold-start tax. Same fire-and-forget pattern as the
+    # dispatcher above, own stop_event so it shuts down independently.
+    clinic_prewarm_stop_event = asyncio.Event()
+    clinic_prewarm_task: asyncio.Task | None = None
+    if settings.enable_clinic_prewarm:
+        clinic_prewarm_task = asyncio.create_task(run_clinic_prewarm_loop(clinic_prewarm_stop_event))
+    app.state.clinic_prewarm_stop_event = clinic_prewarm_stop_event
+    app.state.clinic_prewarm_task = clinic_prewarm_task
+
     yield
 
     # Shutdown
     print("Shutting down Zunkiree Search API...")
     stop_event.set()
+    clinic_prewarm_stop_event.set()
     if dispatcher_task is not None:
         try:
             await asyncio.wait_for(dispatcher_task, timeout=10)
@@ -69,6 +80,15 @@ async def lifespan(app: FastAPI):
             dispatcher_task.cancel()
             try:
                 await dispatcher_task
+            except (asyncio.CancelledError, Exception):
+                pass
+    if clinic_prewarm_task is not None:
+        try:
+            await asyncio.wait_for(clinic_prewarm_task, timeout=10)
+        except asyncio.TimeoutError:
+            clinic_prewarm_task.cancel()
+            try:
+                await clinic_prewarm_task
             except (asyncio.CancelledError, Exception):
                 pass
 
