@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     # the lane's 2-socket DB budget and CPU doing Stella work that belongs to
     # the main prod API container. One lane, one job. See P2 brief §4 B2.
     enable_inbound_dispatcher: bool = True
+    # P4 B2: background pre-warm of the clinic org cache + one OpenAI
+    # warm-up call at container start (see clinic_prewarm.py). Additive,
+    # config-level rollback (vision §8.12) — default on, off flips the lane
+    # back to today's cold-first-turn behaviour with no code change.
+    enable_clinic_prewarm: bool = True
 
     @model_validator(mode="after")
     def fix_database_url(self):
