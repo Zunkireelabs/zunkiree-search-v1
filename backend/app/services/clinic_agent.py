@@ -873,6 +873,10 @@ class ClinicAgentService:
         # (no usage event emitted) on turns that never call the model at all,
         # e.g. the forced-confirmation short-circuit above.
         turn_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "seen": False}
+        # B3: per-turn timing itemisation, emitted as one turn_summary line.
+        timing_llm_ms: list[float] = []
+        timing_tools: list[str] = []
+        pre_llm_ms: float | None = None
 
         if is_clear_confirmation(question) and get_awaiting_confirmation(session_id, current_turn):
             forced_id = f"forced_confirm_{uuid.uuid4().hex[:8]}"
@@ -935,6 +939,8 @@ class ClinicAgentService:
             # start-to-first-byte-of-stream-exhausted below, since the
             # OpenAI SDK call itself just opens the stream.
             llm_call_start = time.monotonic()
+            if pre_llm_ms is None:
+                pre_llm_ms = (llm_call_start - turn_start_ts) * 1000
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
@@ -1007,6 +1013,7 @@ class ClinicAgentService:
                                 tool_calls_data[idx]["arguments"] += tc.function.arguments
 
             llm_call_ms = (time.monotonic() - llm_call_start) * 1000
+            timing_llm_ms.append(llm_call_ms)
             logger.info(
                 "[CLINIC-LATENCY] llm_call trace_id=%s site_id=%s session_id=%s iteration=%d "
                 "kind=%s latency_ms=%.0f",
@@ -1191,6 +1198,7 @@ class ClinicAgentService:
                         "iteration=%d tool=%s latency_ms=%.0f",
                         trace_id, site_id, session_id, iteration, tool_name, latency_ms,
                     )
+                    timing_tools.append(f"{iteration}:{tool_name}:{latency_ms:.0f}")
 
                     yield {"type": "tool_call", "name": tool_name, "status": "done"}
 
@@ -1296,6 +1304,15 @@ class ClinicAgentService:
             "total_ms=%.0f iterations=%d",
             trace_id, site_id, session_id,
             (time.monotonic() - turn_start_ts) * 1000, iteration,
+        )
+        logger.info(
+            "[CLINIC-LATENCY] turn_summary trace_id=%s site_id=%s session_id=%s "
+            "total_ms=%.0f iterations=%d pre_llm_ms=%.0f llm_ms=[%s] llm_total_ms=%.0f "
+            "tools=[%s]",
+            trace_id, site_id, session_id,
+            (time.monotonic() - turn_start_ts) * 1000, iteration,
+            pre_llm_ms or 0, ",".join(f"{m:.0f}" for m in timing_llm_ms), sum(timing_llm_ms),
+            ",".join(timing_tools),
         )
 
         yield {
