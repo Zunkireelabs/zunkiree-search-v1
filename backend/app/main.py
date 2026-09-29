@@ -165,6 +165,7 @@ HR_GOEL_DEMO_HTML = """<!doctype html>
     src="https://zunkiree-search-v1.vercel.app/zunkiree-widget.iife.js"
     data-site-id="hr-goel"
     data-api-url="https://staging-api.zunkireelabs.com"
+    data-mode="agent"
     async
   ></script>
 </body>
