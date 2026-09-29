@@ -147,7 +147,7 @@ async def _submit_quote(
             body = resp.json()
         except ValueError:
             body = {}
-        lead_id = body.get("lead_id")
+        lead_id = (body.get("data") or {}).get("lead_id")
         logger.info(
             "[HR-GOEL-QUOTE] success session_id=%s status=%s lead_id=%s",
             session_id, resp.status_code, lead_id,
