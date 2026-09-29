@@ -705,6 +705,24 @@ async def submit_query_stream(
                     yield f"data: {json.dumps(event)}\n\n"
                 return
 
+            # Route HR Goel (it_solutions) customers to the quotation agent
+            if customer.website_type == "it_solutions":
+                from app.services.hr_goel_agent import get_hr_goel_agent_service
+                agent_service = get_hr_goel_agent_service()
+                async for event in agent_service.process_agent_stream(
+                    db=db,
+                    site_id=query.site_id,
+                    session_id=query.session_id or "",
+                    question=question_to_answer,
+                    customer_id=customer.id,
+                    customer=customer,
+                    config=config,
+                    brand_name=brand_name,
+                    channel=query.channel or "chat",
+                ):
+                    yield f"data: {json.dumps(event)}\n\n"
+                return
+
             # Route clinic customers to the ClinicMD-backed front-desk agent
             if customer.website_type == "clinic":
                 from app.services.clinic_agent import get_clinic_agent_service

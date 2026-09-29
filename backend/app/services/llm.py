@@ -59,6 +59,7 @@ WEBSITE_TYPE_PROMPTS = {
     "sports": "You specialize in helping users find sports programs, memberships, fitness plans, and event schedules.",
     "religious": "You specialize in helping visitors find service times, events, teachings, and community information.",
     "events": "You specialize in helping users find event details, venues, tickets, and booking information.",
+    "it_solutions": "You specialize in helping visitors learn about industrial products, materials, and solutions, and in taking quotation requests for them.",
 }
 
 SYSTEM_PROMPT_TEMPLATE = """You are a knowledgeable assistant for {brand_name}.

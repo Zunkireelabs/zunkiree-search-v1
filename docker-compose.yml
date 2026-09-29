@@ -90,6 +90,14 @@ services:
       - "traefik.http.middlewares.hsts-zunkiree-stage.headers.stsSeconds=31536000"
       - "traefik.http.routers.zunkiree-stage.middlewares=hsts-zunkiree-stage"
       - "traefik.http.services.zunkiree-stage.loadbalancer.server.port=8000"
+      # HR Goel demo (2026-09-30) — same container, second Host rule pointed
+      # at the same service; main.py's root() serves the demo page only for
+      # this Host, API routes are unaffected. See HR-GOEL-AGENT-BRIEF.md.
+      - "traefik.http.routers.zunkiree-hrgoel-demo.rule=Host(`hr-goel.zunkireelabs.com`)"
+      - "traefik.http.routers.zunkiree-hrgoel-demo.entrypoints=websecure"
+      - "traefik.http.routers.zunkiree-hrgoel-demo.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.zunkiree-hrgoel-demo.service=zunkiree-stage"
+      - "traefik.http.routers.zunkiree-hrgoel-demo.middlewares=hsts-zunkiree-stage"
     networks:
       - hosting
     profiles:
