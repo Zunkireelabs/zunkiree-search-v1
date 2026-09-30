@@ -9,6 +9,7 @@ Same brain serves chat now; voice (Orca) is a follow-on — keep replies short.
 """
 import json
 import logging
+import re
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.customer import Customer
 from app.models.widget_config import WidgetConfig
 from app.services.conversation import get_conversation_store
-from app.services.hr_goel_tools import HR_GOEL_TOOLS, execute_hr_goel_tool
+from app.services.hr_goel_tools import HR_GOEL_TOOLS, execute_hr_goel_tool, to_e164
 from app.services.query import get_query_service
 from app.config import get_settings
 from app.services.openai_client import get_openai_client
@@ -28,6 +29,45 @@ settings = get_settings()
 
 MAX_TOOL_ITERATIONS = 3
 MAX_CONTEXT_CHUNKS = 5
+
+_EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+
+_NUMBER_WORDS = {
+    # English
+    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "oh",
+    # Nepali (Devanagari)
+    "शून्य", "एक", "दुई", "तीन", "चार", "पाँच", "छ", "सात", "आठ", "नौ",
+}
+
+_AFFIRMATION_WORDS = {
+    "yes", "yeah", "yep", "ok", "okay", "correct", "right", "sure", "no", "nope",
+    "हो", "हुन्छ", "हजुर", "ठिक", "ठीक", "छ", "सही", "अँ", "अहँ",
+}
+
+
+def _is_slot_fill_turn(question: str) -> bool:
+    """True when `question` is a contact/confirmation answer, not a knowledge question."""
+    stripped = question.strip()
+    normalized = stripped.strip(".,!?।").strip().lower()
+
+    if _EMAIL_RE.search(stripped):
+        return True
+
+    # Only treat as a phone answer when the whole message is digit-shaped
+    # (bare numbers, spacing, +/-/()) — not a sentence that happens to contain a number.
+    if re.fullmatch(r"[+\d][\d\s\-()]*", stripped) and to_e164(stripped) is not None:
+        return True
+
+    words = re.findall(r"[\wऀ-ॿ]+", normalized)
+    if words and all(w in _NUMBER_WORDS for w in words):
+        return True
+
+    depunctuated = re.sub(r"[.,!?।]", " ", normalized).strip()
+    ack_words = depunctuated.split()
+    if ack_words and all(w in _AFFIRMATION_WORDS for w in ack_words):
+        return True
+
+    return False
 
 HR_GOEL_SYSTEM_PROMPT = """You are {brand_name}'s assistant. Be warm, professional, and concise — 1-2 short sentences per reply, plain text only (no markdown/bold/lists/links). Your replies are also read aloud on a voice channel, so keep them short and natural to say.
 
@@ -86,12 +126,18 @@ class HrGoelAgentService:
         - {"type": "tool_call", "name": "...", "status": "running"|"done"}
         - {"type": "done", "answer": "...", "suggestions": [...], "sources": [...]}
         """
-        retrieval = await self.query_service._retrieve_and_rank(
-            db=db, customer=customer, config=config, site_id=site_id, question=question,
-            skip_rerank=(channel == "voice"),
-        )
-        chunks = retrieval.get("chunks_for_llm") or []
-        context = _format_context(chunks)
+        history = self.conversation_store.get_messages(session_id)
+
+        if history and _is_slot_fill_turn(question):
+            chunks = []
+            context = ""  # KNOWLEDGE BASE section renders empty; grounding rule still holds
+        else:
+            retrieval = await self.query_service._retrieve_and_rank(
+                db=db, customer=customer, config=config, site_id=site_id, question=question,
+                skip_rerank=(channel == "voice"),
+            )
+            chunks = retrieval.get("chunks_for_llm") or []
+            context = _format_context(chunks)
 
         detected_lang = detect_language(question)
         language_directive = _LANGUAGE_DIRECTIVES.get(detected_lang, "")
@@ -99,7 +145,6 @@ class HrGoelAgentService:
             brand_name=brand_name, context=context, language_directive=language_directive
         )
 
-        history = self.conversation_store.get_messages(session_id)
         self.conversation_store.add_message(session_id, "user", question)
 
         messages = [{"role": "system", "content": system_prompt}]
