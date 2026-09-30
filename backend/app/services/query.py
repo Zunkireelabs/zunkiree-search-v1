@@ -61,6 +61,8 @@ class QueryService:
         site_id: str,
         question: str,
         user_email: str | None = None,
+        *,
+        skip_rerank: bool = False,
     ) -> dict:
         """
         Shared retrieval pipeline used by both streaming and non-streaming paths.
@@ -184,7 +186,7 @@ class QueryService:
         # Adaptive reranking for ambiguous queries (dynamic top_n based on adaptive_top_k)
         rerank_triggered = False
         retrieval_mode = "hybrid"
-        if rerank_needed and len(chunks_for_llm) > 1:
+        if rerank_needed and not skip_rerank and len(chunks_for_llm) > 1:
             rerank_top_n = min(adaptive_top_k, len(chunks_for_llm))
             chunks_for_llm = await self.llm_service.rerank_chunks(
                 question=question,

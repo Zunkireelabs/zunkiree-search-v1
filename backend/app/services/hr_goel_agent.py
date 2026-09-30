@@ -88,6 +88,7 @@ class HrGoelAgentService:
         """
         retrieval = await self.query_service._retrieve_and_rank(
             db=db, customer=customer, config=config, site_id=site_id, question=question,
+            skip_rerank=(channel == "voice"),
         )
         chunks = retrieval.get("chunks_for_llm") or []
         context = _format_context(chunks)
