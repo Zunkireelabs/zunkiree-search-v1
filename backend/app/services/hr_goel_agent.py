@@ -20,6 +20,8 @@ from app.services.hr_goel_tools import HR_GOEL_TOOLS, execute_hr_goel_tool
 from app.services.query import get_query_service
 from app.config import get_settings
 from app.services.openai_client import get_openai_client
+from app.services.language_detection import detect_language
+from app.services.clinic_agent import _LANGUAGE_DIRECTIVES  # reuse the SAME strings dental-city ships
 
 logger = logging.getLogger("zunkiree.hr_goel_agent")
 settings = get_settings()
@@ -28,6 +30,10 @@ MAX_TOOL_ITERATIONS = 3
 MAX_CONTEXT_CHUNKS = 5
 
 HR_GOEL_SYSTEM_PROMPT = """You are {brand_name}'s assistant. Be warm, professional, and concise — 1-2 short sentences per reply, plain text only (no markdown/bold/lists/links). Your replies are also read aloud on a voice channel, so keep them short and natural to say.
+
+LANGUAGE: Reply in the same language the visitor's LATEST message is written in — English in, English out; Nepali in, Nepali out. Never switch languages yourself. This never changes what you're willing to explain: every rule below, including the quotation flow, applies identically no matter which language you're replying in. A tool may return its `message` in English; treat it as the outcome to convey and always deliver it to the visitor in their current language — never repeat the English verbatim.
+
+UNINTELLIGIBLE: If the visitor's LATEST message doesn't parse as a real word or phrase in ANY language (garbled speech-to-text is common on a phone call), say you didn't catch that and ask them to repeat or rephrase — never absorb it as a real constraint and answer confidently around it. This is about noise, not dialect: colloquial, informal, or dialectal Nepali is ordinary speech, not garbled — never ask a visitor to repeat something you understood just because it's casually phrased.
 
 GROUNDING — this is the most important rule:
 - Answer ONLY using the KNOWLEDGE BASE below. Never invent products, prices, specifications, or contact details that aren't in it.
@@ -42,7 +48,7 @@ QUOTATION FLOW: If the visitor wants a price/quote, follow these steps in order:
 
 KNOWLEDGE BASE:
 {context}
-"""
+{language_directive}"""
 
 
 def _format_context(chunks: list[dict]) -> str:
@@ -86,7 +92,11 @@ class HrGoelAgentService:
         chunks = retrieval.get("chunks_for_llm") or []
         context = _format_context(chunks)
 
-        system_prompt = HR_GOEL_SYSTEM_PROMPT.format(brand_name=brand_name, context=context)
+        detected_lang = detect_language(question)
+        language_directive = _LANGUAGE_DIRECTIVES.get(detected_lang, "")
+        system_prompt = HR_GOEL_SYSTEM_PROMPT.format(
+            brand_name=brand_name, context=context, language_directive=language_directive
+        )
 
         history = self.conversation_store.get_messages(session_id)
         self.conversation_store.add_message(session_id, "user", question)
