@@ -124,6 +124,7 @@ class Settings(BaseSettings):
     edgex_hrgoel_integration_key: str = ""
 
     # Meta Messaging / Chatbot
+    meta_app_id: str = ""
     meta_app_secret: str = ""
     meta_verify_token: str = ""
     chatbot_encryption_key: str = ""  # Fernet key for encrypting page_access_tokens
