@@ -7,6 +7,7 @@ ZUNKIREE-CLINIC-AGENT-BRIEF §7:
 ClinicMdClient is mocked/monkeypatched throughout — no test hits real ClinicMD.
 """
 import uuid
+from datetime import date, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
@@ -362,12 +363,12 @@ async def test_repeat_prepare_different_slot_resets_prepared_turn(monkeypatch):
 
     await clinic_tools._prepare_booking(
         db=AsyncMock(), customer=customer, session_id="s1", current_turn=5,
-        service="Teeth Cleaning", date="2026-10-01", time="10:00",
+        service="Teeth Cleaning", date=(date.today() + timedelta(days=1)).isoformat(), time="10:00",
         full_name="Jane", phone="9841234567",
     )
     await clinic_tools._prepare_booking(
         db=AsyncMock(), customer=customer, session_id="s1", current_turn=6,
-        service="Teeth Cleaning", date="2026-10-02", time="11:00",
+        service="Teeth Cleaning", date=(date.today() + timedelta(days=2)).isoformat(), time="11:00",
         full_name="Jane", phone="9841234567",
     )
     assert clinic_tools._state("s1")["pending"]["prepared_turn"] == 6

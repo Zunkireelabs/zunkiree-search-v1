@@ -1,8 +1,9 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 
 from app.config import get_settings
 from app.database import init_db
@@ -135,8 +136,48 @@ app.include_router(admin_inbound_webhooks_router, prefix="/api/v1")
 app.include_router(admin_tenants_router, prefix="/api/v1")
 
 
+# HR Goel demo (2026-09-30) — hr-goel.zunkireelabs.com DNS points at this
+# same VPS (see docker-compose.yml's zunkiree-hrgoel-demo Traefik router).
+# Serving the demo page by Host header here avoids standing up a separate
+# static site just for one demo; API routes under /api/v1 are unaffected
+# since FastAPI dispatches by path, not Host. Direct-to-Zunkiree for the
+# demo, not through Orca — see HR-GOEL-AGENT-BRIEF.md (brain folder).
+HR_GOEL_DEMO_HOST = "hr-goel.zunkireelabs.com"
+HR_GOEL_DEMO_HTML = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HR Goel Group</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 3rem 1.5rem; background: #f7f7f8; color: #1a1a1a; }
+  .wrap { max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+  p { color: #444; line-height: 1.5; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>HR Goel Group</h1>
+    <p>Ask our assistant about our bitumen, cement, construction chemicals, hydropower, and auto product lines &mdash; or request a quote.</p>
+  </div>
+  <script
+    src="https://zunkiree-search-v1.vercel.app/zunkiree-widget.iife.js"
+    data-site-id="hr-goel"
+    data-api-url="https://staging-api.zunkireelabs.com"
+    data-mode="agent"
+    async
+  ></script>
+</body>
+</html>
+"""
+
+
 @app.get("/")
-async def root():
+async def root(request: Request):
+    host = (request.headers.get("host") or "").split(":")[0].lower()
+    if host == HR_GOEL_DEMO_HOST:
+        return HTMLResponse(HR_GOEL_DEMO_HTML)
     return {
         "name": "Zunkiree Search API",
         "version": "1.0.0",

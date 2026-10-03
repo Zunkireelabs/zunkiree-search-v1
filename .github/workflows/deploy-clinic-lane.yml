@@ -19,6 +19,10 @@ on:
         description: "Skip database migrations"
         required: false
         default: "true"
+      db_pool_size:
+        description: "DB_POOL_SIZE for the clinic lane (resting value is 2 — only raise for a scheduled sizing experiment, restore to 2 after)"
+        required: false
+        default: "2"
 
 # Prevent concurrent deploys of this lane; independent of the prod API's
 # own deploy-production concurrency group so the two never block each other.
@@ -42,13 +46,14 @@ jobs:
           GHCR_USER: ${{ github.actor }}
           IMAGE_TAG: ${{ inputs.image_tag }}
           SKIP_MIGRATIONS: ${{ inputs.skip_migrations }}
+          DB_POOL_SIZE: ${{ inputs.db_pool_size }}
           CLINICMD_SUPABASE_URL: ${{ secrets.CLINICMD_SUPABASE_URL }}
           CLINICMD_SUPABASE_ANON_KEY: ${{ secrets.CLINICMD_SUPABASE_ANON_KEY }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          envs: GHCR_TOKEN,GHCR_USER,IMAGE_TAG,SKIP_MIGRATIONS,CLINICMD_SUPABASE_URL,CLINICMD_SUPABASE_ANON_KEY
+          envs: GHCR_TOKEN,GHCR_USER,IMAGE_TAG,SKIP_MIGRATIONS,DB_POOL_SIZE,CLINICMD_SUPABASE_URL,CLINICMD_SUPABASE_ANON_KEY
           script: |
             set -e
             cd /home/zunkireelabs/devprojects/zunkiree-search-v1
@@ -115,8 +120,8 @@ jobs:
               echo "Skipping migrations (manual override)"
             fi
 
-            echo "=== Restarting clinic lane with pulled image ==="
-            IMAGE_TAG="$IMAGE_TAG" docker compose --profile clinic up -d --no-build --force-recreate zunkiree-clinic-prod
+            echo "=== Restarting clinic lane with pulled image (DB_POOL_SIZE=$DB_POOL_SIZE) ==="
+            IMAGE_TAG="$IMAGE_TAG" DB_POOL_SIZE="$DB_POOL_SIZE" docker compose --profile clinic up -d --no-build --force-recreate zunkiree-clinic-prod
 
             echo "=== Verifying health ==="
             sleep 10

@@ -115,6 +115,14 @@ class Settings(BaseSettings):
     clinicmd_supabase_url: str | None = None
     clinicmd_supabase_anon_key: str | None = None
 
+    # edgeX quotation lead-submit (HR Goel demo, website_type == "it_solutions").
+    # Optional — hr_goel_tools returns a clean error if unset. Integration key
+    # is server-side only: never logged, never sent to the client.
+    edgex_stage_base: str = ""
+    edgex_hrgoel_tenant_slug: str = ""
+    edgex_hrgoel_form_slug: str = ""
+    edgex_hrgoel_integration_key: str = ""
+
     # Meta Messaging / Chatbot
     meta_app_secret: str = ""
     meta_verify_token: str = ""
