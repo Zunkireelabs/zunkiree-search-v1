@@ -19,7 +19,14 @@ from app.config import get_settings
 from app.services.openai_client import get_openai_client
 from app.models.customer import Customer
 from app.models.widget_config import WidgetConfig
-from app.services.clinic_tools import CLINIC_TOOLS, execute_clinic_tool, get_awaiting_confirmation, get_readback_lang, mark_readback
+from app.services.clinic_tools import (
+    build_clinic_tools,
+    execute_clinic_tool,
+    get_awaiting_confirmation,
+    get_readback_lang,
+    get_vocab_for_customer,
+    mark_readback,
+)
 from app.services.clinic_confirm import is_clear_confirmation  # noqa: F401 (re-exported)
 from app.services.conversation import get_conversation_store
 from app.services.language_detection import detect_language
@@ -92,7 +99,7 @@ Current date/time in Nepal: {now_npt}.
 
 LANGUAGE: Reply in the same language the visitor's LATEST message is written in — English in, English out; Nepali in, Nepali out. Never switch languages yourself. This never changes what you're willing to explain: every rule below, including FACTS and BOOKING, applies identically no matter which language you're replying in.
 
-FACTS: Clinic facts (hours, address, parking, payment methods, doctors) come ONLY from search_knowledge. Prices, services, and durations come ONLY from list_services. Open appointment times come ONLY from check_availability. If a tool has no answer, say so honestly — never guess or invent facts, and never invent a phone number under any circumstance. This governs clinic DATA only. It does NOT cover your own capabilities or how you work — what booking involves, what you can help with, what information you still need — those are described in BOOKING below and you may explain them directly, without a tool and without any disclaimer or refusal.
+FACTS: Clinic facts (hours, address, parking, payment methods, {staff_term}) come ONLY from search_knowledge. Prices, services, and durations come ONLY from list_services. Open appointment times come ONLY from check_availability. If a tool has no answer, say so honestly — never guess or invent facts, and never invent a phone number under any circumstance. This governs clinic DATA only. It does NOT cover your own capabilities or how you work — what booking involves, what you can help with, what information you still need — those are described in BOOKING below and you may explain them directly, without a tool and without any disclaimer or refusal.
 
 MEDICAL: You are not a medical professional. Never diagnose or give medical advice. For symptoms or pain, suggest booking a consultation. For severe pain, swelling, bleeding, or trauma, ALWAYS tell them to call the clinic immediately AND, in that same message, state the clinic's verified phone number if one appears above — never tell them to "call the clinic" without also giving that number when you have one. If you don't have a verified number, tell them to call or visit the clinic directly WITHOUT stating any digits.
 
@@ -816,6 +823,12 @@ class ClinicAgentService:
         )
         now_npt_dt = datetime.now(NPT)
         now_npt = now_npt_dt.strftime("%A, %Y-%m-%d %H:%M")
+        # SBAL-Z1: the tenant's booking-backend vocabulary (e.g. a salon's own
+        # staff noun instead of ClinicMD's "doctors") — a non-blocking cache
+        # read, never a fresh resolve, so this never adds latency here (see
+        # get_vocab_for_customer).
+        vocab = get_vocab_for_customer(customer.site_id)
+        tools_for_turn = build_clinic_tools(vocab)
         # P4 B2: escalation-shaped voice turns are exempt from the length block.
         escalation_turn = channel == "voice" and is_medical_escalation_question(question)
         channel_block = ""
@@ -903,7 +916,7 @@ class ClinicAgentService:
             and not mid_booking_flow
             and _is_knowledge_only_turn(question, now_npt_dt)
         )
-        knowledge_tools_for_iteration_1 = CLINIC_TOOLS
+        knowledge_tools_for_iteration_1 = tools_for_turn
         knowledge_prefetch_line = ""
         if knowledge_fast_path:
             prefetch_start = time.monotonic()
@@ -946,7 +959,7 @@ class ClinicAgentService:
                     "search_knowledge again this turn unless they ask something different.\n"
                 )
             knowledge_tools_for_iteration_1 = [
-                t for t in CLINIC_TOOLS if t["function"]["name"] != "search_knowledge"
+                t for t in tools_for_turn if t["function"]["name"] != "search_knowledge"
             ]
             logger.info(
                 "[CLINIC-AGENT] knowledge_fast_path_used site_id=%s session_id=%s chunks=%d",
@@ -962,6 +975,7 @@ class ClinicAgentService:
             language_directive=language_directive,
             date_anchor_line=date_anchor_line,
             knowledge_prefetch_line=knowledge_prefetch_line,
+            staff_term=vocab.get("staff_term", "doctors"),
         )
 
         history = self.conversation_store.get_messages(session_id)
@@ -1083,7 +1097,7 @@ class ClinicAgentService:
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                tools=knowledge_tools_for_iteration_1 if iteration == 1 else CLINIC_TOOLS,
+                tools=knowledge_tools_for_iteration_1 if iteration == 1 else tools_for_turn,
                 max_tokens=max_completion_tokens,
                 temperature=0.3,
                 stream=True,
