@@ -39,6 +39,16 @@ class ConnectChannelRequest(BaseModel):
     platform_page_id: str = Field(..., description="Instagram Business Account ID, FB Page ID, or WA Phone Number ID")
     page_access_token: str = Field(..., description="Long-lived Meta page access token")
     channel_name: str | None = Field(None, description="Human-friendly label (e.g., @mybusiness)")
+    config: dict | None = Field(None, description="e.g. {'facebook_page_id': ..., 'abbreviations': {...}}")
+    is_active: bool = Field(True, description="Create the channel inactive to stage it before go-live")
+
+
+class PatchChannelRequest(BaseModel):
+    """All fields optional — only the ones provided are changed."""
+    page_access_token: str | None = Field(None, description="New long-lived Meta page access token")
+    is_active: bool | None = None
+    channel_name: str | None = None
+    config: dict | None = Field(None, description="Merged into the existing config, not replaced")
 
 
 class ChannelResponse(BaseModel):
@@ -93,7 +103,8 @@ async def connect_channel(
         platform_page_id=request.platform_page_id,
         page_access_token=encrypted_token,
         channel_name=request.channel_name,
-        is_active=True,
+        config=request.config or {},
+        is_active=request.is_active,
     )
     db.add(channel)
     await db.commit()
@@ -193,6 +204,85 @@ async def disconnect_channel(
     )
 
     return {"status": "disconnected", "channel_id": channel_id}
+
+
+@router.patch("/channels/{channel_id}", dependencies=[Depends(verify_admin_key)])
+async def patch_channel(
+    channel_id: str,
+    request_body: PatchChannelRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a channel in place — new token, (de)activate, rename, or merge
+    config — without the soft-delete/re-POST dance that 409s on the
+    (platform, platform_page_id) duplicate check and without losing
+    conversation history. Never logs or echoes the token."""
+    result = await db.execute(
+        select(ChatbotChannel).where(ChatbotChannel.id == channel_id)
+    )
+    channel = result.scalar_one_or_none()
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+
+    fields_changed: list[str] = []
+
+    if request_body.page_access_token is not None:
+        channel.page_access_token = encrypt_token(request_body.page_access_token)
+        fields_changed.append("page_access_token")
+    if request_body.is_active is not None:
+        channel.is_active = request_body.is_active
+        fields_changed.append("is_active")
+    if request_body.channel_name is not None:
+        channel.channel_name = request_body.channel_name
+        fields_changed.append("channel_name")
+    if request_body.config is not None:
+        channel.config = {**(channel.config or {}), **request_body.config}
+        fields_changed.append("config")
+
+    if not fields_changed:
+        raise HTTPException(status_code=422, detail="No fields to update")
+
+    await db.commit()
+    await db.refresh(channel)
+
+    customer_result = await db.execute(
+        select(Customer.site_id).where(Customer.id == channel.customer_id)
+    )
+    customer_site_id = customer_result.scalar_one_or_none()
+
+    msg_count = await db.execute(
+        select(func.count()).where(ChatbotMessageLog.channel_id == channel.id)
+    )
+    total = msg_count.scalar() or 0
+
+    logger.info("Patched channel %s (%s): fields=%s", channel_id, channel.platform, fields_changed)
+
+    await log_admin_action(
+        db,
+        actor="legacy_admin",
+        action="chatbot_channel.patched",
+        target_table="chatbot_channels",
+        target_id=channel.id,
+        target_site_id=customer_site_id,
+        payload={
+            "channel_id": str(channel.id),
+            "platform": channel.platform,
+            "platform_page_id": channel.platform_page_id,
+            "customer_site_id": customer_site_id,
+            "fields_changed": fields_changed,
+        },
+        request=request,
+    )
+
+    return {
+        "id": str(channel.id),
+        "platform": channel.platform,
+        "platform_page_id": channel.platform_page_id,
+        "channel_name": channel.channel_name,
+        "is_active": channel.is_active,
+        "created_at": channel.created_at.isoformat(),
+        "total_messages": total,
+    }
 
 
 @router.get("/channels/{channel_id}/conversations", dependencies=[Depends(verify_admin_key)])
