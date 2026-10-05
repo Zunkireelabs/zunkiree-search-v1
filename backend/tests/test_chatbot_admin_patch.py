@@ -123,6 +123,32 @@ async def test_patch_config_is_merged_not_replaced(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_patch_config_merges_when_existing_config_is_a_json_string(monkeypatch):
+    """Some readers (chatbot_webhooks, chatbot_query) guard for channel.config
+    coming back as a JSON string rather than a dict; patch_channel must merge
+    into it instead of 500ing on **existing_config."""
+    from app.api import chatbot_admin as ca_module
+
+    monkeypatch.setattr(ca_module, "log_admin_action", AsyncMock())
+
+    channel = _make_channel(config='{"abbreviations": {"pp": "price please"}}')
+    db = _db_for(channel)
+
+    resp = await ca_module.patch_channel(
+        channel_id=str(channel.id),
+        request_body=ca_module.PatchChannelRequest(config={"facebook_page_id": "new_page"}),
+        request=_fake_request(),
+        db=db,
+    )
+
+    assert channel.config == {
+        "abbreviations": {"pp": "price please"},
+        "facebook_page_id": "new_page",
+    }
+    assert resp["id"] == str(channel.id)
+
+
+@pytest.mark.asyncio
 async def test_patch_is_active_and_channel_name(monkeypatch):
     from app.api import chatbot_admin as ca_module
 

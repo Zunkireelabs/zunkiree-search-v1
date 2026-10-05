@@ -2,6 +2,7 @@
 Chatbot channel management — connect/disconnect messaging platforms per tenant.
 Protected by X-Admin-Key header (same as other admin endpoints).
 """
+import json
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from pydantic import BaseModel, Field
@@ -236,7 +237,10 @@ async def patch_channel(
         channel.channel_name = request_body.channel_name
         fields_changed.append("channel_name")
     if request_body.config is not None:
-        channel.config = {**(channel.config or {}), **request_body.config}
+        existing_config = channel.config
+        if isinstance(existing_config, str):
+            existing_config = json.loads(existing_config) if existing_config else {}
+        channel.config = {**(existing_config or {}), **request_body.config}
         fields_changed.append("config")
 
     if not fields_changed:
