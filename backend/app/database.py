@@ -4,10 +4,12 @@ from app.config import get_settings
 
 settings = get_settings()
 
-# Supavisor's session-mode pooler (port 5432) enforces a client ceiling of 15
-# for the whole Supabase project — shared by stage AND prod. SQLAlchemy's
-# unconfigured defaults (pool_size=5, max_overflow=10 => 15) let a single
-# environment alone consume the entire shared ceiling.
+# Supavisor's session-mode pooler (port 5432) enforces a client ceiling for
+# the whole Supabase project — shared by stage AND prod. As of 2026-10-04
+# that ceiling is 30 (raised from 15 via the dashboard, same day the clinic
+# lane's resting db_pool_size became 6). SQLAlchemy's unconfigured defaults
+# (pool_size=5, max_overflow=10 => 15) let a single environment alone
+# consume a large share of the shared ceiling.
 #
 # This budget is process-wide, not worker-wide: uvicorn runs multiple worker
 # processes, each with its own engine/pool, so worker_count multiplies these
@@ -20,15 +22,16 @@ settings = get_settings()
 #
 # Total socket budget per environment (pool_size + max_overflow, summed
 # across all workers), leaving headroom for psql, migrations, the background
-# dispatcher, and the Supabase dashboard against the shared 15-connection
-# ceiling. Three environments share this ceiling as of the P2 clinic lane
+# dispatcher, and the Supabase dashboard against the shared pooler ceiling.
+# Three environments share this ceiling as of the P2 clinic lane
 # (brief §4 B2, §7b):
 #   prod API:    10 (currently 2 workers x (pool_size=2 + max_overflow=3))
 #   staging:      2 (currently 1 worker  x (pool_size=1 + max_overflow=1))
-#   clinic lane:  2 (1 worker x (DB_POOL_SIZE=2 + DB_MAX_OVERFLOW=0), set
-#                    explicitly via env — see P2 brief §7b B0 measurement:
-#                    1 socket per turn, held only on a cold per-process cache)
-#   total:       14 of 15 -> 1 connection of headroom (§5's abort line)
+#   clinic lane:  6 (1 worker x (DB_POOL_SIZE=6 + DB_MAX_OVERFLOW=0), set
+#                    explicitly via env — resting default as of 2026-10-04;
+#                    see P2 brief §7b B0 measurement: 1 socket per turn, held
+#                    only on a cold per-process cache)
+#   total:       18 of 30 -> 12 connections of headroom (§5's abort line)
 #
 # Prod's budget was raised from 8 to 10 after staging verification of PR #56:
 # prod was observed holding 10 pooler connections steadily (sampled three

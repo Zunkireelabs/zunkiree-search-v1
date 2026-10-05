@@ -104,9 +104,11 @@ services:
   #   - 1 worker: in-process state (ConversationStore, the confirmation gate
   #     in clinic_tools.py) is only correct with one worker per process — see
   #     the comments at those two spots.
-  #   - its own 2-socket DB budget (DB_POOL_SIZE/DB_MAX_OVERFLOW), sized from
-  #     the B0 measurement in the brief, not guessed — see database.py's
-  #     ceiling comment for the three-environment arithmetic (10+2+2=14/15).
+  #   - its own DB budget (DB_POOL_SIZE/DB_MAX_OVERFLOW), sized from the B0
+  #     measurement in the brief, not guessed — see database.py's ceiling
+  #     comment for the three-environment arithmetic (as of 2026-10-04, the
+  #     shared pooler pool size is 30: prod API 10 + stage 2 + clinic lane 6,
+  #     leaving headroom).
   #   - the inbound webhook dispatcher OFF (ENABLE_INBOUND_DISPATCHER=false)
   #     — that's Stella work and belongs to the prod API container, not here.
   #   - CLINICMD_* set only here, in backend/.env.clinic-prod (gitignored;
@@ -128,7 +130,7 @@ services:
     environment:
       - ENVIRONMENT=production
       - UVICORN_WORKERS=1
-      - DB_POOL_SIZE=${DB_POOL_SIZE:-2}
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-6}
       - DB_MAX_OVERFLOW=0
       - ENABLE_INBOUND_DISPATCHER=false
     healthcheck:
