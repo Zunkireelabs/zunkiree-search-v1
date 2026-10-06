@@ -197,6 +197,16 @@ async def _process_instagram_entry(entry: dict):
                         _pending_cart_add[f"{page_id}:{sender_id}"] = pid
                     elif action == "details":
                         message_text = f"Tell me more about {action_data.get('name', 'this product')}"
+                    elif action == "book_service":
+                        # SBAL-Z2: "Book this" on a clinic service card. The
+                        # clinic agent's tools only ever resolve a service by
+                        # NAME (CLINIC_TOOLS has no service_id parameter) —
+                        # the [service_id:...] marker is carried for
+                        # traceability/logging only, same pattern as
+                        # [product_id:...] above.
+                        sid = action_data.get("service_id", "")
+                        name = action_data.get("name", "this service")
+                        message_text = f"I'd like to book '{name}'. [service_id:{sid}]"
                     else:
                         message_text = raw_payload
                 else:
@@ -588,6 +598,11 @@ async def _handle_incoming_message(
             answer = result["answer"]
             suggestions = result.get("suggestions", [])
             products = result.get("products", [])
+            # SBAL-Z2: clinic turns carry a structured `ui` instead of
+            # `products` — services/slots/confirm/booking, built from tool
+            # results only (clinic_agent.py). kasa/ecommerce turns never set
+            # this key, so `ui` is None and every branch below is unchanged.
+            ui = result.get("ui")
             response_time_ms = result.get("response_time_ms", 0)
             query_log_id = result.get("query_log_id")
             feedback_signal = result.get("feedback_signal")
@@ -631,8 +646,13 @@ async def _handle_incoming_message(
             # When a product carousel follows, shorten the text to one sentence
             # so text + carousel feel like one coherent reply rather than two
             # separate messages (#43). Full answer is preserved when no carousel.
+            # Clinic confirm/booking text is excluded even when cards follow —
+            # it's a deterministically-built sentence (CLINIC-BOOKING-TRUTH-BRIEF),
+            # not model prose, and truncating it risks cutting the actual
+            # confirmation question or booking facts.
+            has_shortenable_cards = bool(products) or bool(ui and (ui.get("services") or ui.get("slots")))
             send_text = answer
-            if products:
+            if has_shortenable_cards:
                 dot_pos = answer.find(". ")
                 if 0 < dot_pos < 200:
                     send_text = answer[:dot_pos + 1]
@@ -692,6 +712,50 @@ async def _handle_incoming_message(
                     )
                 except Exception as e:
                     logger.warning("Suggestions failed: %s", e)
+
+            # SBAL-Z2: clinic structured `ui` -> IG-native renderers (adapter
+            # only — the shape is decided here, never in clinic_agent.py).
+            # At most one key is normally set per turn (each comes from a
+            # different tool call); ordered by what matters most to show if
+            # more than one is somehow present this turn.
+            elif ui and ui.get("booking"):
+                try:
+                    await client.send_booking_card(
+                        platform=platform, page_id=send_page_id, access_token=access_token,
+                        recipient_id=sender_id, booking=ui["booking"],
+                    )
+                except Exception as e:
+                    logger.warning("Booking card failed: %s", e)
+            elif ui and ui.get("confirm"):
+                confirm = ui["confirm"]
+                try:
+                    await client.send_chips(
+                        platform=platform, page_id=send_page_id, access_token=access_token,
+                        recipient_id=sender_id, text="Shall I book this?",
+                        chips=[
+                            {"label": confirm.get("yes_label", "✅ Confirm"), "payload": confirm["yes_payload"]},
+                            {"label": confirm.get("change_label", "✏️ Change"), "payload": confirm["change_payload"]},
+                        ],
+                    )
+                except Exception as e:
+                    logger.warning("Confirm chips failed: %s", e)
+            elif ui and ui.get("slots"):
+                try:
+                    await client.send_chips(
+                        platform=platform, page_id=send_page_id, access_token=access_token,
+                        recipient_id=sender_id, text="Pick a time:",
+                        chips=ui["slots"][:13],
+                    )
+                except Exception as e:
+                    logger.warning("Slot chips failed: %s", e)
+            elif ui and ui.get("services"):
+                try:
+                    await client.send_service_cards(
+                        platform=platform, page_id=send_page_id, access_token=access_token,
+                        recipient_id=sender_id, services=ui["services"],
+                    )
+                except Exception as e:
+                    logger.warning("Service cards failed: %s", e)
 
             # Log outbound message
             outbound_log = ChatbotMessageLog(
