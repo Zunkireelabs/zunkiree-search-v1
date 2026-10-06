@@ -121,6 +121,16 @@ class Settings(BaseSettings):
     zennly_supabase_url: str | None = None
     zennly_supabase_anon_key: str | None = None
 
+    # SBAL-Z2: the clinic lane's internal URL, for the prod API's chatbot DM
+    # path to reach POST /api/v1/query/stream on it. Only the prod API uses
+    # this — it must NOT import/run clinic_agent itself (one worker per
+    # process is required for the in-process confirmation gate; the prod API
+    # runs 2). Private-network address, e.g. http://zunkiree-clinic-prod:8000
+    # (docker-compose.yml). Optional — a clinic DM returns a polite fallback,
+    # never silence, when unset.
+    clinic_lane_url: str = ""
+    clinic_lane_timeout_seconds: float = 20.0
+
     # edgeX quotation lead-submit (HR Goel demo, website_type == "it_solutions").
     # Optional — hr_goel_tools returns a clean error if unset. Integration key
     # is server-side only: never logged, never sent to the client.
