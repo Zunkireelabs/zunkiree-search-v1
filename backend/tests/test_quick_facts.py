@@ -208,7 +208,7 @@ async def test_org_cache_reloads_after_ttl_expiry(monkeypatch):
 
     monkeypatch.setattr(clinic_tools, "get_clinicmd_client", lambda: FakeClient())
 
-    org_id, _branches = await clinic_tools._resolve_org(db, customer)
+    org_id, _branches, _backend_type = await clinic_tools._resolve_org(db, customer)
     assert org_id == "org-1"
     assert call_count["n"] == 1
 
@@ -216,7 +216,7 @@ async def test_org_cache_reloads_after_ttl_expiry(monkeypatch):
     stale_at = clinic_tools._time.monotonic() - clinic_tools._ORG_CACHE_TTL_SECONDS - 1
     clinic_tools._ORG_CACHE["dental-city"] = (cached, stale_at)
 
-    org_id, _branches = await clinic_tools._resolve_org(db, customer)
+    org_id, _branches, _backend_type = await clinic_tools._resolve_org(db, customer)
     assert org_id == "org-2"
     assert call_count["n"] == 2
 
@@ -243,7 +243,7 @@ async def test_org_cache_reuses_entry_within_ttl(monkeypatch):
     monkeypatch.setattr(clinic_tools, "get_clinicmd_client", lambda: FakeClient())
 
     await clinic_tools._resolve_org(db, customer)
-    org_id, _branches = await clinic_tools._resolve_org(db, customer)
+    org_id, _branches, _backend_type = await clinic_tools._resolve_org(db, customer)
 
     assert org_id == "org-1"
     assert call_count["n"] == 1

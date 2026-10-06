@@ -101,6 +101,10 @@ CLINIC_TOOLS = [
                 "properties": {
                     "service": {"type": "string", "description": "Service name, e.g. 'Teeth Cleaning'"},
                     "date": {"type": "string", "description": "YYYY-MM-DD, optional"},
+                    "gender_preference": {
+                        "type": "string", "enum": ["male", "female"],
+                        "description": "Only set this if the visitor themselves brings up a staff gender preference — never ask for one.",
+                    },
                 },
                 "required": ["service"],
             },
@@ -122,6 +126,10 @@ CLINIC_TOOLS = [
                     "phone": {"type": "string"},
                     "email": {"type": "string"},
                     "note": {"type": "string", "description": "Any visitor note for the clinic"},
+                    "gender_preference": {
+                        "type": "string", "enum": ["male", "female"],
+                        "description": "Only set this if the visitor themselves brings up a staff gender preference — never ask for one.",
+                    },
                 },
                 "required": ["service", "date", "time", "full_name", "phone"],
             },
@@ -295,7 +303,10 @@ async def execute_clinic_tool(
         if tool_name == "list_services":
             return await _list_services(db, customer, tool_args.get("query"))
         if tool_name == "check_availability":
-            return await _check_availability(db, customer, tool_args.get("service", ""), tool_args.get("date"))
+            return await _check_availability(
+                db, customer, tool_args.get("service", ""), tool_args.get("date"),
+                gender_preference=tool_args.get("gender_preference"),
+            )
         if tool_name == "prepare_booking":
             result = await _prepare_booking(db, customer, session_id, current_turn, **tool_args)
             # CLINIC-CALLER-PHONE-BRIEF: permanent regression detector — a caller
@@ -446,6 +457,16 @@ def _cached_backend_type(site_id: str) -> str:
     return (cached or {}).get("backend_type", "clinicmd")
 
 
+def _cached_enable_rooms(site_id: str) -> bool:
+    """SBAL-Z1 follow-up: whether this tenant's booking backend uses
+    room/chair capacity (True, the ClinicMD-shaped default) or therapist
+    headcount instead (False — Zennly orgs with industries.enable_rooms
+    false, e.g. SBAL, a salon with no fixed stations). See
+    _check_availability / _execute_booking's enable_rooms branches."""
+    cached = _cache_get(_ORG_CACHE, site_id, _ORG_CACHE_TTL_SECONDS)
+    return (cached or {}).get("enable_rooms", True)
+
+
 def get_client_for_customer(customer: Customer):
     """The tenant's booking backend client, resolved from whatever
     _resolve_org cached for it this turn — call _resolve_org (or any of the
@@ -453,13 +474,16 @@ def get_client_for_customer(customer: Customer):
     return _client_for_backend(_cached_backend_type(customer.site_id))
 
 
-async def _resolve_org(db: AsyncSession, customer: Customer) -> tuple[str, list[dict]]:
+async def _resolve_org(db: AsyncSession, customer: Customer) -> tuple[str, list[dict], str]:
+    """Returns (org_id, branches, backend_type) — backend_type comes back
+    here (SBAL-Z1 follow-up) so callers pick their client from this result
+    directly instead of a second _cached_backend_type cache read."""
     t0 = _time.monotonic()
     cached = _cache_get(_ORG_CACHE, customer.site_id, _ORG_CACHE_TTL_SECONDS)
     if cached:
         _set_org_context(cached.get("backend_type", "clinicmd"), cached["org_id"])
         _log_resolve_org(customer.site_id, "hit", t0)
-        return cached["org_id"], cached["branches"]
+        return cached["org_id"], cached["branches"], cached.get("backend_type", "clinicmd")
 
     lock = _ORG_RESOLVE_LOCKS.get(db)
     if lock is None:
@@ -470,7 +494,7 @@ async def _resolve_org(db: AsyncSession, customer: Customer) -> tuple[str, list[
         if cached:
             _set_org_context(cached.get("backend_type", "clinicmd"), cached["org_id"])
             _log_resolve_org(customer.site_id, "hit_after_wait", t0)
-            return cached["org_id"], cached["branches"]
+            return cached["org_id"], cached["branches"], cached.get("backend_type", "clinicmd")
         result = await _resolve_org_uncached(db, customer)
         _log_resolve_org(customer.site_id, "miss", t0)
         return result
@@ -487,7 +511,7 @@ def _log_resolve_org(site_id: str, outcome: str, t0: float) -> None:
     )
 
 
-async def _resolve_org_uncached(db: AsyncSession, customer: Customer) -> tuple[str, list[dict]]:
+async def _resolve_org_uncached(db: AsyncSession, customer: Customer) -> tuple[str, list[dict], str]:
     # SBAL-Z1: the booking backend is per-tenant data, not hardcoded — this
     # tenant's active credentials row names it (clinicmd default when the
     # column somehow holds neither, which .in_() below excludes outright).
@@ -519,11 +543,13 @@ async def _resolve_org_uncached(db: AsyncSession, customer: Customer) -> tuple[s
 
     branches = await client.list_branches(org["id"])
     vocab = {"staff_term": (org.get("staff_label_plural") or _DEFAULT_VOCAB["staff_term"]).lower()}
+    enable_rooms = org.get("enable_rooms", True)
     _cache_set(_ORG_CACHE, customer.site_id, {
         "org_id": org["id"], "branches": branches, "backend_type": backend_type, "vocab": vocab,
+        "enable_rooms": enable_rooms,
     })
     _set_org_context(backend_type, org["id"])
-    return org["id"], branches
+    return org["id"], branches, backend_type
 
 
 def _default_branch(branches: list[dict]) -> dict | None:
@@ -579,12 +605,12 @@ def _match_service(treatments: list[dict], service_name: str) -> tuple[dict | No
 # --- Services ---
 
 async def _list_services(db: AsyncSession, customer: Customer, query: str | None = None) -> dict:
-    org_id, branches = await _resolve_org(db, customer)
+    org_id, branches, backend_type = await _resolve_org(db, customer)
     branch = _default_branch(branches)
     if not branch:
         return {"error": "NO_BRANCH", "message": "No active branch configured for this clinic."}
 
-    treatments = await get_client_for_customer(customer).list_treatments(org_id, branch)
+    treatments = await _client_for_backend(backend_type).list_treatments(org_id, branch)
     if query:
         q = query.lower()
         filtered = [t for t in treatments if q in t["name"].lower() or q in (t.get("category") or "").lower()]
@@ -609,22 +635,53 @@ async def _list_services(db: AsyncSession, customer: Customer, query: str | None
 
 # --- Availability ---
 
-async def _next_open_slots(client, branch: dict, treatment: dict, now_npt: datetime, want: int = 3) -> list[dict]:
+def _therapist_counts(therapists: list[dict]) -> dict[str, int]:
+    """Active therapist headcount by gender — mirrors DateTimeSelection.jsx:
+    33-41 (query `therapists` for `branch_id`+`is_active=true`, count by
+    `gender`). Used only for enable_rooms=false tenants' availability."""
+    counts = {"male": 0, "female": 0}
+    for t in therapists:
+        g = (t.get("gender") or "").lower()
+        if g in counts:
+            counts[g] += 1
+    return counts
+
+
+async def _next_open_slots(
+    client, branch: dict, treatment: dict, now_npt: datetime, want: int = 3,
+    enable_rooms: bool = True, gender_preference: str | None = None,
+) -> list[dict]:
     duration = treatment.get("duration_minutes") or avail.DEFAULT_DURATION_MINUTES
     start = now_npt.date()
     end = start + timedelta(days=avail.MAX_DAYS_AHEAD)
-    chairs = await client.list_chairs(branch["id"])
     bookings = await client.bookings_range(branch["id"], start.isoformat(), end.isoformat())
 
     by_date: dict[str, list[dict]] = {}
     for b in bookings:
         by_date.setdefault(str(b.get("booking_date")), []).append(b)
 
+    # SBAL-Z1 follow-up: enable_rooms=false tenants (e.g. SBAL — a salon
+    # with no fixed stations) have no `rooms` rows at all, so the room-
+    # capacity path below would always find zero chairs and report no
+    # availability ever. Capacity instead comes from active therapist
+    # headcount, mirroring DateTimeSelection.jsx:118-135 / availability.js
+    # exactly — see _check_availability's enable_rooms branch below.
+    if enable_rooms:
+        chairs = await client.list_chairs(branch["id"])
+    else:
+        therapist_counts = _therapist_counts(await client.list_therapists(branch["id"]))
+
     results = []
     for offset in range(avail.MAX_DAYS_AHEAD + 1):
         day = start + timedelta(days=offset)
         day_str = day.isoformat()
-        slots = avail.available_slots_for_date(day, duration, chairs, by_date.get(day_str, []), now_npt, limit=1)
+        day_bookings = by_date.get(day_str, [])
+        if enable_rooms:
+            slots = avail.available_slots_for_date(day, duration, chairs, day_bookings, now_npt, limit=1)
+        else:
+            slots = avail.available_slots_for_date_by_headcount(
+                day, duration, therapist_counts, day_bookings, now_npt, gender=gender_preference, limit=1,
+            )
         if slots:
             results.append({"date": day_str, "time": slots[0]})
         if len(results) >= want:
@@ -632,13 +689,17 @@ async def _next_open_slots(client, branch: dict, treatment: dict, now_npt: datet
     return results
 
 
-async def _check_availability(db: AsyncSession, customer: Customer, service: str, date: str | None = None) -> dict:
-    org_id, branches = await _resolve_org(db, customer)
+async def _check_availability(
+    db: AsyncSession, customer: Customer, service: str, date: str | None = None,
+    gender_preference: str | None = None,
+) -> dict:
+    org_id, branches, backend_type = await _resolve_org(db, customer)
     branch = _default_branch(branches)
     if not branch:
         return {"error": "NO_BRANCH", "message": "No active branch configured for this clinic."}
 
-    client = get_client_for_customer(customer)
+    client = _client_for_backend(backend_type)
+    enable_rooms = _cached_enable_rooms(customer.site_id)
     treatments = await client.list_treatments(org_id, branch)
     treatment, ambiguous = _match_service(treatments, service)
     if treatment is None:
@@ -660,16 +721,25 @@ async def _check_availability(db: AsyncSession, customer: Customer, service: str
             target_date = datetime.strptime(date, "%Y-%m-%d").date()
         except ValueError:
             return {"error": "INVALID_DATE", "message": "Date must be in YYYY-MM-DD format."}
-        chairs = await client.list_chairs(branch["id"])
         bookings = await client.bookings_range(branch["id"], date, date)
-        slots = avail.available_slots_for_date(
-            target_date, service_summary["duration_minutes"], chairs, bookings, now_npt, limit=8
-        )
+        if enable_rooms:
+            chairs = await client.list_chairs(branch["id"])
+            slots = avail.available_slots_for_date(
+                target_date, service_summary["duration_minutes"], chairs, bookings, now_npt, limit=8
+            )
+        else:
+            therapists = await client.list_therapists(branch["id"])
+            slots = avail.available_slots_for_date_by_headcount(
+                target_date, service_summary["duration_minutes"], _therapist_counts(therapists),
+                bookings, now_npt, gender=gender_preference, limit=8,
+            )
         if not slots:
             # A full day: name the next days that DO have room instead of
             # leaving the visitor to guess (voice especially).
             t0 = _time.monotonic()
-            next_slots = await _next_open_slots(client, branch, treatment, now_npt)
+            next_slots = await _next_open_slots(
+                client, branch, treatment, now_npt, enable_rooms=enable_rooms, gender_preference=gender_preference,
+            )
             logger.info("[CLINIC-AGENT] full_day_next_open_ms=%.0f found=%d",
                         (_time.monotonic() - t0) * 1000, len(next_slots))
             if not next_slots:
@@ -687,7 +757,9 @@ async def _check_availability(db: AsyncSession, customer: Customer, service: str
             }
         return {"service": service_summary, "date": date, "open_times": slots}
 
-    next_slots = await _next_open_slots(client, branch, treatment, now_npt)
+    next_slots = await _next_open_slots(
+        client, branch, treatment, now_npt, enable_rooms=enable_rooms, gender_preference=gender_preference,
+    )
     return {"service": service_summary, "next_open_slots": next_slots}
 
 
@@ -712,12 +784,13 @@ async def _prepare_booking(
     branch_id: str | None = None,
     email: str | None = None,
     note: str | None = None,
+    gender_preference: str | None = None,
     **_ignored,
 ) -> dict:
     if not session_id or not session_id.strip():
         return {"error": "MISSING_SESSION", "message": "A session is required to prepare a booking."}
 
-    org_id, branches = await _resolve_org(db, customer)
+    org_id, branches, backend_type = await _resolve_org(db, customer)
     if not branches:
         return {"error": "NO_BRANCH", "message": "No active branch configured for this clinic."}
 
@@ -749,7 +822,7 @@ async def _prepare_booking(
             }
     branch = branch_row
 
-    client = get_client_for_customer(customer)
+    client = _client_for_backend(backend_type)
     treatments = await client.list_treatments(org_id, branch)
     treatment = next((t for t in treatments if _is_uuid(service_id) and t["id"] == service_id), None)
     if treatment is None:
@@ -787,9 +860,16 @@ async def _prepare_booking(
 
     now_npt = datetime.now(NPT)
     duration = treatment.get("duration_minutes") or avail.DEFAULT_DURATION_MINUTES
-    chairs = await client.list_chairs(branch["id"])
+    enable_rooms = _cached_enable_rooms(customer.site_id)
     bookings = await client.bookings_range(branch["id"], date, date)
-    slots = avail.available_slots_for_date(target_date, duration, chairs, bookings, now_npt)
+    if enable_rooms:
+        chairs = await client.list_chairs(branch["id"])
+        slots = avail.available_slots_for_date(target_date, duration, chairs, bookings, now_npt)
+    else:
+        therapists = await client.list_therapists(branch["id"])
+        slots = avail.available_slots_for_date_by_headcount(
+            target_date, duration, _therapist_counts(therapists), bookings, now_npt, gender=gender_preference,
+        )
 
     if time not in slots:
         return {
@@ -861,6 +941,7 @@ async def _prepare_booking(
         "price_npr": treatment.get("price_npr"),
         "prepared_turn": prepared_turn,
         "substituted_for": substituted_for,
+        "gender_preference": gender_preference,
     }
     _state(session_id)["pending"] = pending
 
@@ -940,9 +1021,9 @@ _BOOKING_ROW_BUILDERS = {
 
 
 async def _execute_booking(db: AsyncSession, customer: Customer, pending: dict) -> dict:
-    org_id, branches = await _resolve_org(db, customer)
-    backend_type = _cached_backend_type(customer.site_id)
-    client = get_client_for_customer(customer)
+    org_id, branches, backend_type = await _resolve_org(db, customer)
+    client = _client_for_backend(backend_type)
+    enable_rooms = _cached_enable_rooms(customer.site_id)
     branch = next((b for b in branches if b["id"] == pending["branch_id"]), None)
     if not branch:
         raise ClinicMdError("Branch no longer available.", code="BRANCH_NOT_FOUND")
@@ -956,16 +1037,32 @@ async def _execute_booking(db: AsyncSession, customer: Customer, pending: dict) 
     target_date = datetime.strptime(pending["date"], "%Y-%m-%d").date()
     now_npt = datetime.now(NPT)
 
-    chairs = await client.list_chairs(branch["id"])
     bookings = await client.bookings_range(branch["id"], pending["date"], pending["date"])
     start_minutes = avail.parse_hhmm_to_minutes(pending["time"])
 
     if target_date == now_npt.date() and start_minutes <= now_npt.hour * 60 + now_npt.minute:
         raise ClinicMdError("That time has already passed.", code="SLOT_TAKEN", pg_code="P0003")
 
-    chair = avail.find_available_chair(start_minutes, duration, chairs, avail.build_occupancy(bookings))
-    if not chair:
-        raise ClinicMdError("Slot no longer available.", code="SLOT_TAKEN", pg_code="P0003")
+    if enable_rooms:
+        chairs = await client.list_chairs(branch["id"])
+        chair = avail.find_available_chair(start_minutes, duration, chairs, avail.build_occupancy(bookings))
+        if not chair:
+            raise ClinicMdError("Slot no longer available.", code="SLOT_TAKEN", pg_code="P0003")
+    else:
+        # SBAL-Z1 follow-up: no rooms exist for this tenant — re-check against
+        # therapist headcount instead (same model _check_availability uses).
+        # The real guard against a concurrent double-booking is Zennly's own
+        # DB trigger (check_branch_online_capacity, migration-138 — raises
+        # P0005, already mapped to SLOT_TAKEN below); this is a local,
+        # pre-insert narrowing, not the race-safety mechanism itself.
+        chair = None
+        therapists = await client.list_therapists(branch["id"])
+        counts = _therapist_counts(therapists)
+        occupancy = avail.build_gender_occupancy(bookings)
+        if not avail.is_slot_available_by_headcount(
+            start_minutes, duration, counts, occupancy, pending.get("gender_preference")
+        ):
+            raise ClinicMdError("Slot no longer available.", code="SLOT_TAKEN", pg_code="P0003")
 
     customer_id = await client.upsert_customer(
         org_id, branch["id"], pending["full_name"], pending["phone_e164"], pending.get("email"), None
@@ -1071,15 +1168,19 @@ async def _write_and_record(db, customer, state, pending):
         booking = await _execute_booking(db, customer, pending)
     except (ClinicMdError, ZennlyError) as e:
         if e.pg_code in ("P0003", "P0005"):
-            org_id, branches = await _resolve_org(db, customer)
-            client = get_client_for_customer(customer)
+            org_id, branches, backend_type = await _resolve_org(db, customer)
+            client = _client_for_backend(backend_type)
+            enable_rooms = _cached_enable_rooms(customer.site_id)
             branch = next((b for b in branches if b["id"] == pending["branch_id"]), None)
             alternatives: list[dict] = []
             if branch:
                 treatments = await client.list_treatments(org_id, branch)
                 treatment = next((t for t in treatments if t["id"] == pending["service_id"]), None)
                 if treatment:
-                    alternatives = await _next_open_slots(client, branch, treatment, datetime.now(NPT))
+                    alternatives = await _next_open_slots(
+                        client, branch, treatment, datetime.now(NPT),
+                        enable_rooms=enable_rooms, gender_preference=pending.get("gender_preference"),
+                    )
             return {
                 "error": "SLOT_TAKEN",
                 "message": "That slot was just taken by someone else.",

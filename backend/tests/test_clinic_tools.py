@@ -52,7 +52,7 @@ def _reset_state():
 @pytest.fixture(autouse=True)
 def _patch_resolve_org(monkeypatch):
     async def fake_resolve_org(db, customer):
-        return ORG_ID, [BRANCH]
+        return ORG_ID, [BRANCH], "clinicmd"
 
     monkeypatch.setattr(clinic_tools, "_resolve_org", fake_resolve_org)
 
@@ -244,7 +244,7 @@ async def test_prepare_booking_multi_branch_without_branch_arg_asks_which(monkey
     branches = [BRANCH, {"id": "branch-2", "name": "Lalitpur Branch", "excluded_treatment_categories": []}]
 
     async def fake_resolve_org(db, customer):
-        return ORG_ID, branches
+        return ORG_ID, branches, "clinicmd"
 
     monkeypatch.setattr(clinic_tools, "_resolve_org", fake_resolve_org)
     client = FakeClient()
