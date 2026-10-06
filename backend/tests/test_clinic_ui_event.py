@@ -275,6 +275,45 @@ async def test_voice_channel_done_event_unaffected_by_ui():
 
 
 @pytest.mark.asyncio
+async def test_stale_confirm_chip_after_window_closed_does_not_book():
+    """Design review on SBAL-Z2 (PR #113): an IG confirm chip's payload is
+    literally "Yes" — if the visitor taps a STALE chip (from an earlier
+    message bubble) after the awaiting-confirmation window has closed —
+    they moved on to something else, or a later prepare_booking overwrote
+    the staged booking — the forced-confirm short-circuit must not fire and
+    confirm_booking must never be called. `get_awaiting_confirmation`'s
+    turn-window check (readback_turn == current_turn - 1,
+    clinic_tools.py:217) already guards this generically for voice/chat;
+    this pins it for the IG confirm chip specifically, over channel=
+    "instagram"."""
+    from app.services import clinic_tools, clinic_agent
+
+    sid = f"t-{uuid.uuid4()}"
+    clinic_tools.reset_session_state(sid)
+    clinic_tools._state(sid)["pending"] = {
+        "service_id": "svc1", "service_name": "Lash Lift", "branch_id": "b1",
+        "branch_name": "Thamel Branch", "date": "2026-10-10", "time": "10:00",
+        "full_name": "Test User", "phone_e164": "+9779841234567", "prepared_turn": 1,
+    }
+    clinic_tools.mark_readback(sid, 1)
+    # Readback shown at turn 1; two turns pass (the visitor asked something
+    # else, or a new prepare_booking elsewhere moved the state on) before the
+    # stale chip from turn 1 is finally tapped — it lands as turn 3.
+    clinic_agent._TURN_COUNTERS[sid] = 2
+    assert clinic_tools.get_awaiting_confirmation(sid, 3) is None  # window already closed
+
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="SBAL", contact_phone=None)
+    service = _service_for_responses([_stream("Sure, what else can I help with?")])
+    ex = AsyncMock()
+    with patch("app.services.clinic_agent.execute_clinic_tool", ex):
+        events = await _run(service, config, question="Yes", channel="instagram", session_id=sid)
+
+    ex.assert_not_awaited()  # confirm_booking (or any tool) never reached
+    done_event = next(e for e in events if e["type"] == "done")
+    assert "booking" not in done_event.get("ui", {})
+
+
+@pytest.mark.asyncio
 async def test_no_tool_calls_means_no_ui_key():
     config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="SBAL", contact_phone=None)
     responses = [_stream("We're open 9 to 5.")]
