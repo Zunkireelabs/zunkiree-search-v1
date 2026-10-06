@@ -67,6 +67,15 @@ DEFAULT_STAFF_LABEL_PLURAL = "staff"
 DEFAULT_LOCATION_LABEL_PLURAL = "rooms"
 
 
+def _clean_price(value: float | int | None) -> float | int | None:
+    """A whole-NPR price round-trips through Postgres numeric as a float
+    ("3499.0") — drop the trailing .0 so every caller (cards, text, and the
+    model's own narration of list_services' result) sees "3499"."""
+    if isinstance(value, float) and value == int(value):
+        return int(value)
+    return value
+
+
 def _log_call(op: str, org_id: str | None = None, **ids: Any) -> None:
     extra = "".join(f" {k}={v}" for k, v in ids.items() if v)
     logger.info("[ZENNLY] call op=%s org_id=%s%s", op, org_id or current_org_id.get() or "-", extra)
@@ -187,8 +196,11 @@ class ZennlyClient:
                 # effective_price_npr is offer/campaign-aware — the actual price a
                 # booking right now charges, which is what list_services/
                 # check_availability must quote (same field the public booking
-                # flow itself displays).
-                "price_npr": s.get("effective_price_npr", s.get("price_npr")),
+                # flow itself displays). SBAL-Z3 P4: Postgres numeric columns
+                # come back as floats ("3499.0") even for a whole-NPR price —
+                # clean here, once, so every caller (and the model's own
+                # narration of it) sees "3499", never "3499.0".
+                "price_npr": _clean_price(s.get("effective_price_npr", s.get("price_npr"))),
                 "description": s.get("description"),
                 "category": s.get("category_name"),
             }

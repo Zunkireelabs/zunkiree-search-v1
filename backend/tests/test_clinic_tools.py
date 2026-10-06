@@ -509,6 +509,22 @@ async def test_check_availability_full_day_offers_next_open_slots(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_check_availability_exclude_time_filters_open_times(monkeypatch):
+    """SBAL-Z3 P5: 'anything other than 10' — the filtered-out time must
+    never reach open_times, so a slots carousel/chips built from this same
+    result can never contradict the text that already excluded it."""
+    _patch_client(monkeypatch, FakeClient())
+    monkeypatch.setattr(
+        clinic_tools.avail, "available_slots_for_date",
+        lambda *a, **kw: ["10:00", "10:30", "11:00"],
+    )
+    result = await clinic_tools._check_availability(
+        AsyncMock(), _make_customer(), service="Teeth Cleaning", date="2026-10-01", exclude_time="10:00",
+    )
+    assert result["open_times"] == ["10:30", "11:00"]
+
+
+@pytest.mark.asyncio
 async def test_full_day_with_nothing_open_anywhere_says_so_and_offers_no_dates(monkeypatch):
     _patch_client(monkeypatch, FakeClient())
     monkeypatch.setattr(clinic_tools.avail, "available_slots_for_date", lambda *a, **kw: [])

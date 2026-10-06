@@ -375,7 +375,12 @@ class ChatbotQueryService:
         if website_type == "clinic":
             greet_name = None
             if not history and sender_profile and sender_profile.name:
-                greet_name = sender_profile.name.split()[0]
+                first_name = sender_profile.name.split()[0]
+                # SBAL-Z3 P6: "Hi H!" came from a one-letter IG display name
+                # (a first initial, an emoji-stripped stub, etc.) — only use
+                # it when it reads like an actual name.
+                if len(first_name) >= 2:
+                    greet_name = first_name
             return await self._process_booking_agent_message(
                 db=db,
                 channel=channel,

@@ -30,7 +30,9 @@ from sqlalchemy import select
 from app.database import async_session_maker
 from app.models.customer import Customer
 from app.services.clinic_tools import _resolve_org  # noqa: SLF001 (intentional reuse — see module docstring)
+from app.services.clinicmd_client import ClinicMdNotConfigured
 from app.services.openai_client import get_openai_client
+from app.services.zennly_client import ZennlyNotConfigured
 
 logger = logging.getLogger("zunkiree.clinic_prewarm")
 
@@ -59,6 +61,14 @@ async def _prewarm_org_cache_once() -> int:
             try:
                 await _resolve_org(db, customer)
                 warmed += 1
+            except (ZennlyNotConfigured, ClinicMdNotConfigured):
+                # SBAL-Z3 log noise: expected on the prod API, which has no
+                # backend env at all (the brain lives on the clinic lane) —
+                # one line, never a traceback, every rewarm.
+                logger.warning(
+                    "[CLINIC-PREWARM] backend_not_configured site_id=%s — skipping (expected off the clinic lane)",
+                    customer.site_id,
+                )
             except Exception:
                 logger.warning(
                     "[CLINIC-PREWARM] resolve_org_failed site_id=%s", customer.site_id, exc_info=True
