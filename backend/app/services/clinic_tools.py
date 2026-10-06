@@ -27,9 +27,15 @@ from app.services import clinic_availability as avail
 from app.services.clinicmd_client import (
     ClinicMdError,
     ClinicMdNotConfigured,
-    current_org_id,
+    current_org_id as _clinicmd_org_ctx,
     get_clinicmd_client,
     new_booking_id,
+)
+from app.services.zennly_client import (
+    ZennlyError,
+    ZennlyNotConfigured,
+    current_org_id as _zennly_org_ctx,
+    get_zennly_client,
 )
 
 logger = logging.getLogger("zunkiree.clinic_tools")
@@ -63,7 +69,7 @@ CLINIC_TOOLS = [
         "type": "function",
         "function": {
             "name": "search_knowledge",
-            "description": "Search the clinic's knowledge base for general facts (hours, address, phone, parking, payment methods, doctors, policies). Do NOT use for prices/services/durations or open times — use list_services / check_availability for those.",
+            "description": "Search the clinic's knowledge base for general facts (hours, address, phone, parking, payment methods, {staff_term}, policies). Do NOT use for prices/services/durations or open times — use list_services / check_availability for those.",
             "parameters": {
                 "type": "object",
                 "properties": {"query": {"type": "string", "description": "What the visitor is asking about"}},
@@ -75,7 +81,7 @@ CLINIC_TOOLS = [
         "type": "function",
         "function": {
             "name": "list_services",
-            "description": "List the clinic's treatments/services with price (NPR) and duration. This is the source of truth for prices — never guess prices.",
+            "description": "List the clinic's services with price (NPR) and duration. This is the source of truth for prices — never guess prices.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -130,6 +136,42 @@ CLINIC_TOOLS = [
         },
     },
 ]
+
+# SBAL-Z1: the only domain noun CLINIC_TOOLS/CLINIC_SYSTEM_PROMPT hardcode is
+# "doctors" (search_knowledge's description) — everywhere else the prompt
+# already says "service"/"clinic" generically. Rather than a second prompt
+# per industry (explicitly ruled out by the brief), this one word is sourced
+# from the tenant's booking backend (see get_vocab_for_customer) and
+# substituted at tool/prompt-build time.
+_DEFAULT_VOCAB = {"staff_term": "doctors"}
+
+
+def build_clinic_tools(vocab: dict | None = None) -> list[dict]:
+    """CLINIC_TOOLS with {staff_term} filled in from the tenant's backend
+    vocabulary (defaults to "doctors", ClinicMD's own word, when absent)."""
+    staff_term = (vocab or {}).get("staff_term") or _DEFAULT_VOCAB["staff_term"]
+    tools = []
+    for tool in CLINIC_TOOLS:
+        tool_copy = {**tool, "function": {**tool["function"]}}
+        if tool_copy["function"].get("description"):
+            tool_copy["function"]["description"] = tool_copy["function"]["description"].format(
+                staff_term=staff_term
+            )
+        tools.append(tool_copy)
+    return tools
+
+
+def get_vocab_for_customer(site_id: str) -> dict:
+    """Non-blocking: the backend-provided vocabulary cached alongside org/
+    branches by _resolve_org (see _resolve_org_uncached). Falls back to the
+    ClinicMD-flavored default when the cache hasn't been warmed yet for this
+    tenant — clinic_prewarm warms every website_type=="clinic" tenant at
+    container start, so this is a narrow cold-start window, not a steady-
+    state gap — and deliberately never blocks the prompt-build path on a
+    cold-cache DB/HTTP round trip to find out."""
+    cached = _cache_get(_ORG_CACHE, site_id, _ORG_CACHE_TTL_SECONDS)
+    return (cached or {}).get("vocab") or _DEFAULT_VOCAB
+
 
 # in-process state: correct only with one worker per serving process; see
 # P2 brief. The confirmation gate below (get_awaiting_confirmation) reads
@@ -268,10 +310,10 @@ async def execute_clinic_tool(
         if tool_name == "confirm_booking":
             return await _confirm_booking(db, customer, session_id, current_turn, user_message)
         return {"error": f"Unknown tool: {tool_name}"}
-    except ClinicMdNotConfigured:
+    except (ClinicMdNotConfigured, ZennlyNotConfigured):
         return {"error": "NOT_CONFIGURED", "message": "Booking system isn't connected right now — please call the clinic directly."}
-    except ClinicMdError as e:
-        logger.warning("[CLINIC-AGENT] tool=%s clinicmd_error pg_code=%s", tool_name, e.pg_code)
+    except (ClinicMdError, ZennlyError) as e:
+        logger.warning("[CLINIC-AGENT] tool=%s booking_backend_error pg_code=%s", tool_name, e.pg_code)
         return {"error": "CLINICMD_ERROR", "message": "I couldn't reach the booking system just now. Please try again shortly."}
 
 
@@ -381,12 +423,41 @@ async def _search_knowledge(db: AsyncSession, customer: Customer, config: Widget
 # across event loops.
 _ORG_RESOLVE_LOCKS: "weakref.WeakKeyDictionary[AsyncSession, asyncio.Lock]" = weakref.WeakKeyDictionary()
 
+# SBAL-Z1: the booking backend is now per-tenant DATA (tenant_backend_credentials
+# .backend_type), not a hardcoded ClinicMD call — see _resolve_org_uncached.
+# "clinicmd" is the default for any cache entry predating this change (there is
+# none on a fresh deploy, but _cache_get's (value, cached_at) tuples survive a
+# reload if ever persisted) and for the NOT_CONFIGURED path, which never caches.
+_BACKEND_TYPES = ("clinicmd", "zennly")
+
+
+def _client_for_backend(backend_type: str):
+    if backend_type == "zennly":
+        return get_zennly_client()
+    return get_clinicmd_client()
+
+
+def _set_org_context(backend_type: str, org_id: str) -> None:
+    (_zennly_org_ctx if backend_type == "zennly" else _clinicmd_org_ctx).set(org_id)
+
+
+def _cached_backend_type(site_id: str) -> str:
+    cached = _cache_get(_ORG_CACHE, site_id, _ORG_CACHE_TTL_SECONDS)
+    return (cached or {}).get("backend_type", "clinicmd")
+
+
+def get_client_for_customer(customer: Customer):
+    """The tenant's booking backend client, resolved from whatever
+    _resolve_org cached for it this turn — call _resolve_org (or any of the
+    tool functions that call it) first."""
+    return _client_for_backend(_cached_backend_type(customer.site_id))
+
 
 async def _resolve_org(db: AsyncSession, customer: Customer) -> tuple[str, list[dict]]:
     t0 = _time.monotonic()
     cached = _cache_get(_ORG_CACHE, customer.site_id, _ORG_CACHE_TTL_SECONDS)
     if cached:
-        current_org_id.set(cached["org_id"])
+        _set_org_context(cached.get("backend_type", "clinicmd"), cached["org_id"])
         _log_resolve_org(customer.site_id, "hit", t0)
         return cached["org_id"], cached["branches"]
 
@@ -397,7 +468,7 @@ async def _resolve_org(db: AsyncSession, customer: Customer) -> tuple[str, list[
         # A concurrent caller may have filled the cache while we waited.
         cached = _cache_get(_ORG_CACHE, customer.site_id, _ORG_CACHE_TTL_SECONDS)
         if cached:
-            current_org_id.set(cached["org_id"])
+            _set_org_context(cached.get("backend_type", "clinicmd"), cached["org_id"])
             _log_resolve_org(customer.site_id, "hit_after_wait", t0)
             return cached["org_id"], cached["branches"]
         result = await _resolve_org_uncached(db, customer)
@@ -417,19 +488,23 @@ def _log_resolve_org(site_id: str, outcome: str, t0: float) -> None:
 
 
 async def _resolve_org_uncached(db: AsyncSession, customer: Customer) -> tuple[str, list[dict]]:
+    # SBAL-Z1: the booking backend is per-tenant data, not hardcoded — this
+    # tenant's active credentials row names it (clinicmd default when the
+    # column somehow holds neither, which .in_() below excludes outright).
     result = await db.execute(
         select(TenantBackendCredentials).where(
             TenantBackendCredentials.customer_id == customer.id,
-            TenantBackendCredentials.backend_type == "clinicmd",
+            TenantBackendCredentials.backend_type.in_(_BACKEND_TYPES),
             TenantBackendCredentials.is_active == True,  # noqa: E712
         )
     )
     row = result.scalar_one_or_none()
     if not row:
-        raise ClinicMdError("No ClinicMD org mapping configured for this tenant.", code="NOT_CONFIGURED")
+        raise ClinicMdError("No booking backend configured for this tenant.", code="NOT_CONFIGURED")
+    backend_type = getattr(row, "backend_type", None) or "clinicmd"
     remote_site_id = row.remote_site_id
 
-    # Release the DB session before the ClinicMD HTTP call, so a cold-cache
+    # Release the DB session before the backend's HTTP call, so a cold-cache
     # turn doesn't hold a pooler socket for the ~1.3-1.5s get_org/list_branches
     # round trip. Read the credential, commit, then call out. Measured on
     # stage: this was the only >0-socket hold in the B0 probe (P2 brief §7b) —
@@ -437,14 +512,17 @@ async def _resolve_org_uncached(db: AsyncSession, customer: Customer) -> tuple[s
     # would otherwise queue on it.
     await db.commit()
 
-    client = get_clinicmd_client()
+    client = _client_for_backend(backend_type)
     org = await client.get_org(remote_site_id)
     if not org:
-        raise ClinicMdError(f"ClinicMD org '{row.remote_site_id}' not found or inactive.", code="ORG_NOT_FOUND")
+        raise ClinicMdError(f"{backend_type} org '{row.remote_site_id}' not found or inactive.", code="ORG_NOT_FOUND")
 
     branches = await client.list_branches(org["id"])
-    _cache_set(_ORG_CACHE, customer.site_id, {"org_id": org["id"], "branches": branches})
-    current_org_id.set(org["id"])
+    vocab = {"staff_term": (org.get("staff_label_plural") or _DEFAULT_VOCAB["staff_term"]).lower()}
+    _cache_set(_ORG_CACHE, customer.site_id, {
+        "org_id": org["id"], "branches": branches, "backend_type": backend_type, "vocab": vocab,
+    })
+    _set_org_context(backend_type, org["id"])
     return org["id"], branches
 
 
@@ -506,7 +584,7 @@ async def _list_services(db: AsyncSession, customer: Customer, query: str | None
     if not branch:
         return {"error": "NO_BRANCH", "message": "No active branch configured for this clinic."}
 
-    treatments = await get_clinicmd_client().list_treatments(org_id, branch)
+    treatments = await get_client_for_customer(customer).list_treatments(org_id, branch)
     if query:
         q = query.lower()
         filtered = [t for t in treatments if q in t["name"].lower() or q in (t.get("category") or "").lower()]
@@ -560,7 +638,7 @@ async def _check_availability(db: AsyncSession, customer: Customer, service: str
     if not branch:
         return {"error": "NO_BRANCH", "message": "No active branch configured for this clinic."}
 
-    client = get_clinicmd_client()
+    client = get_client_for_customer(customer)
     treatments = await client.list_treatments(org_id, branch)
     treatment, ambiguous = _match_service(treatments, service)
     if treatment is None:
@@ -671,7 +749,7 @@ async def _prepare_booking(
             }
     branch = branch_row
 
-    client = get_clinicmd_client()
+    client = get_client_for_customer(customer)
     treatments = await client.list_treatments(org_id, branch)
     treatment = next((t for t in treatments if _is_uuid(service_id) and t["id"] == service_id), None)
     if treatment is None:
@@ -802,9 +880,69 @@ async def _prepare_booking(
     return {"summary": summary, "pending_booking": _pending_public_view(pending)}
 
 
+def _build_clinicmd_booking_row(booking_id, branch, chair, treatment, customer_id, pending):
+    return {
+        "id": booking_id,
+        "branch_id": branch["id"],
+        "chair_id": chair["id"],
+        "treatment_id": treatment["id"],
+        "dentist_id": None,
+        "customer_id": customer_id,
+        "customer_name": pending["full_name"].title(),
+        "customer_email": pending.get("email"),
+        "customer_phone": pending["phone_e164"],
+        "date": pending["date"],
+        "start_time": pending["time"],
+        "base_amount": treatment.get("price_npr"),
+        "discount_amount": 0,
+        "special_requests": f"[Booked via website AI assistant] {pending.get('note') or ''}".strip(),
+        "created_by": None,
+        "treatment_name_snapshot": treatment["name"],
+        "treatment_duration_snapshot": treatment.get("duration_minutes") or avail.DEFAULT_DURATION_MINUTES,
+        "treatment_price_snapshot": treatment.get("price_npr"),
+        "chair_name_snapshot": chair.get("name"),
+    }
+
+
+def _build_zennly_booking_row(booking_id, branch, chair, treatment, customer_id, pending):
+    return {
+        # No "id" — Zennly's bookings.id/booking_number are server-generated;
+        # client_request_id is the anon caller's own idempotency/read-back key
+        # (public_get_booking_by_request_id, migration-223).
+        "client_request_id": booking_id,
+        "branch_id": branch["id"],
+        "room_id": chair["id"] if chair else None,
+        "service_id": treatment["id"],
+        "therapist_id": None,
+        "customer_id": customer_id,
+        "customer_name": pending["full_name"].title(),
+        "customer_email": pending.get("email"),
+        "customer_phone": pending["phone_e164"],
+        "date": pending["date"],
+        "start_time": pending["time"],
+        "base_amount": treatment.get("price_npr"),
+        "discount_amount": 0,
+        "special_requests": f"[Booked via website AI assistant] {pending.get('note') or ''}".strip(),
+        # None (no staff session) is exactly what makes this an "Online
+        # booking" on Zennly's own dashboard (isOnline: !b.created_by).
+        "created_by": None,
+        "service_name_snapshot": treatment["name"],
+        "service_duration_snapshot": treatment.get("duration_minutes") or avail.DEFAULT_DURATION_MINUTES,
+        "service_price_snapshot": treatment.get("price_npr"),
+        "room_name_snapshot": chair.get("name") if chair else None,
+    }
+
+
+_BOOKING_ROW_BUILDERS = {
+    "clinicmd": _build_clinicmd_booking_row,
+    "zennly": _build_zennly_booking_row,
+}
+
+
 async def _execute_booking(db: AsyncSession, customer: Customer, pending: dict) -> dict:
-    client = get_clinicmd_client()
     org_id, branches = await _resolve_org(db, customer)
+    backend_type = _cached_backend_type(customer.site_id)
+    client = get_client_for_customer(customer)
     branch = next((b for b in branches if b["id"] == pending["branch_id"]), None)
     if not branch:
         raise ClinicMdError("Branch no longer available.", code="BRANCH_NOT_FOUND")
@@ -834,27 +972,7 @@ async def _execute_booking(db: AsyncSession, customer: Customer, pending: dict) 
     )
 
     booking_id = new_booking_id()
-    row = {
-        "id": booking_id,
-        "branch_id": branch["id"],
-        "chair_id": chair["id"],
-        "treatment_id": treatment["id"],
-        "dentist_id": None,
-        "customer_id": customer_id,
-        "customer_name": pending["full_name"].title(),
-        "customer_email": pending.get("email"),
-        "customer_phone": pending["phone_e164"],
-        "date": pending["date"],
-        "start_time": pending["time"],
-        "base_amount": treatment.get("price_npr"),
-        "discount_amount": 0,
-        "special_requests": f"[Booked via website AI assistant] {pending.get('note') or ''}".strip(),
-        "created_by": None,
-        "treatment_name_snapshot": treatment["name"],
-        "treatment_duration_snapshot": duration,
-        "treatment_price_snapshot": treatment.get("price_npr"),
-        "chair_name_snapshot": chair.get("name"),
-    }
+    row = _BOOKING_ROW_BUILDERS[backend_type](booking_id, branch, chair, treatment, customer_id, pending)
 
     await client.insert_booking(row)
     booking = await client.get_booking(booking_id)
@@ -951,16 +1069,17 @@ async def _write_and_record(db, customer, state, pending):
     sig = _signature(pending)
     try:
         booking = await _execute_booking(db, customer, pending)
-    except ClinicMdError as e:
+    except (ClinicMdError, ZennlyError) as e:
         if e.pg_code in ("P0003", "P0005"):
             org_id, branches = await _resolve_org(db, customer)
+            client = get_client_for_customer(customer)
             branch = next((b for b in branches if b["id"] == pending["branch_id"]), None)
             alternatives: list[dict] = []
             if branch:
-                treatments = await get_clinicmd_client().list_treatments(org_id, branch)
+                treatments = await client.list_treatments(org_id, branch)
                 treatment = next((t for t in treatments if t["id"] == pending["service_id"]), None)
                 if treatment:
-                    alternatives = await _next_open_slots(get_clinicmd_client(), branch, treatment, datetime.now(NPT))
+                    alternatives = await _next_open_slots(client, branch, treatment, datetime.now(NPT))
             return {
                 "error": "SLOT_TAKEN",
                 "message": "That slot was just taken by someone else.",

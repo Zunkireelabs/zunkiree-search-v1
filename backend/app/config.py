@@ -115,6 +115,12 @@ class Settings(BaseSettings):
     clinicmd_supabase_url: str | None = None
     clinicmd_supabase_anon_key: str | None = None
 
+    # Zennly integration (clinic website_type agent, tenant_backend_credentials.backend_type
+    # == "zennly" — e.g. SBAL). Sibling of the ClinicMD config above: optional, anon key only,
+    # never service_role. See app/services/zennly_client.py.
+    zennly_supabase_url: str | None = None
+    zennly_supabase_anon_key: str | None = None
+
     # edgeX quotation lead-submit (HR Goel demo, website_type == "it_solutions").
     # Optional — hr_goel_tools returns a clean error if unset. Integration key
     # is server-side only: never logged, never sent to the client.
