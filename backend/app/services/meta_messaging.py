@@ -81,6 +81,18 @@ async def get_instagram_profile(sender_id: str, access_token: str) -> dict | Non
         return None
 
 
+def _format_price_npr(value) -> str:
+    """SBAL-Z3 P4: "3,499" not "3499.0" — a whole-NPR price (the only kind
+    list_services/check_availability ever return, see clinicmd_client's/
+    zennly_client's _clean_price) with a thousands separator and no
+    trailing decimal, on cards and in any adapter-built text."""
+    if value is None:
+        return ""
+    if isinstance(value, float) and not value.is_integer():
+        return f"{value:,}"
+    return f"{int(value):,}"
+
+
 class MetaMessagingClient:
     """Send messages via Meta's Graph API (Instagram, Messenger, WhatsApp)."""
 
@@ -306,7 +318,7 @@ class MetaMessagingClient:
         exact next turn from it (same [field:value] marker pattern as the
         ecommerce add_to_cart postback)."""
         if platform == "whatsapp":
-            lines = [f"• {s['name']}" + (f" - NPR {s['price']}" if s.get("price") else "") for s in services[:5]]
+            lines = [f"• {s['name']}" + (f" - NPR {_format_price_npr(s['price'])}" if s.get("price") else "") for s in services[:5]]
             return await self._send_whatsapp_text(page_id, access_token, recipient_id, "\n".join(lines))
 
         import json as _json
@@ -314,7 +326,7 @@ class MetaMessagingClient:
         elements = []
         for s in services[:10]:
             name = s.get("name", "")
-            title = f"{name} · NPR {s['price']}" if s.get("price") else name
+            title = f"{name} · NPR {_format_price_npr(s['price'])}" if s.get("price") else name
             subtitle = f"{s['duration']} min" if s.get("duration") else ""
             element = {"title": title[:80], "subtitle": subtitle[:80]}
             if s.get("image_url"):

@@ -105,6 +105,10 @@ CLINIC_TOOLS = [
                         "type": "string", "enum": ["male", "female"],
                         "description": "Only set this if the visitor themselves brings up a staff gender preference — never ask for one.",
                     },
+                    "exclude_time": {
+                        "type": "string",
+                        "description": "HH:MM, 24h. Set this when the visitor asks for anything OTHER than a specific time they already heard (e.g. 'anything other than 10') — the result's open_times will already have it removed, so your answer and any time chips shown to the visitor stay consistent.",
+                    },
                 },
                 "required": ["service"],
             },
@@ -306,6 +310,7 @@ async def execute_clinic_tool(
             return await _check_availability(
                 db, customer, tool_args.get("service", ""), tool_args.get("date"),
                 gender_preference=tool_args.get("gender_preference"),
+                exclude_time=tool_args.get("exclude_time"),
             )
         if tool_name == "prepare_booking":
             result = await _prepare_booking(db, customer, session_id, current_turn, **tool_args)
@@ -375,7 +380,60 @@ def _hours_from_clinicmd_branch(customer: Customer) -> str | None:
     return f"{branch['name']} is open {branch['open_time']} to {branch['close_time']} ({branch.get('timezone') or 'Asia/Kathmandu'})."
 
 
+# SBAL-Z3 B3: "Where are you located?" answered from the knowledge base
+# ("being finalized — please ask our team") instead of the branch's own
+# address/phone — which the backend already fetches (list_branches'
+# select includes address/phone) but no tool ever surfaced. Mirrors
+# _hours_from_clinicmd_branch exactly: live backend data wins over a
+# stored quick fact or RAG, so the answer can never drift from, or lag
+# behind, what's actually set there.
+_LOCATION_SIGNAL = re.compile(
+    r"\b(?:address|location|located|where|directions)\b|ठेगाना|कहाँ",
+    re.IGNORECASE,
+)
+
+
+def _is_placeholder_value(value: str | None) -> bool:
+    """Zennly's own demo/not-yet-configured values ("TBD" address, an
+    all-zero phone) — treated as "not set yet", not stated as fact."""
+    if not value or not value.strip():
+        return True
+    v = value.strip()
+    if v.upper() in ("TBD", "N/A", "TODO", "-"):
+        return True
+    digits = re.sub(r"\D", "", v)
+    # A real phone number's local part is never all zeros — catches both a
+    # bare "0000000" and a real-looking "+977-1-0000000" (country/area code
+    # intact, local number zeroed out).
+    return bool(digits) and bool(re.search(r"0{6,}$", digits))
+
+
+def _location_from_branch(customer: Customer) -> str | None:
+    """Mirrors _hours_from_clinicmd_branch (same fast path, same reasoning
+    — see that docstring). Returns None (falls through to the stored quick
+    fact / RAG) when the branch has no real address or phone set yet."""
+    cached_org = _cache_get(_ORG_CACHE, customer.site_id, _ORG_CACHE_TTL_SECONDS)
+    if not cached_org:
+        return None
+    branch = _default_branch(cached_org["branches"])
+    if not branch:
+        return None
+    parts = []
+    address = branch.get("address")
+    if not _is_placeholder_value(address):
+        parts.append(f"{branch['name']} is located at {address}.")
+    phone = branch.get("phone")
+    if not _is_placeholder_value(phone):
+        parts.append(f"You can reach us at {phone}.")
+    return " ".join(parts) if parts else None
+
+
 async def _quick_fact_lookup(db: AsyncSession, customer: Customer, query: str) -> dict | None:
+    if _LOCATION_SIGNAL.search(query):
+        live_location = _location_from_branch(customer)
+        if live_location:
+            return {"category": "location", "answer": live_location}
+
     facts = await _load_quick_facts(db, customer)
     if not facts:
         return None
@@ -691,7 +749,7 @@ async def _next_open_slots(
 
 async def _check_availability(
     db: AsyncSession, customer: Customer, service: str, date: str | None = None,
-    gender_preference: str | None = None,
+    gender_preference: str | None = None, exclude_time: str | None = None,
 ) -> dict:
     org_id, branches, backend_type = await _resolve_org(db, customer)
     branch = _default_branch(branches)
@@ -733,6 +791,11 @@ async def _check_availability(
                 target_date, service_summary["duration_minutes"], _therapist_counts(therapists),
                 bookings, now_npt, gender=gender_preference, limit=8,
             )
+        if exclude_time:
+            # SBAL-Z3 P5: "anything other than 10" — filter HERE, once, so
+            # the slot chips (built from this same open_times list) can
+            # never list a time the text already said was excluded.
+            slots = [s for s in slots if s != exclude_time]
         if not slots:
             # A full day: name the next days that DO have room instead of
             # leaving the visitor to guess (voice especially).

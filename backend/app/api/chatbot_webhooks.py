@@ -4,6 +4,7 @@ Returns 200 OK immediately and processes messages in background.
 """
 import hashlib
 import logging
+import time
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 
@@ -41,6 +42,25 @@ _last_products: dict[str, list[dict]] = {}
 # Pending add-to-cart: keyed by "page_id:sender_id" → product_id
 # Set when user taps a carousel "Add to Cart" button; consumed when user replies with a size.
 _pending_cart_add: dict[str, str] = {}
+
+# SBAL-Z3 B2: a postback's `mid` is unique per Meta delivery, but a Meta
+# redelivery OR a visitor re-tapping a button before the first reply lands
+# (the tap gives no visual feedback, and a reply takes 2-4s) both produce a
+# genuinely NEW mid each time — the platform_message_id dedupe at
+# _handle_incoming_message can't catch either case on its own. This is the
+# second net: same sender + same exact payload within 20s is dropped,
+# regardless of mid. Keyed by "page_id:sender_id" -> (payload, monotonic_ts).
+# Text messages are NOT debounced (brief: only postbacks tap-stormed).
+_recent_postbacks: dict[str, tuple[str, float]] = {}
+_POSTBACK_DEBOUNCE_SECONDS = 20.0
+
+
+def _is_debounced_postback(page_id: str | None, sender_id: str, payload: str) -> bool:
+    key = f"{page_id}:{sender_id}"
+    prev = _recent_postbacks.get(key)
+    now = time.monotonic()
+    _recent_postbacks[key] = (payload, now)
+    return bool(prev and prev[0] == payload and (now - prev[1]) < _POSTBACK_DEBOUNCE_SECONDS)
 
 
 @router.get("")
@@ -167,6 +187,12 @@ async def _process_instagram_entry(entry: dict):
     for event in messaging_events:
         sender_id = event.get("sender", {}).get("id")
         message = event.get("message", {})
+        # SBAL-Z3 log noise: Meta echoes every outbound message back as an
+        # inbound event (message.is_echo) — our own sender_id is a page/bot
+        # id with no chatbot_channels row, so this was logging a confusing
+        # "No active channel" warning on every single DM we send.
+        if message.get("is_echo"):
+            continue
         message_text = message.get("text")
         message_id = message.get("mid")
         attachments = message.get("attachments", [])
@@ -180,7 +206,18 @@ async def _process_instagram_entry(entry: dict):
         postback = event.get("postback", {})
         if postback.get("payload"):
             raw_payload = postback["payload"]
-            message_id = None
+            # SBAL-Z3 B2: use the postback's own mid (was hardcoded None,
+            # which disabled the platform_message_id dedupe for every
+            # button tap) so a genuine Meta redelivery is still caught
+            # there. The debounce below is the separate, mid-agnostic net.
+            message_id = postback.get("mid")
+            logger.info("[DM-DEDUPE] inbound mid=%s sender=%s postback=True", message_id, sender_id)
+            if _is_debounced_postback(page_id, sender_id, raw_payload):
+                logger.info(
+                    "[DM-DEDUPE] dropped sender=%s page_id=%s payload=%s",
+                    sender_id, page_id, raw_payload[:100],
+                )
+                continue
 
             # Check if payload is a JSON action (e.g. product card buttons)
             import json as _postback_json
@@ -224,6 +261,8 @@ async def _process_instagram_entry(entry: dict):
             )
             continue
 
+        logger.info("[DM-DEDUPE] inbound mid=%s sender=%s postback=False", message_id, sender_id)
+
         # If user tapped a quick reply, use the full payload as the message
         quick_reply = message.get("quick_reply", {})
         is_quick_reply = False
@@ -265,6 +304,12 @@ async def _process_messenger_entry(entry: dict):
     for event in messaging_events:
         sender_id = event.get("sender", {}).get("id")
         message = event.get("message", {})
+        # SBAL-Z3 log noise: Meta echoes every outbound message back as an
+        # inbound event (message.is_echo) — our own sender_id is a page/bot
+        # id with no chatbot_channels row, so this was logging a confusing
+        # "No active channel" warning on every single DM we send.
+        if message.get("is_echo"):
+            continue
         message_text = message.get("text")
         message_id = message.get("mid")
         attachments = message.get("attachments", [])
@@ -278,7 +323,14 @@ async def _process_messenger_entry(entry: dict):
         postback = event.get("postback", {})
         if postback.get("payload"):
             raw_payload = postback["payload"]
-            message_id = None
+            message_id = postback.get("mid")
+            logger.info("[DM-DEDUPE] inbound mid=%s sender=%s postback=True", message_id, sender_id)
+            if _is_debounced_postback(page_id, sender_id, raw_payload):
+                logger.info(
+                    "[DM-DEDUPE] dropped sender=%s page_id=%s payload=%s",
+                    sender_id, page_id, raw_payload[:100],
+                )
+                continue
             import json as _postback_json
             try:
                 action_data = _postback_json.loads(raw_payload)
@@ -307,6 +359,8 @@ async def _process_messenger_entry(entry: dict):
                 is_postback=True,
             )
             continue
+
+        logger.info("[DM-DEDUPE] inbound mid=%s sender=%s postback=False", message_id, sender_id)
 
         # If user tapped a quick reply, use the full payload as the message
         quick_reply = message.get("quick_reply", {})
@@ -650,7 +704,12 @@ async def _handle_incoming_message(
             # it's a deterministically-built sentence (CLINIC-BOOKING-TRUTH-BRIEF),
             # not model prose, and truncating it risks cutting the actual
             # confirmation question or booking facts.
-            has_shortenable_cards = bool(products) or bool(ui and (ui.get("services") or ui.get("slots")))
+            has_shortenable_cards = bool(products) or bool(ui and ui.get("slots"))
+            # SBAL-Z3 P1: the confirm summary ("...Shall I book this?") is
+            # sent ONCE, with the Confirm/Change chips attached to that same
+            # message — never as a separate text bubble followed by a
+            # second "Shall I book this?" prompt bubble.
+            send_confirm_with_chips = bool(ui and ui.get("confirm"))
             send_text = answer
             if has_shortenable_cards:
                 dot_pos = answer.find(". ")
@@ -658,9 +717,23 @@ async def _handle_incoming_message(
                     send_text = answer[:dot_pos + 1]
                 elif len(answer) > 200:
                     send_text = answer[:200].rstrip() + "…"
+            elif ui and ui.get("services"):
+                # SBAL-Z3 P3: a mid-sentence/200-char cut of the model's own
+                # prose duplicated the carousel AND sometimes listed services
+                # in a different order than the cards (the model's text is
+                # free-form; ui.services is built from the same tool result
+                # the cards use, but in that result's own order). A fixed
+                # one-line lead-in can never contradict or duplicate the
+                # cards, because it never names a service at all.
+                send_text = "Here are our services — swipe to see them."
 
-            # Send answer — with quick replies attached if available
-            if quick_reply_options:
+            # Send answer — with quick replies attached if available.
+            # The confirm case sends its chips below, combined with this
+            # same text in one message — skip the plain-text send here so
+            # the visitor never sees "Shall I book this?" as two bubbles.
+            if send_confirm_with_chips:
+                pass
+            elif quick_reply_options:
                 try:
                     await client.send_quick_replies(
                         platform=platform,
@@ -731,7 +804,7 @@ async def _handle_incoming_message(
                 try:
                     await client.send_chips(
                         platform=platform, page_id=send_page_id, access_token=access_token,
-                        recipient_id=sender_id, text="Shall I book this?",
+                        recipient_id=sender_id, text=send_text,
                         chips=[
                             {"label": confirm.get("yes_label", "✅ Confirm"), "payload": confirm["yes_payload"]},
                             {"label": confirm.get("change_label", "✏️ Change"), "payload": confirm["change_payload"]},
@@ -739,6 +812,10 @@ async def _handle_incoming_message(
                     )
                 except Exception as e:
                     logger.warning("Confirm chips failed: %s", e)
+                    await client.send_text_message(
+                        platform=platform, page_id=send_page_id, access_token=access_token,
+                        recipient_id=sender_id, text=send_text,
+                    )
             elif ui and ui.get("slots"):
                 try:
                     await client.send_chips(

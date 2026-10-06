@@ -1,0 +1,158 @@
+"""
+SBAL-Z3 B1: the 10-06 team IG test showed the agent answering availability
+questions straight from its own guess (Hardik's lane log — every one of
+those turns had `tools=[]`), contradicting an actual check_availability
+result two turns later. A prompt rule won't hold here any more than
+anywhere else in this file (llm_prompt_mandate_vs_actual_behavior) — this
+is the code-side invariant: a turn that names a time/date, or asks whether
+something is free/available, forces iteration 1's tool_choice to
+check_availability, so the model can never give a final answer about
+availability without a fresh check that same turn.
+"""
+import uuid
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from app.models.widget_config import WidgetConfig
+from app.services.clinic_agent import (
+    ClinicAgentService,
+    _AVAILABILITY_SIGNAL,
+    _mentions_time_or_date,
+)
+from tests.test_clinic_booking_truth import _make_customer, _stream, _stream_tool_call
+
+FORCED_CHOICE = {"type": "function", "function": {"name": "check_availability"}}
+
+
+def _service_capturing_calls(responses: list, calls: list) -> ClinicAgentService:
+    service = ClinicAgentService()
+    service.client = AsyncMock()
+
+    async def _create(**kw):
+        calls.append(kw)
+        return responses.pop(0)
+
+    service.client.chat.completions.create = AsyncMock(side_effect=_create)
+    service.conversation_store = AsyncMock()
+    service.conversation_store.get_messages = lambda session_id: []
+    service.conversation_store.add_message = lambda *a, **kw: None
+    return service
+
+
+async def _run_turn(service: ClinicAgentService, config, question: str, session_id: str) -> list:
+    customer = _make_customer()
+    events = []
+    async for event in service.process_agent_stream(
+        db=AsyncMock(), site_id="sbal", session_id=session_id, question=question,
+        customer_id=customer.id, customer=customer, config=config, brand_name="SBAL", channel="instagram",
+    ):
+        events.append(event)
+    return events
+
+
+async def fake_execute_clinic_tool(*, tool_name, tool_args=None, **kw):
+    if tool_name == "check_availability":
+        return {"service": {"id": "svc1", "name": "Lash Tint"}, "date": "2026-10-10", "open_times": ["10:30", "11:00"]}
+    return {}
+
+
+# --- Signal detection unit tests ---
+
+
+@pytest.mark.parametrize("msg", [
+    "Malai 11:30 am ko chaiyeko cha",
+    "12 bajeko?",
+    "11:30 ko cha tah khali?",
+    "Is 2pm free?",
+    "Do you have anything available tomorrow?",
+    "खाली समय छ?",
+])
+def test_availability_signal_matches_time_or_free_question(msg):
+    import datetime as dt
+    now = dt.datetime(2026, 10, 10, 9, 0)
+    assert _AVAILABILITY_SIGNAL.search(msg) or _mentions_time_or_date(msg, now)
+
+
+@pytest.mark.parametrize("msg", [
+    "What is SBAL?",
+    "Who are your stylists?",
+    "Thank you!",
+])
+def test_availability_signal_does_not_match_plain_questions(msg):
+    import datetime as dt
+    now = dt.datetime(2026, 10, 10, 9, 0)
+    assert not (_AVAILABILITY_SIGNAL.search(msg) or _mentions_time_or_date(msg, now))
+
+
+# --- Integration: forced tool_choice on the real turn sequence ---
+
+
+@pytest.mark.asyncio
+async def test_hardik_sequence_forces_check_availability_on_every_time_mention_turn():
+    """Replays the 10-06 lane-log sequence (Hardik, SBAL-Z3 brief table).
+    Turns 1, 2, 4, 5 each name a time and must force check_availability;
+    turn 3 ("anything other than 10") already worked in the real incident
+    and is included for sequence fidelity, not asserted on specifically."""
+    sid = f"t-{uuid.uuid4()}"
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="SBAL", contact_phone=None)
+    calls: list = []
+
+    turns = [
+        ("Malai 11:30 am ko chaiyeko cha", [
+            _stream_tool_call("c1", "check_availability", '{"service": "Lash Tint", "date": "2026-10-10", "time": "11:30"}'),
+            _stream("11:30 is not available on that date. Would you like 10:00 instead?"),
+        ]),
+        ("12 bajeko?", [
+            _stream_tool_call("c2", "check_availability", '{"service": "Lash Tint", "date": "2026-10-10", "time": "12:00"}'),
+            _stream("12:00 is not available either."),
+        ]),
+        ("Aru kunai time cha 10 vanda?", [
+            _stream_tool_call("c3", "check_availability", '{"service": "Lash Tint", "date": "2026-10-10"}'),
+            _stream("Other than 10, we have 10:30, 11:00, 11:30, 12:00, 12:30, 1:00 free."),
+        ]),
+        ("Agi 11:30 chaina vanu vako haina?", [
+            _stream_tool_call("c4", "check_availability", '{"service": "Lash Tint", "date": "2026-10-10", "time": "11:30"}'),
+            _stream("Checking again — 11:30 is in fact open. Want me to book it?"),
+        ]),
+        ("11:30 ko cha tah khali?", [
+            _stream_tool_call("c5", "check_availability", '{"service": "Lash Tint", "date": "2026-10-10", "time": "11:30"}'),
+            _stream("Yes, 11:30 is open — shall I book it?"),
+        ]),
+    ]
+
+    turn_call_ranges: list[tuple[int, int]] = []
+    with patch("app.services.clinic_agent.execute_clinic_tool", fake_execute_clinic_tool):
+        for question, responses in turns:
+            service = _service_capturing_calls(list(responses), calls)
+            start = len(calls)
+            await _run_turn(service, config, question, sid)
+            turn_call_ranges.append((start, len(calls)))
+
+    assert len(turn_call_ranges) == 5
+
+    # Turns 1, 2, 4, 5 (0-indexed 0,1,3,4): iteration 1 of that turn forced
+    # check_availability — the brief's own acceptance test ("assert a tool
+    # call on turns 1, 2, 4, 5").
+    for idx in (0, 1, 3, 4):
+        start, _ = turn_call_ranges[idx]
+        assert calls[start]["tool_choice"] == FORCED_CHOICE, f"turn {idx + 1} did not force check_availability"
+
+
+@pytest.mark.asyncio
+async def test_non_availability_turn_unaffected_on_voice():
+    """No regression on a turn that doesn't mention a time — tool_choice
+    stays 'auto', same code path as before B1 (brief: "prove there's no
+    latency regression on a turn that doesn't mention a time" on voice)."""
+    sid = f"t-{uuid.uuid4()}"
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="SBAL", contact_phone=None)
+    calls: list = []
+    responses = [_stream("We're a brow and lash salon — happy to help with anything you need.")]
+    service = _service_capturing_calls(responses, calls)
+
+    with patch("app.services.clinic_agent.execute_clinic_tool", fake_execute_clinic_tool):
+        events = await _run_turn(service, config, "Tell me about SBAL", sid)
+
+    assert calls[0]["tool_choice"] == "auto"
+    done = next(e for e in events if e["type"] == "done")
+    assert done["answer"]

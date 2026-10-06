@@ -141,6 +141,72 @@ async def test_hours_uses_stored_fact_when_clinicmd_branch_not_populated():
 
 
 @pytest.mark.asyncio
+async def test_location_prefers_live_branch_when_address_is_real(monkeypatch):
+    """SBAL-Z3 B3: 'Where are you located?' must read the branch's own
+    address/phone (already fetched by list_branches) rather than the
+    knowledge base — mirrors the hours live-branch preference exactly."""
+    db = _fake_db([])  # no stored quick fact needed — live branch wins outright
+    customer = _make_customer()
+
+    clinic_tools._cache_set(clinic_tools._ORG_CACHE, "dental-city", {
+        "org_id": "org-1",
+        "branches": [{"id": "b1", "name": "Main Branch", "address": "Thimi, Bhaktapur", "phone": "+977-1-5551234"}],
+    })
+
+    result = await clinic_tools._search_knowledge(db, customer, config=None, site_id="dental-city", query="Where are you located?")
+
+    assert result["chunks"] == [{
+        "content": "Main Branch is located at Thimi, Bhaktapur. You can reach us at +977-1-5551234.",
+    }]
+
+
+@pytest.mark.asyncio
+async def test_location_falls_through_when_branch_address_is_placeholder_tbd():
+    """SBAL-Z1's SBAL demo org has address='TBD', phone='+977-1-0000000' —
+    both placeholders, not real data. Must fall through to the stored
+    quick fact rather than confidently state a fake address."""
+    rows = [_fact_row("location", ["address", "location", "where"],
+                       "SBAL's Main Branch location is being finalized — please ask our team directly.")]
+    db = _fake_db(rows)
+    customer = _make_customer()
+
+    clinic_tools._cache_set(clinic_tools._ORG_CACHE, "sbal", {
+        "org_id": "org-sbal",
+        "branches": [{"id": "b1", "name": "Main Branch", "address": "TBD", "phone": "+977-1-0000000"}],
+    })
+
+    result = await clinic_tools._search_knowledge(db, customer, config=None, site_id="sbal", query="Where are you located?")
+
+    assert result["chunks"] == [{"content": "SBAL's Main Branch location is being finalized — please ask our team directly."}]
+
+
+@pytest.mark.asyncio
+async def test_location_signal_without_cached_branch_falls_through_to_stored_fact():
+    rows = [_fact_row("location", ["address", "location"], "Stored fallback address.")]
+    db = _fake_db(rows)
+    customer = _make_customer()
+    # No _ORG_CACHE entry at all for this tenant (cold cache).
+
+    result = await clinic_tools._quick_fact_lookup(db, customer, "What's your address?")
+
+    assert result == {"category": "location", "keywords": rows[0].keywords, "answer": "Stored fallback address."}
+
+
+@pytest.mark.parametrize("value,expected", [
+    (None, True),
+    ("", True),
+    ("TBD", True),
+    ("tbd", True),
+    ("+977-1-0000000", True),
+    ("0000000", True),
+    ("Thimi, Bhaktapur", False),
+    ("+977-1-5551234", False),
+])
+def test_is_placeholder_value(value, expected):
+    assert clinic_tools._is_placeholder_value(value) is expected
+
+
+@pytest.mark.asyncio
 async def test_facts_cached_per_tenant_no_repeat_db_hit():
     rows = [_fact_row("address", ["located", "address"], "Dental City is located in Thimi, Bhaktapur, Nepal.")]
     db = _fake_db(rows)

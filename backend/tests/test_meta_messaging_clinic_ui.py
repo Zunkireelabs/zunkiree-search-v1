@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.services.meta_messaging import MetaMessagingClient
+from app.services.meta_messaging import MetaMessagingClient, _format_price_npr
 
 
 def _client_with_mocked_http(status_code=200, json_body=None):
@@ -59,7 +59,7 @@ async def test_send_service_cards_builds_title_subtitle_and_book_button_with_id(
     )
     _, kwargs = client._http.post.call_args
     element = kwargs["json"]["message"]["attachment"]["payload"]["elements"][0]
-    assert element["title"] == "Lash Lift · NPR 2500"
+    assert element["title"] == "Lash Lift · NPR 2,500"
     assert element["subtitle"] == "60 min"
     assert "image_url" not in element  # no image data available — omitted, not sent as None
 
@@ -107,3 +107,15 @@ async def test_set_ice_breakers_caps_at_four():
     await client.set_ice_breakers(page_id="page-1", access_token="tok", questions=questions)
     _, kwargs = client._http.post.call_args
     assert len(kwargs["json"]["ice_breakers"][0]["call_to_actions"]) == 4
+
+
+@pytest.mark.parametrize("value,expected", [
+    (3499, "3,499"),
+    (3499.0, "3,499"),
+    (349, "349"),
+    (349.0, "349"),
+    (1000000, "1,000,000"),
+    (None, ""),
+])
+def test_format_price_npr(value, expected):
+    assert _format_price_npr(value) == expected

@@ -113,6 +113,28 @@ async def test_list_treatments_calls_public_rpc_with_slug_and_maps_fields(monkey
 
 
 @pytest.mark.asyncio
+async def test_list_treatments_cleans_whole_number_float_price(monkeypatch, client):
+    """SBAL-Z3 P4: Postgres numeric comes back as 3499.0 for a whole-NPR
+    price — list_treatments must hand back 3499 (int), not the float, so
+    nothing downstream (cards, text, the model's own narration) ever shows
+    the "NPR 3499.0" artifact."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/rest/v1/organizations" in str(request.url):
+            return httpx.Response(200, json=[{"id": "org-1", "name": "SBAL", "slug": "sbal", "industries": None}])
+        return httpx.Response(200, json=[{
+            "id": "svc-1", "name": "Brow Lamination", "duration_minutes": 60,
+            "effective_price_npr": 3499.0, "description": "d", "category_name": "brows",
+        }])
+
+    _install_handler(monkeypatch, handler)
+    await client.get_org("sbal")
+    services = await client.list_treatments("org-1")
+
+    assert services[0]["price_npr"] == 3499
+    assert isinstance(services[0]["price_npr"], int)
+
+
+@pytest.mark.asyncio
 async def test_list_treatments_filters_excluded_categories(monkeypatch, client):
     def handler(request: httpx.Request) -> httpx.Response:
         if "/rest/v1/organizations" in str(request.url):
