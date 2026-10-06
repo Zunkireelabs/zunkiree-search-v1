@@ -20,9 +20,9 @@ on:
         required: false
         default: "true"
       db_pool_size:
-        description: "DB_POOL_SIZE for the clinic lane (resting value is 2 — only raise for a scheduled sizing experiment, restore to 2 after)"
+        description: "DB_POOL_SIZE for the clinic lane (resting value is 6; budget = shared pooler pool size 30 - prod API 10 - stage 2)"
         required: false
-        default: "2"
+        default: "6"
 
 # Prevent concurrent deploys of this lane; independent of the prod API's
 # own deploy-production concurrency group so the two never block each other.
