@@ -19,7 +19,14 @@ from app.config import get_settings
 from app.services.openai_client import get_openai_client
 from app.models.customer import Customer
 from app.models.widget_config import WidgetConfig
-from app.services.clinic_tools import CLINIC_TOOLS, execute_clinic_tool, get_awaiting_confirmation, get_readback_lang, mark_readback
+from app.services.clinic_tools import (
+    build_clinic_tools,
+    execute_clinic_tool,
+    get_awaiting_confirmation,
+    get_readback_lang,
+    get_vocab_for_customer,
+    mark_readback,
+)
 from app.services.clinic_confirm import is_clear_confirmation  # noqa: F401 (re-exported)
 from app.services.conversation import get_conversation_store
 from app.services.language_detection import detect_language
@@ -92,7 +99,7 @@ Current date/time in Nepal: {now_npt}.
 
 LANGUAGE: Reply in the same language the visitor's LATEST message is written in — English in, English out; Nepali in, Nepali out. Never switch languages yourself. This never changes what you're willing to explain: every rule below, including FACTS and BOOKING, applies identically no matter which language you're replying in.
 
-FACTS: Clinic facts (hours, address, parking, payment methods, doctors) come ONLY from search_knowledge. Prices, services, and durations come ONLY from list_services. Open appointment times come ONLY from check_availability. If a tool has no answer, say so honestly — never guess or invent facts, and never invent a phone number under any circumstance. This governs clinic DATA only. It does NOT cover your own capabilities or how you work — what booking involves, what you can help with, what information you still need — those are described in BOOKING below and you may explain them directly, without a tool and without any disclaimer or refusal.
+FACTS: Clinic facts (hours, address, parking, payment methods, {staff_term}) come ONLY from search_knowledge. Prices, services, and durations come ONLY from list_services. Open appointment times come ONLY from check_availability. If a tool has no answer, say so honestly — never guess or invent facts, and never invent a phone number under any circumstance. This governs clinic DATA only. It does NOT cover your own capabilities or how you work — what booking involves, what you can help with, what information you still need — those are described in BOOKING below and you may explain them directly, without a tool and without any disclaimer or refusal.
 
 MEDICAL: You are not a medical professional. Never diagnose or give medical advice. For symptoms or pain, suggest booking a consultation. For severe pain, swelling, bleeding, or trauma, ALWAYS tell them to call the clinic immediately AND, in that same message, state the clinic's verified phone number if one appears above — never tell them to "call the clinic" without also giving that number when you have one. If you don't have a verified number, tell them to call or visit the clinic directly WITHOUT stating any digits.
 
@@ -317,6 +324,94 @@ _REF_SENTENCE = {
     "mixed_ne_en": "तपाईंको रेफरेन्स {ref} हो।",
     "ne_romanized": "Tapaiko reference {ref} ho.",
 }
+
+
+# SBAL-Z2: structured `ui` builders — pure functions over tool results only,
+# never model text (brief item 2). Channel-agnostic; the IG adapter alone
+# turns these into carousels/chips/cards (chatbot_webhooks.py).
+
+def _services_ui(services: list[dict], limit: int = 10) -> list[dict]:
+    """list_services' result -> {id, name, price, duration, image_url,
+    description}. No image data exists on ClinicMD/Zennly treatments —
+    image_url is always None; the IG renderer omits the element image."""
+    return [
+        {
+            "id": s["id"],
+            "name": s["name"],
+            "price": s.get("price_npr"),
+            "duration": s.get("duration_minutes"),
+            "image_url": None,
+            "description": s.get("description"),
+        }
+        for s in services[:limit]
+    ]
+
+
+_ANOTHER_DAY_LABEL_BY_LANG = {
+    "ne_devanagari": "अर्को दिन",
+    "ne_romanized": "Arko din",
+    "en": "Another day",
+    "mixed_ne_en": "अर्को दिन",
+}
+_CONFIRM_CHIP_LABEL_BY_LANG = {
+    "ne_devanagari": "✅ हुन्छ",
+    "ne_romanized": "✅ Huncha",
+    "en": "✅ Confirm",
+    "mixed_ne_en": "✅ हुन्छ",
+}
+_CHANGE_CHIP_LABEL_BY_LANG = {
+    "ne_devanagari": "✏️ बदलौं",
+    "ne_romanized": "✏️ Change garne",
+    "en": "✏️ Change",
+    "mixed_ne_en": "✏️ बदलौं",
+}
+
+
+def _slots_ui(result: dict, lang: str = "en", limit: int = 6) -> list[dict]:
+    """check_availability's result -> [{label, payload}], for the requested
+    day (open_times) plus an "Another day" chip when there's a next_open_slots
+    fallback, or one chip per next_open_slots entry when no specific day was
+    asked for. `payload` is the exact, unambiguous next turn (brief item 3) —
+    fed back to the agent as the visitor's own message, not a tool call.
+    `label` follows the reply language where it's just a fixed phrase (e.g.
+    "Another day"); a bare time like "10:00" has nothing to translate."""
+    service_name = (result.get("service") or {}).get("name") or "that service"
+    date = result.get("date")
+    open_times = result.get("open_times")
+    next_slots = result.get("next_open_slots") or []
+
+    slots = []
+    if open_times:
+        for t in open_times[:limit]:
+            slots.append({
+                "label": t,
+                "payload": f"Book {service_name} on {date} at {t}",
+            })
+        if next_slots:
+            another_day = _ANOTHER_DAY_LABEL_BY_LANG.get(lang, _ANOTHER_DAY_LABEL_BY_LANG["en"])
+            slots.append({"label": another_day, "payload": f"What other days is {service_name} available?"})
+    elif next_slots:
+        for s in next_slots[:limit]:
+            s_date, s_time = s.get("date", ""), s.get("time", "")
+            slots.append({
+                "label": f"{s_date} {s_time}".strip(),
+                "payload": f"Book {service_name} on {s_date} at {s_time}",
+            })
+    return slots
+
+
+def _booking_ui(booking: dict) -> dict:
+    """confirm_booking's result -> {booking_number, service, when, name}.
+    `name` is the branch/location name — the useful "where to go" fact for a
+    booking card; the visitor's own name is already known to them."""
+    date = booking.get("date") or ""
+    start_time = booking.get("start_time") or ""
+    return {
+        "booking_number": booking.get("booking_number"),
+        "service": booking.get("treatment_name"),
+        "when": f"{date} {start_time}".strip(),
+        "name": booking.get("branch_name"),
+    }
 
 
 def _build_confirmation_sentence(
@@ -816,6 +911,12 @@ class ClinicAgentService:
         )
         now_npt_dt = datetime.now(NPT)
         now_npt = now_npt_dt.strftime("%A, %Y-%m-%d %H:%M")
+        # SBAL-Z1: the tenant's booking-backend vocabulary (e.g. a salon's own
+        # staff noun instead of ClinicMD's "doctors") — a non-blocking cache
+        # read, never a fresh resolve, so this never adds latency here (see
+        # get_vocab_for_customer).
+        vocab = get_vocab_for_customer(customer.site_id)
+        tools_for_turn = build_clinic_tools(vocab)
         # P4 B2: escalation-shaped voice turns are exempt from the length block.
         escalation_turn = channel == "voice" and is_medical_escalation_question(question)
         channel_block = ""
@@ -903,7 +1004,7 @@ class ClinicAgentService:
             and not mid_booking_flow
             and _is_knowledge_only_turn(question, now_npt_dt)
         )
-        knowledge_tools_for_iteration_1 = CLINIC_TOOLS
+        knowledge_tools_for_iteration_1 = tools_for_turn
         knowledge_prefetch_line = ""
         if knowledge_fast_path:
             prefetch_start = time.monotonic()
@@ -946,7 +1047,7 @@ class ClinicAgentService:
                     "search_knowledge again this turn unless they ask something different.\n"
                 )
             knowledge_tools_for_iteration_1 = [
-                t for t in CLINIC_TOOLS if t["function"]["name"] != "search_knowledge"
+                t for t in tools_for_turn if t["function"]["name"] != "search_knowledge"
             ]
             logger.info(
                 "[CLINIC-AGENT] knowledge_fast_path_used site_id=%s session_id=%s chunks=%d",
@@ -962,6 +1063,7 @@ class ClinicAgentService:
             language_directive=language_directive,
             date_anchor_line=date_anchor_line,
             knowledge_prefetch_line=knowledge_prefetch_line,
+            staff_term=vocab.get("staff_term", "doctors"),
         )
 
         history = self.conversation_store.get_messages(session_id)
@@ -990,6 +1092,10 @@ class ClinicAgentService:
         # loop below.
         turn_prepared_pending: dict | None = None
         turn_booking_confirmed = False
+        # SBAL-Z2: structured `ui` for the `done` event — built from tool
+        # results only, never model text (brief item 2). Voice/chat ignore
+        # the extra key; only an IG (or future structured) renderer reads it.
+        ui_state: dict = {}
         turn_confirmed: tuple[dict, str] | None = None
         # P4 B1: hard cap on the service-guess fan-out (prod incident: guess
         # "Teeth Cleaning" -> check_availability -> list_services -> guess
@@ -1045,6 +1151,7 @@ class ClinicAgentService:
             allowed_phone_digits |= _extract_phone_digits(str(forced_booking.get("booking_number") or ""))
             if forced_booking.get("booking_number"):
                 turn_booking_confirmed = True
+                ui_state["booking"] = _booking_ui(forced_booking)
                 if forced_result.get("confirmed_pending"):
                     full_answer = sanitize_phone_numbers(
                         _build_confirmation_sentence(
@@ -1083,7 +1190,7 @@ class ClinicAgentService:
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                tools=knowledge_tools_for_iteration_1 if iteration == 1 else CLINIC_TOOLS,
+                tools=knowledge_tools_for_iteration_1 if iteration == 1 else tools_for_turn,
                 max_tokens=max_completion_tokens,
                 temperature=0.3,
                 stream=True,
@@ -1394,6 +1501,15 @@ class ClinicAgentService:
                     if tool_name == "search_knowledge":
                         for chunk_data in result.get("chunks") or []:
                             allowed_phone_digits |= _extract_phone_digits(chunk_data.get("content", ""))
+                    elif tool_name == "list_services" and not result.get("blocked"):
+                        services = result.get("services")
+                        if services:
+                            ui_state["services"] = _services_ui(services)
+                    elif tool_name == "check_availability" and not result.get("blocked"):
+                        ui_lang = get_readback_lang(session_id) or detected_lang
+                        slots = _slots_ui(result, lang=ui_lang)
+                        if slots:
+                            ui_state["slots"] = slots
                     elif tool_name == "prepare_booking":
                         # F1 (PHONE-HALLUCINATION-BRIEF): the phone the visitor gave to
                         # book with is grounded — prepare_booking's read-back must be
@@ -1407,6 +1523,17 @@ class ClinicAgentService:
                         # ever holds a real, current pending_booking.
                         if result.get("summary"):
                             turn_prepared_pending = pending
+                            ui_lang = get_readback_lang(session_id) or detected_lang
+                            ui_state["confirm"] = {
+                                "summary": result["summary"],
+                                "yes_label": _CONFIRM_CHIP_LABEL_BY_LANG.get(ui_lang, _CONFIRM_CHIP_LABEL_BY_LANG["en"]),
+                                # yes_payload stays the plain English allow-listed token
+                                # (is_explicit_yes, clinic_confirm.py) regardless of reply
+                                # language — it's parsed, never displayed.
+                                "yes_payload": "Yes",
+                                "change_label": _CHANGE_CHIP_LABEL_BY_LANG.get(ui_lang, _CHANGE_CHIP_LABEL_BY_LANG["en"]),
+                                "change_payload": "I'd like to change the details",
+                            }
                     elif tool_name == "confirm_booking":
                         # N1: a booking_number is phone-shaped (7-13 digits) and comes
                         # straight from ClinicMD, so it's grounded exactly like a phone
@@ -1419,6 +1546,8 @@ class ClinicAgentService:
                         # error must not silence the no-false-claim check below.
                         if booking.get("booking_number"):
                             turn_booking_confirmed = True
+                            ui_state["booking"] = _booking_ui(booking)
+                            ui_state.pop("confirm", None)
                             if result.get("confirmed_pending"):
                                 turn_confirmed = (result["confirmed_pending"], booking["booking_number"])
 
@@ -1504,12 +1633,15 @@ class ClinicAgentService:
             ",".join(timing_tools),
         )
 
-        yield {
+        done_event = {
             "type": "done",
             "answer": full_answer,
             "suggestions": [],
             "sources": [],
         }
+        if ui_state:
+            done_event["ui"] = ui_state
+        yield done_event
 
 
 _clinic_agent_service: ClinicAgentService | None = None

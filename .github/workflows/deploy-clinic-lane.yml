@@ -49,11 +49,16 @@ jobs:
           DB_POOL_SIZE: ${{ inputs.db_pool_size }}
           CLINICMD_SUPABASE_URL: ${{ secrets.CLINICMD_SUPABASE_URL }}
           CLINICMD_SUPABASE_ANON_KEY: ${{ secrets.CLINICMD_SUPABASE_ANON_KEY }}
+          # SBAL-Z1: optional, unlike CLINICMD_* above — empty/unset must NOT
+          # fail this workflow, so a Dental City-only lane dispatch (no SBAL
+          # Zennly tenant involved) keeps working before these are ever set.
+          ZENNLY_SUPABASE_URL: ${{ secrets.ZENNLY_SUPABASE_URL }}
+          ZENNLY_SUPABASE_ANON_KEY: ${{ secrets.ZENNLY_SUPABASE_ANON_KEY }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          envs: GHCR_TOKEN,GHCR_USER,IMAGE_TAG,SKIP_MIGRATIONS,DB_POOL_SIZE,CLINICMD_SUPABASE_URL,CLINICMD_SUPABASE_ANON_KEY
+          envs: GHCR_TOKEN,GHCR_USER,IMAGE_TAG,SKIP_MIGRATIONS,DB_POOL_SIZE,CLINICMD_SUPABASE_URL,CLINICMD_SUPABASE_ANON_KEY,ZENNLY_SUPABASE_URL,ZENNLY_SUPABASE_ANON_KEY
           script: |
             set -e
             cd /home/zunkireelabs/devprojects/zunkiree-search-v1
@@ -97,6 +102,15 @@ jobs:
             {
               printf '%s=%s\n' CLINICMD_SUPABASE_URL "$CLINICMD_SUPABASE_URL"
               printf '%s=%s\n' CLINICMD_SUPABASE_ANON_KEY "$CLINICMD_SUPABASE_ANON_KEY"
+              # SBAL-Z1: optional — omitted entirely (not written empty) until
+              # Sadin sets these secrets, so get_settings() sees them unset
+              # exactly like any other not-yet-configured integration.
+              if [ -n "$ZENNLY_SUPABASE_URL" ] && [ -n "$ZENNLY_SUPABASE_ANON_KEY" ]; then
+                printf '%s=%s\n' ZENNLY_SUPABASE_URL "$ZENNLY_SUPABASE_URL"
+                printf '%s=%s\n' ZENNLY_SUPABASE_ANON_KEY "$ZENNLY_SUPABASE_ANON_KEY"
+              else
+                echo "ZENNLY_SUPABASE_URL/_ANON_KEY not set — skipping (optional, SBAL only)"
+              fi
             } > backend/.env.clinic-prod
             chmod 600 backend/.env.clinic-prod
 

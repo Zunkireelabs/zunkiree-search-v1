@@ -192,8 +192,8 @@ class QueryRequest(BaseModel):
     image_data: str | None = Field(None, description="Base64-encoded image for visual product search")
     channel: str | None = Field(
         None,
-        pattern="^(chat|voice)$",
-        description="Response channel: 'chat' (default) or 'voice' — selects a response-shape profile",
+        pattern="^(chat|voice|instagram)$",
+        description="Response channel: 'chat' (default), 'voice', or 'instagram' — selects a response-shape profile",
     )
     # P4 (Orca A2): tenant context from the gateway. All optional; absent = today's behaviour.
     channel_open: bool | None = Field(None, description="False when the channel is closed (no handoff possible)")

@@ -253,6 +253,136 @@ class MetaMessagingClient:
             logger.error("Meta Send API error (suggestion_cards): %s %s", resp.status_code, result)
         return result
 
+    async def send_chips(
+        self,
+        platform: str,
+        page_id: str,
+        access_token: str,
+        recipient_id: str,
+        text: str,
+        chips: list[dict],
+    ) -> dict:
+        """Quick-reply chips with an independent label/payload per chip (e.g.
+        a "10:00" slot chip whose payload is the exact next turn "Book X on Y
+        at 10:00", or a "✅ Confirm" chip whose payload is just "Yes"). Plain
+        `send_quick_replies` reuses one string as both; SBAL-Z2 clinic UI
+        (services/slots/confirm/booking) needs them to differ."""
+        if platform == "whatsapp":
+            combined = text + "\n\n" + "\n".join(f"- {c['label']}" for c in chips)
+            return await self._send_whatsapp_text(page_id, access_token, recipient_id, combined)
+
+        truncated = text[:INSTAGRAM_CHAR_LIMIT - 50] if len(text) > INSTAGRAM_CHAR_LIMIT - 50 else text
+        url = SEND_API_URLS[platform].format(page_id=page_id)
+        quick_replies = [
+            {"content_type": "text", "title": c["label"][:80], "payload": c["payload"][:1000]}
+            for c in chips[:13]  # Meta allows max 13 quick replies
+        ]
+        payload = {
+            "recipient": {"id": recipient_id},
+            "message": {"text": truncated, "quick_replies": quick_replies},
+        }
+        resp = await self._http.post(
+            url,
+            json=payload,
+            params={"access_token": access_token},
+        )
+        result = resp.json()
+        if resp.status_code != 200:
+            logger.error("Meta Send API error (chips): %s %s", resp.status_code, result)
+        return result
+
+    async def send_service_cards(
+        self,
+        platform: str,
+        page_id: str,
+        access_token: str,
+        recipient_id: str,
+        services: list[dict],
+    ) -> dict:
+        """SBAL-Z2: clinic `ui.services` -> a generic-template carousel. Each
+        service is {id, name, price, duration, image_url, description} (see
+        clinic_agent._services_ui). "Book this"'s payload carries the
+        service id alongside the name — chatbot_webhooks.py synthesizes the
+        exact next turn from it (same [field:value] marker pattern as the
+        ecommerce add_to_cart postback)."""
+        if platform == "whatsapp":
+            lines = [f"• {s['name']}" + (f" - NPR {s['price']}" if s.get("price") else "") for s in services[:5]]
+            return await self._send_whatsapp_text(page_id, access_token, recipient_id, "\n".join(lines))
+
+        import json as _json
+        url = SEND_API_URLS[platform].format(page_id=page_id)
+        elements = []
+        for s in services[:10]:
+            name = s.get("name", "")
+            title = f"{name} · NPR {s['price']}" if s.get("price") else name
+            subtitle = f"{s['duration']} min" if s.get("duration") else ""
+            element = {"title": title[:80], "subtitle": subtitle[:80]}
+            if s.get("image_url"):
+                element["image_url"] = s["image_url"]
+            element["buttons"] = [
+                {
+                    "type": "postback",
+                    "title": "Book this",
+                    "payload": _json.dumps({"action": "book_service", "service_id": s.get("id", ""), "name": name[:80]}),
+                },
+                {
+                    "type": "postback",
+                    "title": "Details",
+                    "payload": f"Tell me more about {name}"[:1000],
+                },
+            ]
+            elements.append(element)
+
+        payload = {
+            "recipient": {"id": recipient_id},
+            "message": {
+                "attachment": {
+                    "type": "template",
+                    "payload": {"template_type": "generic", "elements": elements},
+                }
+            },
+        }
+        resp = await self._http.post(url, json=payload, params={"access_token": access_token})
+        result = resp.json()
+        if resp.status_code != 200:
+            logger.error("Meta Send API error (service_cards): %s %s", resp.status_code, result)
+        return result
+
+    async def send_booking_card(
+        self,
+        platform: str,
+        page_id: str,
+        access_token: str,
+        recipient_id: str,
+        booking: dict,
+    ) -> dict:
+        """SBAL-Z2: clinic `ui.booking` -> a single generic-template card.
+        `booking` is {booking_number, service, when, name} (see
+        clinic_agent._booking_ui) — `name` is the branch/location."""
+        if platform == "whatsapp":
+            text = f"Booked: {booking.get('service')} on {booking.get('when')} at {booking.get('name')} (ref {booking.get('booking_number')})"
+            return await self._send_whatsapp_text(page_id, access_token, recipient_id, text)
+
+        url = SEND_API_URLS[platform].format(page_id=page_id)
+        element = {
+            "title": f"Booked: {booking.get('service', '')}"[:80],
+            "subtitle": f"{booking.get('when', '')} · {booking.get('name', '')} · Ref {booking.get('booking_number', '')}"[:80],
+        }
+        payload = {
+            "recipient": {"id": recipient_id},
+            "message": {
+                "attachment": {
+                    "type": "template",
+                    "payload": {"template_type": "generic", "elements": [element]},
+                }
+            },
+        }
+        resp = await self._http.post(url, json=payload, params={"access_token": access_token})
+        result = resp.json()
+        if resp.status_code != 200:
+            logger.error("Meta Send API error (booking_card): %s %s", resp.status_code, result)
+        return result
+
     async def send_product_cards(
         self,
         platform: str,
@@ -316,6 +446,29 @@ class MetaMessagingClient:
         result = resp.json()
         if resp.status_code != 200:
             logger.error("Meta Send API error (product_cards): %s %s", resp.status_code, result)
+        return result
+
+    async def set_ice_breakers(
+        self,
+        page_id: str,
+        access_token: str,
+        questions: list[dict],
+    ) -> dict:
+        """SBAL-Z2 item 5: Instagram Messenger Profile API ice breakers —
+        the "Book an appointment" / "Services & prices" / "Hours & location"
+        starter chips shown before the visitor's first message. `questions`
+        is [{"question": str, "payload": str}]. Idempotent: re-setting the
+        same list on every call is the Messenger Profile API's own contract
+        (replace, not append), so this is safe to re-run from a script."""
+        url = f"https://graph.facebook.com/v22.0/{page_id}/messenger_profile"
+        payload = {
+            "platform": "instagram",
+            "ice_breakers": [{"locale": "default", "call_to_actions": questions[:4]}],
+        }
+        resp = await self._http.post(url, json=payload, params={"access_token": access_token})
+        result = resp.json()
+        if resp.status_code != 200:
+            logger.error("Meta Send API error (ice_breakers): %s %s", resp.status_code, result)
         return result
 
     async def _send_whatsapp_text(

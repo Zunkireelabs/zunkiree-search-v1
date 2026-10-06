@@ -125,3 +125,98 @@ def available_slots_for_date(
             if limit is not None and len(results) >= limit:
                 break
     return results
+
+
+# --- enable_rooms=false capacity (therapist headcount, not room/chair) ---
+#
+# SBAL-Z1 follow-up: ported EXACTLY from book-spa stage's
+# customer-booking-flow/utils/availability.js (buildOccupancy's byGender
+# branch) + DateTimeSelection.jsx's computedDays memo (lines 118-140, sha
+# a12f17c). Do NOT "improve" on it — same discipline as the room-based
+# functions above: the agent must never offer a slot the public booking
+# page itself would show as unavailable, and must never be LESS permissive
+# either (that would just be a different disagreement with the real page).
+
+
+def build_gender_occupancy(bookings: list[dict]) -> dict[int, dict[str, int]]:
+    """bookings: [{"start_time": "HH:MM[:SS]", "duration_minutes": int,
+    "therapist_gender": str|None}] — one branch/date's worth (the RPC already
+    scopes by branch+date; see zennly_client.bookings_range). Mirrors
+    buildOccupancy's byGender bucketing (availability.js:49-62): a booking
+    with no gender (therapist_id was never assigned — true of every online/
+    anonymous booking in the real flow, migration-138's own comment) simply
+    isn't counted, exactly like the real page."""
+    occupancy: dict[int, dict[str, int]] = {}
+    for booking in bookings:
+        gender = (booking.get("therapist_gender") or "").lower()
+        if gender not in ("male", "female"):
+            continue
+        start_minutes = parse_hhmm_to_minutes(booking["start_time"])
+        duration = booking.get("duration_minutes") or DEFAULT_DURATION_MINUTES
+        end_minutes = start_minutes + duration
+        bucket = floor_to_step(start_minutes)
+        while bucket < end_minutes:
+            entry = occupancy.setdefault(bucket, {"male": 0, "female": 0})
+            entry[gender] += 1
+            bucket += STEP_MINUTES
+    return occupancy
+
+
+def _gender_available(
+    gender: str, start_minutes: int, end_minutes: int,
+    therapist_counts: dict[str, int], occupancy: dict[int, dict[str, int]],
+) -> bool:
+    count = therapist_counts.get(gender, 0)
+    offset = floor_to_step(start_minutes)
+    while offset < end_minutes:
+        booked = occupancy.get(offset, {}).get(gender, 0)
+        if count - booked <= 0:
+            return False
+        offset += STEP_MINUTES
+    return True
+
+
+def is_slot_available_by_headcount(
+    start_minutes: int,
+    duration_minutes: int,
+    therapist_counts: dict[str, int],
+    occupancy: dict[int, dict[str, int]],
+    gender: str | None = None,
+) -> bool:
+    """Mirrors DateTimeSelection.jsx:131-140 (genderOk): with a gender
+    preference, that gender must have a free therapist across the whole
+    slot span; with no preference, EITHER gender having one is enough (an
+    OR, not a sum — matches the real page, which never adds male+female
+    headcount together)."""
+    end_minutes = start_minutes + duration_minutes
+    if gender in ("male", "female"):
+        return _gender_available(gender, start_minutes, end_minutes, therapist_counts, occupancy)
+    return (
+        _gender_available("male", start_minutes, end_minutes, therapist_counts, occupancy)
+        or _gender_available("female", start_minutes, end_minutes, therapist_counts, occupancy)
+    )
+
+
+def available_slots_for_date_by_headcount(
+    target_date: date,
+    duration_minutes: int,
+    therapist_counts: dict[str, int],
+    bookings: list[dict],
+    now_npt: datetime,
+    gender: str | None = None,
+    limit: int | None = None,
+) -> list[str]:
+    """Available 'HH:MM' start times on target_date for an enable_rooms=false
+    tenant, gated by therapist headcount instead of room capacity."""
+    occupancy = build_gender_occupancy(bookings)
+    is_today = target_date == now_npt.date()
+    now_minutes = now_npt.hour * 60 + now_npt.minute
+    results = []
+    for start in candidate_starts(duration_minutes):
+        if is_today and start <= now_minutes:
+            continue
+        if is_slot_available_by_headcount(start, duration_minutes, therapist_counts, occupancy, gender):
+            results.append(minutes_to_hhmm(start))
+            if limit is not None and len(results) >= limit:
+                break
+    return results

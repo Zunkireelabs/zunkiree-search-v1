@@ -289,6 +289,47 @@ async def patch_channel(
     }
 
 
+@router.post("/channels/{channel_id}/ice-breakers", dependencies=[Depends(verify_admin_key)])
+async def set_ice_breakers(
+    channel_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """SBAL-Z2 item 5: push the channel's configured Instagram ice breakers
+    (Messenger Profile API) — the starter chips shown before the visitor's
+    first message. Values come from `channel.config["ice_breakers"]`
+    (`[{"question": str, "payload": str}]`), never hardcoded here, so this
+    is one script/endpoint for every clinic tenant's channel. Idempotent:
+    the Messenger Profile API replaces the list on every call, so re-running
+    this with the same config is a no-op in effect."""
+    result = await db.execute(
+        select(ChatbotChannel).where(ChatbotChannel.id == channel_id)
+    )
+    channel = result.scalar_one_or_none()
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+
+    ch_config = channel.config if isinstance(channel.config, dict) else {}
+    questions = ch_config.get("ice_breakers") or []
+    if not questions:
+        raise HTTPException(
+            status_code=422,
+            detail="channel.config.ice_breakers is empty — set it first via PATCH /channels/{id}",
+        )
+
+    from app.services.meta_messaging import decrypt_token, get_meta_messaging_client
+
+    access_token = decrypt_token(channel.page_access_token)
+    send_page_id = ch_config.get("facebook_page_id", channel.platform_page_id)
+    client = get_meta_messaging_client()
+    result = await client.set_ice_breakers(
+        page_id=send_page_id,
+        access_token=access_token,
+        questions=questions,
+    )
+    logger.info("Set ice breakers for channel %s (%d questions)", channel_id, len(questions))
+    return {"channel_id": channel_id, "questions_set": len(questions), "meta_response": result}
+
+
 @router.get("/channels/{channel_id}/conversations", dependencies=[Depends(verify_admin_key)])
 async def list_conversations(
     channel_id: str,

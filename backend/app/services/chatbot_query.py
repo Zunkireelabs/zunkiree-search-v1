@@ -12,6 +12,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.models import Customer, WidgetConfig
 from app.models.chatbot import ChatbotChannel
 from app.services.query import get_query_service
@@ -294,9 +295,10 @@ class ChatbotQueryService:
         history = await self.conversation_service.get_history(db, channel.id, sender_id)
 
         # On first message from a new IG sender, cache their Meta profile (best-effort, non-blocking on failure)
+        sender_profile = None
         if not history and channel.platform == "instagram":
             try:
-                await get_sender_profile_service().get_or_fetch(db, channel, sender_id)
+                sender_profile = await get_sender_profile_service().get_or_fetch(db, channel, sender_id)
             except Exception as e:
                 logger.warning("[PROFILE-FETCH] non-fatal failure sender=%s: %s", sender_id, e)
 
@@ -364,6 +366,24 @@ class ChatbotQueryService:
                 start=start,
                 system_prompt_override=sp_override,
                 tools_override=tools_override,
+            )
+
+        # --- Route clinic tenants to the booking agent, over HTTP on the clinic lane ---
+        # (SBAL-Z2) — never in-process here: the confirmation gate is
+        # in-process-memory state in clinic_agent.py, correct only with one
+        # worker per process; the prod API runs 2 (see P2 decision 2026-09-23).
+        if website_type == "clinic":
+            greet_name = None
+            if not history and sender_profile and sender_profile.name:
+                greet_name = sender_profile.name.split()[0]
+            return await self._process_booking_agent_message(
+                db=db,
+                channel=channel,
+                site_id=customer.site_id,
+                sender_id=sender_id,
+                message_text=expanded_text,
+                start=start,
+                greet_name=greet_name,
             )
 
         # Call existing RAG pipeline
@@ -533,6 +553,77 @@ class ChatbotQueryService:
             "answer": answer,
             "suggestions": suggestions,
             "products": products,  # Product cards for carousel display
+            "response_time_ms": int((time.time() - start) * 1000),
+            "query_log_id": None,
+        }
+
+    async def _process_booking_agent_message(
+        self,
+        db: AsyncSession,
+        channel: ChatbotChannel,
+        site_id: str,
+        sender_id: str,
+        message_text: str,
+        start: float,
+        greet_name: str | None = None,
+    ) -> dict:
+        """Route a clinic tenant's DM to the clinic agent over HTTP, on the
+        clinic lane (SBAL-Z2) — never in-process in the prod API (see the
+        caller's note on the confirmation gate / worker count). Stable
+        session_id per sender so the booking flow's state (prepared/
+        confirmed booking, awaiting-confirmation) persists across DM turns
+        exactly like a chat widget session."""
+        settings = get_settings()
+        session_id = f"dm:{channel.id}:{sender_id}"
+
+        answer = ""
+        suggestions: list = []
+        ui: dict | None = None
+
+        if not settings.clinic_lane_url:
+            logger.error("[BOOKING-AGENT] clinic_lane_url not configured — channel=%s", channel.id)
+            answer = "Sorry, booking isn't available right now. Please try again shortly or contact us directly."
+        else:
+            try:
+                import httpx
+
+                url = f"{settings.clinic_lane_url.rstrip('/')}/api/v1/query/stream"
+                payload = {
+                    "site_id": site_id,
+                    "question": message_text,
+                    "session_id": session_id,
+                    "channel": "instagram",
+                }
+                async with httpx.AsyncClient(timeout=settings.clinic_lane_timeout_seconds) as client:
+                    async with client.stream("POST", url, json=payload) as resp:
+                        if resp.status_code != 200:
+                            raise RuntimeError(f"clinic lane returned {resp.status_code}")
+                        async for line in resp.aiter_lines():
+                            if not line.startswith("data: "):
+                                continue
+                            event = json.loads(line[len("data: "):])
+                            if event.get("type") == "done":
+                                answer = event.get("answer", "")
+                                suggestions = event.get("suggestions", [])
+                                ui = event.get("ui")
+                            elif event.get("type") == "error":
+                                raise RuntimeError(event.get("message", "clinic lane error"))
+            except Exception as e:
+                logger.error("[BOOKING-AGENT] clinic lane call failed channel=%s: %s", channel.id, e)
+                answer = "Sorry, I'm having trouble reaching the booking system right now. Please try again shortly."
+
+        if greet_name and answer:
+            answer = f"Hi {greet_name}! {answer}"
+
+        if len(answer) > 950:
+            answer = answer[:947] + "..."
+
+        await self.conversation_service.add_message(db, channel.id, sender_id, "assistant", answer)
+
+        return {
+            "answer": answer,
+            "suggestions": suggestions,
+            "ui": ui,  # SBAL-Z2: structured services/slots/confirm/booking for IG rendering
             "response_time_ms": int((time.time() - start) * 1000),
             "query_log_id": None,
         }
