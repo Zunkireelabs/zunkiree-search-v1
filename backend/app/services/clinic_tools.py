@@ -248,6 +248,20 @@ def get_readback_lang(session_id: str | None) -> str | None:
     return state.get("readback_lang") if state else None
 
 
+def has_pending_booking(session_id: str | None) -> bool:
+    """SBAL-Z3 B1 (review on #117): whether a service has already been
+    resolved this session via a successful prepare_booking — read-only,
+    never creates session state. Used alongside the date anchor to decide
+    whether forcing check_availability is safe (a resolved service already
+    known) or would make the model invent one (nothing known yet, so only
+    tool_choice="required" is forced — the model may pick list_services
+    instead)."""
+    if not session_id:
+        return False
+    state = _SESSION_STATE.get(session_id)
+    return bool(state and state.get("pending"))
+
+
 def reset_session_state(session_id: str) -> None:
     """Test helper — clear in-memory state for a session."""
     _SESSION_STATE.pop(session_id, None)

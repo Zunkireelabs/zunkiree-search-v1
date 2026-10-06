@@ -25,6 +25,7 @@ from app.services.clinic_tools import (
     get_awaiting_confirmation,
     get_readback_lang,
     get_vocab_for_customer,
+    has_pending_booking,
     mark_readback,
 )
 from app.services.clinic_confirm import is_clear_confirmation  # noqa: F401 (re-exported)
@@ -818,8 +819,11 @@ _TIME_MENTION = re.compile(
     r"|बजे",
     re.IGNORECASE,
 )
+# "open" dropped (review on #117): "what time are you open?" is an hours
+# question (search_knowledge/_hours_from_clinicmd_branch), not an
+# availability one — it was forcing check_availability on a plain FAQ turn.
 _AVAILABILITY_SIGNAL = re.compile(
-    r"\b(?:available?|free|slot\w*|khali|upalabdh|open)\b"
+    r"\b(?:available?|free|slot\w*|khali|upalabdh)\b"
     r"|खाली|उपलब्ध",
     re.IGNORECASE,
 )
@@ -995,6 +999,13 @@ class ClinicAgentService:
         # relative word this turn still resolves and enforces for THIS
         # single turn, it just isn't written to or read from shared state.
         anchor_key = session_id or None
+        # SBAL-Z3 B1 (review on #117): captured BEFORE this turn's own
+        # relative-date word (if any) overwrites the anchor below — "are
+        # you free tomorrow?" on a fresh session must NOT count as
+        # "service already resolved" just because "tomorrow" sets today's
+        # anchor; only a date anchor that already existed from an EARLIER
+        # turn counts as evidence a service was already named.
+        had_prior_date_anchor = bool(anchor_key and anchor_key in _DATE_ANCHOR)
         # F2 (CLINIC-BOOKING-TRUTH-BRIEF): resolve weekday names the same
         # deterministic way as भोलि/पर्सी, rather than leaving them to the
         # model's own arithmetic (which booked a Sunday for "Tuesday" on a
@@ -1243,11 +1254,27 @@ class ClinicAgentService:
             # check_availability entirely this turn. Every later iteration
             # (after a tool result is already in `messages`) reverts to
             # "auto" so the model can still call other tools or finish.
-            force_tool_choice = (
-                {"type": "function", "function": {"name": "check_availability"}}
-                if (force_availability_check and iteration == 1 and not check_availability_seen)
-                else "auto"
-            )
+            #
+            # Review on #117: forcing check_availability specifically means
+            # the model MUST fill its required `service` argument — on a
+            # fresh session with no service ever named ("are you free
+            # tomorrow?"), that forces an invented one, breaking "never
+            # guess a service name". Only force the SPECIFIC tool when a
+            # service is already resolved this session (a successful
+            # prepare_booking, or a date anchor from an earlier
+            # check_availability/prepare_booking this session implies one
+            # was already named); otherwise force tool_choice="required" —
+            # SOME tool must still be called (so the model still can't
+            # finish from memory), but it may legitimately pick
+            # list_services first to find out what's on offer.
+            force_tool_choice = "auto"
+            if force_availability_check and iteration == 1 and not check_availability_seen:
+                has_resolved_service_context = has_pending_booking(session_id) or had_prior_date_anchor
+                force_tool_choice = (
+                    {"type": "function", "function": {"name": "check_availability"}}
+                    if has_resolved_service_context
+                    else "required"
+                )
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,

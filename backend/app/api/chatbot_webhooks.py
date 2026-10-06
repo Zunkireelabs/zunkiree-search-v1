@@ -4,7 +4,7 @@ Returns 200 OK immediately and processes messages in background.
 """
 import hashlib
 import logging
-import time
+from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 
@@ -47,20 +47,15 @@ _pending_cart_add: dict[str, str] = {}
 # redelivery OR a visitor re-tapping a button before the first reply lands
 # (the tap gives no visual feedback, and a reply takes 2-4s) both produce a
 # genuinely NEW mid each time — the platform_message_id dedupe at
-# _handle_incoming_message can't catch either case on its own. This is the
-# second net: same sender + same exact payload within 20s is dropped,
-# regardless of mid. Keyed by "page_id:sender_id" -> (payload, monotonic_ts).
-# Text messages are NOT debounced (brief: only postbacks tap-stormed).
-_recent_postbacks: dict[str, tuple[str, float]] = {}
-_POSTBACK_DEBOUNCE_SECONDS = 20.0
-
-
-def _is_debounced_postback(page_id: str | None, sender_id: str, payload: str) -> bool:
-    key = f"{page_id}:{sender_id}"
-    prev = _recent_postbacks.get(key)
-    now = time.monotonic()
-    _recent_postbacks[key] = (payload, now)
-    return bool(prev and prev[0] == payload and (now - prev[1]) < _POSTBACK_DEBOUNCE_SECONDS)
+# _handle_incoming_message can't catch either case on its own. Review on
+# #117: an in-memory, per-process dict doesn't work here — the prod API
+# runs --workers 2, so a tap storm split across both processes would still
+# double-reply. The real debounce is DB-backed instead (see
+# _handle_incoming_message): same channel + sender + resulting message
+# text within 20s, queried from chatbot_message_log, which is already
+# shared across every worker. Text messages are NOT debounced (brief:
+# only postbacks tap-stormed).
+_POSTBACK_DEBOUNCE_SECONDS = 20
 
 
 @router.get("")
@@ -209,15 +204,10 @@ async def _process_instagram_entry(entry: dict):
             # SBAL-Z3 B2: use the postback's own mid (was hardcoded None,
             # which disabled the platform_message_id dedupe for every
             # button tap) so a genuine Meta redelivery is still caught
-            # there. The debounce below is the separate, mid-agnostic net.
+            # there. The same-payload-within-20s debounce is DB-backed, in
+            # _handle_incoming_message — see that function's note.
             message_id = postback.get("mid")
             logger.info("[DM-DEDUPE] inbound mid=%s sender=%s postback=True", message_id, sender_id)
-            if _is_debounced_postback(page_id, sender_id, raw_payload):
-                logger.info(
-                    "[DM-DEDUPE] dropped sender=%s page_id=%s payload=%s",
-                    sender_id, page_id, raw_payload[:100],
-                )
-                continue
 
             # Check if payload is a JSON action (e.g. product card buttons)
             import json as _postback_json
@@ -325,12 +315,6 @@ async def _process_messenger_entry(entry: dict):
             raw_payload = postback["payload"]
             message_id = postback.get("mid")
             logger.info("[DM-DEDUPE] inbound mid=%s sender=%s postback=True", message_id, sender_id)
-            if _is_debounced_postback(page_id, sender_id, raw_payload):
-                logger.info(
-                    "[DM-DEDUPE] dropped sender=%s page_id=%s payload=%s",
-                    sender_id, page_id, raw_payload[:100],
-                )
-                continue
             import json as _postback_json
             try:
                 action_data = _postback_json.loads(raw_payload)
@@ -483,6 +467,33 @@ async def _handle_incoming_message(
                 )
                 if existing.scalar_one_or_none():
                     logger.debug("Duplicate message %s — skipping", message_id)
+                    return
+
+            # SBAL-Z3 B2 (review on #117): a re-tap gets a genuinely NEW mid
+            # from Meta each time, so the dedupe above can't catch it — and
+            # an in-memory debounce doesn't work either: the prod API runs
+            # --workers 2, so a tap storm split across both processes would
+            # still double-reply. chatbot_message_log is shared across every
+            # worker, so query IT instead: same channel + sender + the exact
+            # resulting message text, inbound, within the last 20s. Scoped
+            # to postbacks only — a visitor legitimately retyping the same
+            # text message is not a tap storm.
+            if is_postback:
+                debounce_cutoff = datetime.utcnow() - timedelta(seconds=_POSTBACK_DEBOUNCE_SECONDS)
+                recent = await db.execute(
+                    select(ChatbotMessageLog.id).where(
+                        ChatbotMessageLog.channel_id == channel.id,
+                        ChatbotMessageLog.platform_sender_id == sender_id,
+                        ChatbotMessageLog.direction == "inbound",
+                        ChatbotMessageLog.message_text == message_text,
+                        ChatbotMessageLog.created_at >= debounce_cutoff,
+                    ).limit(1)
+                )
+                if recent.scalar_one_or_none():
+                    logger.info(
+                        "[DM-DEDUPE] dropped sender=%s channel_id=%s payload=%s",
+                        sender_id, channel.id, message_text[:100],
+                    )
                     return
 
             # Log inbound message

@@ -93,8 +93,18 @@ async def test_hardik_sequence_forces_check_availability_on_every_time_mention_t
     """Replays the 10-06 lane-log sequence (Hardik, SBAL-Z3 brief table).
     Turns 1, 2, 4, 5 each name a time and must force check_availability;
     turn 3 ("anything other than 10") already worked in the real incident
-    and is included for sequence fidelity, not asserted on specifically."""
+    and is included for sequence fidelity, not asserted on specifically.
+
+    The real conversation had already named "Lash Tint" in turns before the
+    ones the brief's table quotes (which starts mid-conversation at
+    09:42:39) — seed that same resolved-service context via the date
+    anchor (review on #117), so every quoted turn forces the SPECIFIC
+    check_availability tool, matching the brief's own exit test ("every
+    time-mention turn shows check_availability in turn_summary.tools")."""
+    from app.services import clinic_agent as clinic_agent_module
+
     sid = f"t-{uuid.uuid4()}"
+    clinic_agent_module._DATE_ANCHOR[sid] = "2026-10-10"
     config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="SBAL", contact_phone=None)
     calls: list = []
 
@@ -122,12 +132,15 @@ async def test_hardik_sequence_forces_check_availability_on_every_time_mention_t
     ]
 
     turn_call_ranges: list[tuple[int, int]] = []
-    with patch("app.services.clinic_agent.execute_clinic_tool", fake_execute_clinic_tool):
-        for question, responses in turns:
-            service = _service_capturing_calls(list(responses), calls)
-            start = len(calls)
-            await _run_turn(service, config, question, sid)
-            turn_call_ranges.append((start, len(calls)))
+    try:
+        with patch("app.services.clinic_agent.execute_clinic_tool", fake_execute_clinic_tool):
+            for question, responses in turns:
+                service = _service_capturing_calls(list(responses), calls)
+                start = len(calls)
+                await _run_turn(service, config, question, sid)
+                turn_call_ranges.append((start, len(calls)))
+    finally:
+        clinic_agent_module._DATE_ANCHOR.pop(sid, None)
 
     assert len(turn_call_ranges) == 5
 
@@ -156,3 +169,54 @@ async def test_non_availability_turn_unaffected_on_voice():
     assert calls[0]["tool_choice"] == "auto"
     done = next(e for e in events if e["type"] == "done")
     assert done["answer"]
+
+
+@pytest.mark.asyncio
+async def test_fresh_session_availability_question_never_forces_a_guessed_service():
+    """Review on #117: forcing check_availability specifically would force
+    the model to fill its required `service` argument — on a FRESH session
+    with no service ever named, that means inventing one, breaking "never
+    guess a service name". tool_choice must be the generic "required"
+    (some tool, model's choice — e.g. list_services) instead."""
+    sid = f"t-{uuid.uuid4()}"
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="SBAL", contact_phone=None)
+    calls: list = []
+    responses = [
+        _stream_tool_call("c1", "list_services", "{}"),
+        _stream("We offer brow and lash services — which one were you thinking of, and for when?"),
+    ]
+    service = _service_capturing_calls(responses, calls)
+
+    async def fake_list_services(*, tool_name, tool_args=None, **kw):
+        assert tool_name == "list_services"
+        return {"branch": {"id": "b1", "name": "Main Branch"}, "services": [{"id": "s1", "name": "Lash Lift"}]}
+
+    with patch("app.services.clinic_agent.execute_clinic_tool", fake_list_services):
+        events = await _run_turn(service, config, "Are you free tomorrow?", sid)
+
+    assert calls[0]["tool_choice"] == "required"
+    done = next(e for e in events if e["type"] == "done")
+    assert done["answer"]
+
+
+@pytest.mark.asyncio
+async def test_hours_question_does_not_force_any_tool():
+    """Review on #117: "open" was dropped from _AVAILABILITY_SIGNAL —
+    "what time are you open?" is an hours question (search_knowledge /
+    the live-branch-hours path), not an availability one."""
+    sid = f"t-{uuid.uuid4()}"
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="SBAL", contact_phone=None)
+    calls: list = []
+    responses = [_stream("We're open 10am to 8pm every day.")]
+    service = _service_capturing_calls(responses, calls)
+
+    with patch("app.services.clinic_agent.execute_clinic_tool", fake_execute_clinic_tool):
+        events = await _run_turn(service, config, "What time are you open?", sid)
+
+    assert calls[0]["tool_choice"] == "auto"
+    done = next(e for e in events if e["type"] == "done")
+    assert done["answer"]
+
+
+def test_availability_signal_no_longer_matches_bare_open():
+    assert not _AVAILABILITY_SIGNAL.search("What time are you open?")
