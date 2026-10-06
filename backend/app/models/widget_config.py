@@ -18,6 +18,7 @@ class WidgetConfig(Base):
         nullable=False,
     )
     brand_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    assistant_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
     tone: Mapped[str] = mapped_column(String(50), default="neutral")  # formal, neutral, friendly
     primary_color: Mapped[str] = mapped_column(String(7), default="#2563eb")
     placeholder_text: Mapped[str] = mapped_column(String(255), default="Ask a question...")

@@ -13,6 +13,7 @@ router = APIRouter(prefix="/widget", tags=["widget"])
 
 class WidgetConfigResponse(BaseModel):
     brand_name: str
+    assistant_name: str | None = None
     primary_color: str
     tone: str
     placeholder_text: str
@@ -90,6 +91,7 @@ async def get_widget_config(
 
     return WidgetConfigResponse(
         brand_name=config.brand_name,
+        assistant_name=config.assistant_name,
         primary_color=config.primary_color,
         tone=config.tone,
         placeholder_text=config.placeholder_text,

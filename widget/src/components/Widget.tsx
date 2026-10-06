@@ -79,6 +79,7 @@ export interface Message {
 
 interface WidgetConfig {
   brand_name: string
+  assistant_name?: string | null
   primary_color: string
   placeholder_text: string
   welcome_message: string | null
@@ -479,6 +480,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   const handleUndock = () => { setMode('bottom-expanded') }
 
   const brandName = config?.brand_name || siteId
+  const launcherName = config?.assistant_name || brandName
   const primaryColor = config?.primary_color || '#2563eb'
 
   const getSuggestions = (): string[] => {
@@ -511,7 +513,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
 
       {mode === 'bottom-minimized' && (
         <CollapsedBar
-          brandName={brandName} suggestions={getSuggestions()}
+          brandName={brandName} launcherName={launcherName} suggestions={getSuggestions()}
           animate={!hasAnimated.current} hasMessages={messages.length > 0}
           minimized={userMinimized} scrollTransition={scrollTransition}
           onClick={handleOpen} onSuggestionClick={handleSuggestionClick}
