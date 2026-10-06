@@ -91,9 +91,10 @@ async def test_resolve_org_caches_zennly_backend_type_and_vocab(monkeypatch):
     fake = FakeClient(org, [{"id": "b1", "name": "Main"}], [], [])
     monkeypatch.setattr(clinic_tools, "_client_for_backend", lambda bt: fake)
 
-    org_id, branches = await clinic_tools._resolve_org(db, customer)
+    org_id, branches, backend_type = await clinic_tools._resolve_org(db, customer)
 
     assert org_id == "org-1"
+    assert backend_type == "zennly"
     assert clinic_tools._cached_backend_type("sbal") == "zennly"
     assert clinic_tools.get_vocab_for_customer("sbal") == {"staff_term": "lash artists"}
     assert clinic_tools.get_client_for_customer(customer) is fake
@@ -139,7 +140,7 @@ async def test_execute_booking_clinicmd_row_is_unchanged(monkeypatch):
     treatment = {"id": "svc-1", "name": "General Dentistry", "duration_minutes": 60, "price_npr": 1500}
     chair = {"id": "chair-1", "name": "Chair 1", "capacity": 1}
     fake = FakeClient({"id": "org-1"}, [{"id": "b1", "name": "Main"}], [treatment], [chair], bookings=[])
-    monkeypatch.setattr(clinic_tools, "get_client_for_customer", lambda c: fake)
+    monkeypatch.setattr(clinic_tools, "_client_for_backend", lambda bt: fake)
     monkeypatch.setattr(clinic_tools, "new_booking_id", lambda: "booking-uuid-fixed")
 
     customer = _customer("dental-city")
@@ -184,7 +185,7 @@ async def test_execute_booking_zennly_row_shape(monkeypatch):
     treatment = {"id": "svc-1", "name": "Eyebrow Threading", "duration_minutes": 20, "price_npr": 400}
     room = {"id": "room-1", "name": "Room A", "capacity": 2}
     fake = FakeClient({"id": "org-1"}, [{"id": "b1", "name": "Main"}], [treatment], [room], bookings=[])
-    monkeypatch.setattr(clinic_tools, "get_client_for_customer", lambda c: fake)
+    monkeypatch.setattr(clinic_tools, "_client_for_backend", lambda bt: fake)
     monkeypatch.setattr(clinic_tools, "new_booking_id", lambda: "req-fixed")
 
     customer = _customer("sbal")

@@ -205,13 +205,29 @@ class ZennlyClient:
             {"branch_id": f"eq.{branch_id}", "is_active": "eq.true", "select": "id,name,capacity"},
         )
 
+    async def list_therapists(self, branch_id: str) -> list[dict]:
+        """SBAL-Z1 follow-up: enable_rooms=false orgs (e.g. SBAL — a salon
+        with no fixed stations) have no `rooms` rows at all; capacity for
+        them comes from active therapist headcount by gender instead.
+        Mirrors DateTimeSelection.jsx's own therapist-count fetch exactly
+        (api.js has no sibling function for this — the page queries
+        `therapists` directly): `.select('gender').eq('branch_id', ...)
+        .eq('is_active', true)` (DateTimeSelection.jsx:33-37)."""
+        return await self._get(
+            "/rest/v1/therapists",
+            {"branch_id": f"eq.{branch_id}", "is_active": "eq.true", "select": "id,name,gender"},
+        )
+
     async def bookings_range(self, branch_id: str, start_date: str, end_date: str) -> list[dict]:
         rows = await self._post_rpc(
             "public_check_branch_bookings_range",
             {"p_branch_id": branch_id, "p_start_date": start_date, "p_end_date": end_date},
         )
         # room_id -> chair_id: see module docstring. clinic_availability is
-        # backend-agnostic and only ever reads "chair_id".
+        # backend-agnostic and only ever reads "chair_id". therapist_gender
+        # (migration-131's own RPC column, LEFT JOINed from therapists) is
+        # passed through unchanged — build_gender_occupancy reads it
+        # directly for enable_rooms=false tenants.
         return [{**row, "chair_id": row.get("room_id")} for row in (rows or [])]
 
     # --- Writes ---
