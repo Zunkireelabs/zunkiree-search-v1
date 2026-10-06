@@ -200,6 +200,39 @@ async def test_fresh_session_availability_question_never_forces_a_guessed_servic
 
 
 @pytest.mark.asyncio
+async def test_list_services_after_unresolved_availability_force_blocks_check_availability_next():
+    """Polish follow-up on #117: on a fresh session, "are you free
+    tomorrow?" forced SOME tool (tool_choice="required"); the model picked
+    list_services (no service was ever named, so it can't pick
+    check_availability's required service itself). Stage repro showed
+    iteration 2 then calling check_availability anyway, picking a service
+    off that list the visitor never named — still a guess, one iteration
+    later. iteration 2's tools must exclude check_availability outright so
+    the model can't do that; it must ask which service instead."""
+    sid = f"t-{uuid.uuid4()}"
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="SBAL", contact_phone=None)
+    calls: list = []
+    responses = [
+        _stream_tool_call("c1", "list_services", "{}"),
+        _stream("We offer Brow Lamination, Lash Lift, and more — which service did you have in mind?"),
+    ]
+    service = _service_capturing_calls(responses, calls)
+
+    async def fake_list_services(*, tool_name, tool_args=None, **kw):
+        return {"branch": {"id": "b1", "name": "Main Branch"}, "services": [{"id": "s1", "name": "Brow Lamination"}]}
+
+    with patch("app.services.clinic_agent.execute_clinic_tool", fake_list_services):
+        await _run_turn(service, config, "Are you free tomorrow?", sid)
+
+    assert len(calls) == 2
+    iteration_2_tool_names = {t["function"]["name"] for t in calls[1]["tools"]}
+    assert "check_availability" not in iteration_2_tool_names
+    # Every other tool stays available — list_services again, search_knowledge,
+    # prepare_booking, etc. — only check_availability itself is excluded.
+    assert "list_services" in iteration_2_tool_names
+
+
+@pytest.mark.asyncio
 async def test_hours_question_does_not_force_any_tool():
     """Review on #117: "open" was dropped from _AVAILABILITY_SIGNAL —
     "what time are you open?" is an hours question (search_knowledge /
@@ -220,3 +253,49 @@ async def test_hours_question_does_not_force_any_tool():
 
 def test_availability_signal_no_longer_matches_bare_open():
     assert not _AVAILABILITY_SIGNAL.search("What time are you open?")
+
+
+@pytest.mark.asyncio
+async def test_language_switch_on_forced_availability_turn_reasserts_directive_near_generation():
+    """Stage repro (follow-up on #117): a session that starts in English
+    then switches to Romanized Nepali got an English reply on the
+    forced-check_availability turn — B1 moved the turn's first text
+    generation to AFTER a tool round, where an English tool result (plus,
+    across turns, English-heavy history) is the most recent content,
+    outweighing the system prompt's own per-turn LANGUAGE-THIS-TURN
+    directive set once at the top of the turn. Fixed by re-asserting that
+    directive as the LAST message before the next generation call."""
+    from app.services.clinic_agent import _LANGUAGE_DIRECTIVES
+
+    sid = f"t-{uuid.uuid4()}"
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="SBAL", contact_phone=None)
+    calls: list = []
+
+    # Turn 1: English, establishes history (and the date anchor "tomorrow"
+    # sets, so turn 2's forced tool_choice is the SPECIFIC check_availability
+    # — matching the stage repro exactly).
+    turn1_responses = [
+        _stream_tool_call("c0", "check_availability", '{"service": "Brow Lamination", "date": "2026-10-07"}'),
+        _stream("We have availability for Brow Lamination tomorrow at 10:00, 10:30, 11:00."),
+    ]
+    service = _service_capturing_calls(list(turn1_responses), calls)
+    with patch("app.services.clinic_agent.execute_clinic_tool", fake_execute_clinic_tool):
+        await _run_turn(service, config, "For brow lamination tomorrow", sid)
+
+    # Turn 2: Romanized Nepali, names a specific time — forces check_availability.
+    turn2_responses = [
+        _stream_tool_call("c1", "check_availability", '{"service": "Brow Lamination", "date": "2026-10-07", "time": "11:30"}'),
+        _stream("Brow Lamination ko 11:30 slot available cha."),
+    ]
+    service2 = _service_capturing_calls(list(turn2_responses), calls)
+    turn2_call_start = len(calls)
+    with patch("app.services.clinic_agent.execute_clinic_tool", fake_execute_clinic_tool):
+        await _run_turn(service2, config, "Malai 11:30 am ko chaiyeko cha", sid)
+
+    # The SECOND LLM call of turn 2 (iteration 2, generating the final
+    # answer after the forced tool's result) must see the Romanized-Nepali
+    # directive as the LAST message — not the English tool result.
+    turn2_second_call = calls[turn2_call_start + 1]
+    last_message = turn2_second_call["messages"][-1]
+    assert last_message["role"] == "system"
+    assert last_message["content"] == _LANGUAGE_DIRECTIVES["ne_romanized"].strip()

@@ -1173,6 +1173,15 @@ class ClinicAgentService:
         # on stage: "book me a cleaning" cost a real 3rd iteration this way).
         check_availability_seen = False
         check_availability_resolved = False
+        # SBAL-Z3 follow-up: set when iteration 1 was availability-forced
+        # (tool_choice="required") with no service resolved yet, and that
+        # iteration did NOT itself resolve one (didn't call
+        # check_availability — e.g. it called list_services instead). The
+        # NEXT iteration's tools then exclude check_availability outright,
+        # so the model can't pick a service off that list on its own
+        # (still a guess, just one iteration later) — it must ask the
+        # visitor which service they mean.
+        block_check_availability_next_iteration = False
         # ZUNKIREE-EMIT-USAGE-BRIEF: summed across every OpenAI call this turn
         # makes — one per tool-loop iteration (up to MAX_TOOL_ITERATIONS) plus
         # the optional escalation-translation call below. "seen" stays False
@@ -1268,17 +1277,23 @@ class ClinicAgentService:
             # finish from memory), but it may legitimately pick
             # list_services first to find out what's on offer.
             force_tool_choice = "auto"
+            availability_forced_unresolved_this_iteration = False
             if force_availability_check and iteration == 1 and not check_availability_seen:
                 has_resolved_service_context = has_pending_booking(session_id) or had_prior_date_anchor
-                force_tool_choice = (
-                    {"type": "function", "function": {"name": "check_availability"}}
-                    if has_resolved_service_context
-                    else "required"
-                )
+                if has_resolved_service_context:
+                    force_tool_choice = {"type": "function", "function": {"name": "check_availability"}}
+                else:
+                    force_tool_choice = "required"
+                    availability_forced_unresolved_this_iteration = True
+
+            iteration_tools = knowledge_tools_for_iteration_1 if iteration == 1 else tools_for_turn
+            if block_check_availability_next_iteration:
+                iteration_tools = [t for t in iteration_tools if t["function"]["name"] != "check_availability"]
+                block_check_availability_next_iteration = False  # only blocks the one iteration
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                tools=knowledge_tools_for_iteration_1 if iteration == 1 else tools_for_turn,
+                tools=iteration_tools,
                 tool_choice=force_tool_choice,
                 max_tokens=max_completion_tokens,
                 temperature=0.3,
@@ -1682,6 +1697,26 @@ class ClinicAgentService:
                         yield {"type": "token", "data": full_answer}
                         mark_readback(session_id, current_turn, detected_lang)
                     break
+
+                # SBAL-Z3 language regression (follow-up on #117): B1's forced
+                # check_availability means the model's FIRST text of the turn
+                # now comes after a tool round, with an English tool result
+                # (and, across turns, an English-heavy history) as the most
+                # recent content — stage repro showed that outweighing the
+                # system prompt's own per-turn LANGUAGE-THIS-TURN directive,
+                # set once at the top of the turn. Re-asserting it here, as
+                # the LAST message before the next generation call, fixes it
+                # by recency rather than fighting it: this is steering
+                # output STYLE (which prompting is good at), not a tool-call
+                # compliance mandate (which it isn't) — not the same class
+                # of problem as llm_prompt_mandate_vs_actual_behavior.
+                if language_directive:
+                    messages.append({"role": "system", "content": language_directive.strip()})
+
+                if availability_forced_unresolved_this_iteration:
+                    block_check_availability_next_iteration = not any(
+                        name == "check_availability" for _, name, _ in prepped
+                    )
 
                 continue
 
