@@ -262,8 +262,9 @@ _LANGUAGE_DIRECTIVES = {
 # already established. Deliberately exhaustive/literal rather than a fuzzy
 # heuristic, since every pattern it must catch is one this same codebase
 # generates and therefore fully known.
+_SLOT_PICK_PATTERN = re.compile(r"^book .+ on .+ at .+$", re.IGNORECASE)
 _SYNTHETIC_PAYLOAD_PATTERNS = [
-    re.compile(r"^book .+ on .+ at .+$", re.IGNORECASE),
+    _SLOT_PICK_PATTERN,
     re.compile(r"^book room .+$", re.IGNORECASE),
     re.compile(r"^i.d like to book .+$", re.IGNORECASE),
     re.compile(r"^tell me more about .+$", re.IGNORECASE),
@@ -275,6 +276,14 @@ _NEUTRAL_TEXT_PATTERN = re.compile(
     r"^(\d{1,2}(:\d{2})?\s*(am|pm)?|ok(ay)?|yes|no|sure|k|yep|nope)[.!]?$", re.IGNORECASE
 )
 _EMOJI_ONLY_PATTERN = re.compile(r"^[\s\U0001F300-\U0001FAFF☀-➿]+$")
+# SBAL-Z8 exit test 1: giving a name + phone in answer to the deterministic
+# "what's your full name and phone number?" ask (exit test 1's "Test Demo,
+# 9800000000") must not flip the language either — a name and a phone
+# number carry no Nepali-vs-English signal regardless of which language
+# the visitor is actually speaking, so plain detect_language's silent
+# default-to-"en" on zero Nepali words would otherwise flip the session on
+# the exact turn that answers the agent's own question.
+_NAME_PHONE_REPLY_PATTERN = re.compile(r"^[A-Za-z][A-Za-z .'-]*,?\s*\+?\d[\d \-]{6,}$")
 
 
 def _is_synthetic_or_neutral_text(text: str) -> bool:
@@ -283,7 +292,11 @@ def _is_synthetic_or_neutral_text(text: str) -> bool:
         return False
     if any(p.match(stripped) for p in _SYNTHETIC_PAYLOAD_PATTERNS):
         return True
-    return bool(_NEUTRAL_TEXT_PATTERN.match(stripped) or _EMOJI_ONLY_PATTERN.match(stripped))
+    return bool(
+        _NEUTRAL_TEXT_PATTERN.match(stripped)
+        or _EMOJI_ONLY_PATTERN.match(stripped)
+        or _NAME_PHONE_REPLY_PATTERN.match(stripped)
+    )
 
 
 # SBAL-Z8 F3: the IG slot-chip prompt (chatbot_webhooks.py) was a hardcoded
@@ -1123,6 +1136,15 @@ class ClinicAgentService:
         force_availability_check = bool(
             _AVAILABILITY_SIGNAL.search(question) or _mentions_time_or_date(question, now_npt_dt)
         )
+        # SBAL-Z8 F1 (addendum): a slot-pick postback ("Book X on D at T")
+        # forces this same check_availability re-verification above — but
+        # the visitor already picked a time; re-offering slot chips this
+        # turn is the loop from the addendum repro (pick 12:30 -> asked
+        # for name/phone + chips anyway; pick 10:30 -> same). This holds
+        # regardless of whether the model goes on to call prepare_booking
+        # this turn or just asks for the details itself in its own text —
+        # either way, slot chips are never this turn's own open question.
+        turn_is_slot_pick = bool(_SLOT_PICK_PATTERN.match(question.strip()))
 
         # PR #64 review (MINOR): `session_id or "anonymous"` made every
         # session without an id share ONE anchor — visitor A's date leaking
@@ -1923,16 +1945,28 @@ class ClinicAgentService:
                                 if widget_cards_enabled:
                                     turn_services_shortcut_caption = ui_state["services_caption"]
                     elif tool_name == "check_availability" and not result.get("blocked"):
-                        ui_lang = get_readback_lang(session_id) or detected_lang
-                        slots = _slots_ui(result, lang=ui_lang)
-                        if slots:
-                            ui_state["slots"] = slots
-                            # SBAL-Z8 F3: the IG adapter's "Pick a time:" chip
-                            # prompt, localized — ui.py builders are the only
-                            # place that already knows the turn's language.
-                            ui_state["slots_prompt"] = _PICK_A_TIME_LABEL_BY_LANG.get(
-                                ui_lang, _PICK_A_TIME_LABEL_BY_LANG["en"]
-                            )
+                        # SBAL-Z8 F1 (addendum): this turn is itself a slot
+                        # pick ("Book X on D at T") — check_availability ran
+                        # only as B1's forced same-slot re-verification, not
+                        # because slots are this turn's open question.
+                        # Re-offering them is the addendum's exact loop, and
+                        # it doesn't depend on whether prepare_booking also
+                        # ran this turn (sometimes the model asks for
+                        # name/phone in its own text without ever calling
+                        # it) — so this is gated on the turn's own text, not
+                        # on prepare_booking's result.
+                        if not turn_is_slot_pick:
+                            ui_lang = get_readback_lang(session_id) or detected_lang
+                            slots = _slots_ui(result, lang=ui_lang)
+                            if slots:
+                                ui_state["slots"] = slots
+                                # SBAL-Z8 F3: the IG adapter's "Pick a time:"
+                                # chip prompt, localized — ui.py builders are
+                                # the only place that already knows the
+                                # turn's language.
+                                ui_state["slots_prompt"] = _PICK_A_TIME_LABEL_BY_LANG.get(
+                                    ui_lang, _PICK_A_TIME_LABEL_BY_LANG["en"]
+                                )
                     elif tool_name == "prepare_booking":
                         # F1 (PHONE-HALLUCINATION-BRIEF): the phone the visitor gave to
                         # book with is grounded — prepare_booking's read-back must be

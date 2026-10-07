@@ -244,3 +244,38 @@ async def test_synthetic_chip_tap_does_not_flip_language_to_english():
         assert "What's your full name" not in done["answer"]
 
     reset_session_state(session_id)
+
+
+@pytest.mark.asyncio
+async def test_slot_pick_never_reoffers_slots_even_without_prepare_booking():
+    """Live stage-equivalent repro (dental-city, 2026-10-07): on some slot
+    picks the model only re-calls check_availability and asks for name/
+    phone in its OWN text, without ever calling prepare_booking at all.
+    turn_missing_details (keyed to a prepare_booking error) never fires
+    for that case — the guard has to be on the turn's own text
+    (turn_is_slot_pick), not on which tool got called this turn, or the
+    addendum's exact loop (slot chips re-shown after every pick) returns
+    for any turn where the model skips prepare_booking."""
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="SBAL", contact_phone=None, service_cards=True)
+    session_id = str(uuid.uuid4())
+    reset_session_state(session_id)
+
+    with patch("app.services.clinic_agent.execute_clinic_tool", side_effect=_tool_exec_side_effect):
+        service = _service_for_responses([
+            _stream_tool_call("c1", "check_availability", '{"service": "Brow Lamination", "date": "2026-10-08"}'),
+            _stream("Here are the open times."),
+        ])
+        await _run(service, config, "Are you free tomorrow for a brow lamination?", session_id)
+
+        # The model, on this pick, only re-verifies availability and asks
+        # for details in its own text — never calls prepare_booking.
+        service = _service_for_responses([
+            _stream_tool_call("c2", "check_availability", '{"service": "Brow Lamination", "date": "2026-10-08"}'),
+            _stream("I can book Brow Lamination at 11:30 tomorrow. Please share your full name and phone number."),
+        ])
+        events = await _run(service, config, "Book Brow Lamination on 2026-10-08 at 11:30", session_id)
+        done = next(e for e in events if e["type"] == "done")
+        assert not any(e["type"] == "tool_call" and e["name"] == "prepare_booking" for e in events)
+        assert "ui" not in done or not done["ui"].get("slots")
+
+    reset_session_state(session_id)
