@@ -56,9 +56,11 @@ _STREAM_FAILURE_MESSAGE = {
 
 def _stream_failure_message(question: str) -> str:
     lang = detect_language(question or "")
-    if lang == "ne_romanized":
+    # Review on #131: mixed_ne_en is Latin-script code-switching — those
+    # visitors type romanized, not Devanagari.
+    if lang in ("ne_romanized", "mixed_ne_en"):
         return _STREAM_FAILURE_MESSAGE["ne_romanized"]
-    if lang in ("ne_devanagari", "mixed_ne_en"):
+    if lang == "ne_devanagari":
         return _STREAM_FAILURE_MESSAGE["ne_devanagari"]
     return _STREAM_FAILURE_MESSAGE["en"]
 

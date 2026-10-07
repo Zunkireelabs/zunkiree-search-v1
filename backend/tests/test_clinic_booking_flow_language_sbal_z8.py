@@ -279,3 +279,49 @@ async def test_slot_pick_never_reoffers_slots_even_without_prepare_booking():
         assert "ui" not in done or not done["ui"].get("slots")
 
     reset_session_state(session_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "availability_question,typed_time",
+    [
+        ("Are you free tomorrow for a brow lamination?", "12:30"),
+        ("Brow lamination ko lagi bholi khali time cha?", "12:30 baje"),
+    ],
+)
+async def test_typed_time_pick_asks_for_details_never_shows_slots(
+    availability_question, typed_time,
+):
+    """Review on #131: a slot pick isn't only a chip tap — typing the time
+    directly ("12:30") after a slot list must get the identical
+    deterministic ask + no-reoffer-chips treatment as tapping a chip."""
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="SBAL", contact_phone=None, service_cards=True)
+    session_id = str(uuid.uuid4())
+    reset_session_state(session_id)
+
+    with patch("app.services.clinic_agent.execute_clinic_tool", side_effect=_tool_exec_side_effect):
+        service = _service_for_responses([
+            _stream_tool_call("c1", "check_availability", '{"service": "Brow Lamination", "date": "2026-10-08"}'),
+            _stream("Here are the open times."),
+        ])
+        events = await _run(service, config, availability_question, session_id)
+        done = next(e for e in events if e["type"] == "done")
+        assert done.get("ui", {}).get("slots"), "turn 1 must offer slot chips"
+
+        # Visitor TYPES the time directly, not a chip tap — and, as live
+        # testing showed happens sometimes, the model only re-calls
+        # check_availability and asks for details in its own text without
+        # ever calling prepare_booking. turn_is_slot_pick has to recognize
+        # a bare typed time for this case (prepare_booking's own error
+        # branch already clears slots unconditionally when it DOES run —
+        # this exercises the other path).
+        service = _service_for_responses([
+            _stream_tool_call("c2", "check_availability", '{"service": "Brow Lamination", "date": "2026-10-08"}'),
+            _stream("I can book Brow Lamination at 12:30 tomorrow. Please share your full name and phone number."),
+        ])
+        events = await _run(service, config, typed_time, session_id)
+        done = next(e for e in events if e["type"] == "done")
+        assert not any(e["type"] == "tool_call" and e["name"] == "prepare_booking" for e in events)
+        assert "ui" not in done or not done["ui"].get("slots"), "a typed time pick must not re-offer slot chips"
+
+    reset_session_state(session_id)
