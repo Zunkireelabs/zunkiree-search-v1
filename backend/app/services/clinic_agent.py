@@ -92,8 +92,29 @@ def _build_phone_fact_line(contact_phone: str | None) -> str:
         "returns one. " + _CALLER_PHONE_CLAUSE
     )
 
-CLINIC_SYSTEM_PROMPT = """You are {brand_name}'s front-desk assistant. Be warm, professional, and brief (1-3 sentences), plain text only (no markdown/bold/lists/links).
 
+def _possessive(name: str) -> str:
+    # PR #119 review: possessive of a name already ending in "s" takes a bare
+    # apostrophe ("Sami's Brow and Lashes' AI assistant"), not "'s".
+    return f"{name}'" if name.endswith("s") else f"{name}'s"
+
+
+def _build_intro_line(assistant_name: str | None, brand_name: str, is_first_turn: bool, channel: str = "chat") -> str:
+    # SBAL-Z4: the name is tenant data (widget_configs.assistant_name), never a
+    # per-tenant code branch. Absent assistant_name = today's behaviour exactly.
+    # PR #119 review: on voice, ElevenLabs' own First Message already
+    # introduces Sammy before the caller's first utterance reaches us (which
+    # is still current_turn 1 here) — injecting this too would double-introduce.
+    if not assistant_name or not is_first_turn or channel == "voice":
+        return ""
+    return (
+        f"\nINTRO: This is the first message of the conversation. Introduce yourself as "
+        f'"{assistant_name}, {_possessive(brand_name)} AI assistant" before anything else, keeping '
+        '"AI assistant" in that exact wording. Do not repeat this introduction on later turns.\n'
+    )
+
+CLINIC_SYSTEM_PROMPT = """You are {brand_name}'s front-desk assistant. Be warm, professional, and brief (1-3 sentences), plain text only (no markdown/bold/lists/links).
+{intro_line}
 Current date/time in Nepal: {now_npt}.
 
 {phone_fact_line}
@@ -1118,6 +1139,9 @@ class ClinicAgentService:
 
         system_prompt = CLINIC_SYSTEM_PROMPT.format(
             brand_name=brand_name,
+            intro_line=_build_intro_line(
+                config.assistant_name if config else None, brand_name, current_turn == 1, channel
+            ),
             now_npt=now_npt,
             phone_fact_line=phone_fact_line,
             channel_block=channel_block,
