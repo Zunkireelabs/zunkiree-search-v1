@@ -26,6 +26,7 @@ from app.services.verification import (
     looks_like_code,
 )
 from app.services.personalization import classify_query, parse_lead_intents, _is_registration_query
+from app.services.language_detection import detect_language
 from app.config import get_settings
 
 logger = logging.getLogger("zunkiree.query.api")
@@ -40,6 +41,26 @@ logger = logging.getLogger("zunkiree.query.api")
 # checkout stayed under the 10s timeout while waits queued up across a
 # request's multiple checkouts. See database.py's pool_timeout comment.
 _POOL_EXHAUSTED_ERRORS = (SATimeoutError, asyncpg.exceptions.TooManyConnectionsError, asyncpg.exceptions.InternalServerError)
+
+# SBAL demo-hardening: a visitor-facing stream failure (both clinic-agent
+# LLM attempts failing, or any other unhandled exception) used to say "An
+# error occurred processing your request" — honest about nothing. Voice is
+# unchanged (Orca has its own turn-failure handling); every other channel
+# gets a friendly, truthful message in the turn's own language.
+_STREAM_FAILURE_MESSAGE = {
+    "en": "Sorry, I took too long to answer. Could you send that again?",
+    "ne_romanized": "Maaf garnuhos, jawaph dina dherai samaya lagyo. Feri sodhna milcha?",
+    "ne_devanagari": "माफ गर्नुहोस्, जवाफ दिन धेरै समय लाग्यो। फेरि सोध्न मिल्छ?",
+}
+
+
+def _stream_failure_message(question: str) -> str:
+    lang = detect_language(question or "")
+    if lang == "ne_romanized":
+        return _STREAM_FAILURE_MESSAGE["ne_romanized"]
+    if lang in ("ne_devanagari", "mixed_ne_en"):
+        return _STREAM_FAILURE_MESSAGE["ne_devanagari"]
+    return _STREAM_FAILURE_MESSAGE["en"]
 
 
 def _is_pool_exhausted(exc: Exception) -> bool:
@@ -777,7 +798,11 @@ async def submit_query_stream(
                     yield f"data: {json.dumps({'type': 'error', 'message': event['message']})}\n\n"
         except Exception as e:
             logger.exception("[QUERY-STREAM] Error: %s", e)
-            yield f"data: {json.dumps({'type': 'error', 'message': 'An error occurred processing your request'})}\n\n"
+            if (query.channel or "chat") == "voice":
+                message = "An error occurred processing your request"
+            else:
+                message = _stream_failure_message(question_to_answer)
+            yield f"data: {json.dumps({'type': 'error', 'message': message})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
