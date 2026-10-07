@@ -50,6 +50,10 @@ class WidgetConfig(Base):
     # chat turns here instead of {apiUrl}/api/v1/query/stream. Absent by
     # default; clearing it is the rollback (see migration 039).
     chat_stream_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # SBAL-Z6: gates the widget's service-card rendering + one-line caption
+    # for clinic tenants (vs today's enumerated-list text). Default false —
+    # see migration 041. Turned on for sbal only.
+    service_cards: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
