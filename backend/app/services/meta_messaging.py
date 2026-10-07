@@ -93,6 +93,16 @@ def _format_price_npr(value) -> str:
     return f"{int(value):,}"
 
 
+def book_service_payload(service_id: str, name: str) -> str:
+    """SBAL-Z5 F1 (brain review on #122): the ONE place that builds a
+    "Book this" postback payload, so the carousel's button and the
+    single-service `send_service_detail` button are byte-identical and
+    both parse through the same `action == "book_service"` branch in
+    `_process_instagram_entry`/`_process_messenger_entry`."""
+    import json as _json
+    return _json.dumps({"action": "book_service", "service_id": service_id or "", "name": (name or "")[:80]})
+
+
 class MetaMessagingClient:
     """Send messages via Meta's Graph API (Instagram, Messenger, WhatsApp)."""
 
@@ -321,7 +331,6 @@ class MetaMessagingClient:
             lines = [f"• {s['name']}" + (f" - NPR {_format_price_npr(s['price'])}" if s.get("price") else "") for s in services[:5]]
             return await self._send_whatsapp_text(page_id, access_token, recipient_id, "\n".join(lines))
 
-        import json as _json
         url = SEND_API_URLS[platform].format(page_id=page_id)
         elements = []
         for s in services[:10]:
@@ -335,7 +344,7 @@ class MetaMessagingClient:
                 {
                     "type": "postback",
                     "title": "Book this",
-                    "payload": _json.dumps({"action": "book_service", "service_id": s.get("id", ""), "name": name[:80]}),
+                    "payload": book_service_payload(s.get("id", ""), name),
                 },
                 {
                     "type": "postback",
@@ -358,6 +367,64 @@ class MetaMessagingClient:
         result = resp.json()
         if resp.status_code != 200:
             logger.error("Meta Send API error (service_cards): %s %s", resp.status_code, result)
+        return result
+
+    async def send_service_detail(
+        self,
+        platform: str,
+        page_id: str,
+        access_token: str,
+        recipient_id: str,
+        text: str,
+        service_id: str,
+        service_name: str,
+    ) -> dict:
+        """SBAL-Z5 F1 (brain review on #122): a single-service match's
+        "Book this" button must reach the EXACT same booking handling as
+        the carousel's own "Book this" — same `book_service_payload`, so
+        both postbacks parse identically in
+        `_process_instagram_entry`/`_process_messenger_entry`. A button
+        template (text + buttons, no image/subtitle) rather than a
+        one-element generic carousel — that visual duplication (a single
+        card restating the service) was exactly what F1 removed."""
+        if platform == "whatsapp":
+            return await self._send_whatsapp_text(page_id, access_token, recipient_id, text)
+
+        url = SEND_API_URLS[platform].format(page_id=page_id)
+        payload = {
+            "recipient": {"id": recipient_id},
+            "message": {
+                "attachment": {
+                    "type": "template",
+                    "payload": {
+                        "template_type": "button",
+                        "text": text[:640],
+                        "buttons": [
+                            {
+                                "type": "postback",
+                                "title": "Book this",
+                                "payload": book_service_payload(service_id, service_name),
+                            },
+                        ],
+                    },
+                }
+            },
+        }
+        resp = await self._http.post(url, json=payload, params={"access_token": access_token})
+        result = resp.json()
+        if resp.status_code != 200 or result.get("error"):
+            # Brain review on #122: IG is only testable on prod, and a
+            # rejected button template (bad payload, platform quirk, etc.)
+            # was swallowed here — status/error logged but the method
+            # still returned normally, so the visitor got NOTHING. Fall
+            # back to a plain text send with the same text so there's
+            # always a reply, same as the caller's own except-Exception
+            # fallback already does for a raised exception.
+            logger.error("Meta Send API error (service_detail): %s %s", resp.status_code, result)
+            return await self.send_text_message(
+                platform=platform, page_id=page_id, access_token=access_token,
+                recipient_id=recipient_id, text=text,
+            )
         return result
 
     async def send_booking_card(

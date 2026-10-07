@@ -241,3 +241,76 @@ async def test_text_messages_are_never_debounced_at_the_handler_level():
 
 def test_debounce_window_constant_is_twenty_seconds():
     assert cw_module._POSTBACK_DEBOUNCE_SECONDS == 20
+
+
+# ---------------------------------------------------------------------------
+# SBAL-Z5 F3: a dropped duplicate must send Meta nothing at all — not even
+# mark_seen/typing_on — so the visitor never sees a "…" bubble with no
+# reply behind it.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_dropped_duplicate_postback_sends_zero_meta_calls():
+    channel = _fake_channel()
+    channel_result = MagicMock()
+    channel_result.scalar_one_or_none.return_value = channel
+
+    db = AsyncMock()
+    # channel lookup, mid-dedupe miss, debounce-query HIT -> dropped.
+    db.execute = AsyncMock(side_effect=[channel_result, _no_match_result(), _match_result()])
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+
+    meta_client = _meta_client()
+    chatbot_service = MagicMock()
+    chatbot_service.process_message = AsyncMock(return_value={
+        "answer": "ok", "suggestions": [], "response_time_ms": 1, "query_log_id": None,
+    })
+
+    with patch.object(cw_module, "async_session_maker", lambda: _session_cm(db)), \
+         patch.object(cw_module, "decrypt_token", return_value="plain-token"), \
+         patch.object(cw_module, "get_meta_messaging_client", return_value=meta_client), \
+         patch.object(cw_module, "get_chatbot_query_service", return_value=chatbot_service):
+        await cw_module._handle_incoming_message(
+            platform="instagram", page_id="page-1", sender_id="sender-1",
+            message_text="Tell me more about Lash Tint", message_id="mid-dup", is_postback=True,
+        )
+
+    chatbot_service.process_message.assert_not_awaited()
+    meta_client.mark_seen.assert_not_awaited()
+    meta_client.send_typing_on.assert_not_awaited()
+    meta_client.send_text_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_processed_postback_still_sends_mark_seen_and_typing_on():
+    """Regression: a NON-duplicate postback still gets mark_seen/typing_on,
+    just moved to after the dedupe checks instead of before."""
+    channel = _fake_channel()
+    channel_result = MagicMock()
+    channel_result.scalar_one_or_none.return_value = channel
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[channel_result, _no_match_result(), _no_match_result()])
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+
+    meta_client = _meta_client()
+    chatbot_service = MagicMock()
+    chatbot_service.process_message = AsyncMock(return_value={
+        "answer": "ok", "suggestions": [], "response_time_ms": 1, "query_log_id": None,
+    })
+
+    with patch.object(cw_module, "async_session_maker", lambda: _session_cm(db)), \
+         patch.object(cw_module, "decrypt_token", return_value="plain-token"), \
+         patch.object(cw_module, "get_meta_messaging_client", return_value=meta_client), \
+         patch.object(cw_module, "get_chatbot_query_service", return_value=chatbot_service):
+        await cw_module._handle_incoming_message(
+            platform="instagram", page_id="page-1", sender_id="sender-1",
+            message_text="Tell me more about Lash Tint", message_id="mid-fresh", is_postback=True,
+        )
+
+    chatbot_service.process_message.assert_awaited_once()
+    meta_client.mark_seen.assert_awaited_once()
+    meta_client.send_typing_on.assert_awaited_once()

@@ -371,6 +371,21 @@ def _services_ui(services: list[dict], limit: int = 10) -> list[dict]:
     ]
 
 
+# SBAL-Z5 F2: the carousel lead-in follows the visitor's language, same as
+# every other per-language dict in this file (_CONFIRM_CHIP_LABEL_BY_LANG
+# etc). Baked into `ui_state` here rather than left for chatbot_webhooks.py
+# to pick — the SBAL-Z2 architecture note above keeps language-aware string
+# building in the agent, which is the only place that already knows
+# `detected_lang`/`get_readback_lang`.
+_SERVICES_CAPTION_BY_LANG = {
+    # Brain review on #122: exact wording.
+    "ne_devanagari": "हाम्रा सेवाहरू यहाँ छन् — स्वाइप गरेर हेर्नुहोस्।",
+    "ne_romanized": "Hamro services haru yaha chan — swipe garera hernuhos.",
+    "en": "Here are our services — swipe to see them.",
+    "mixed_ne_en": "Hamro services haru yaha chan — swipe garera hernuhos.",
+}
+
+
 _ANOTHER_DAY_LABEL_BY_LANG = {
     "ne_devanagari": "अर्को दिन",
     "ne_romanized": "Arko din",
@@ -822,6 +837,16 @@ _BOOKING_SIGNAL = re.compile(
 _PHONE_LIKE_IN_QUESTION = re.compile(r"\d{7,}")
 _EMAIL_LIKE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 
+# SBAL-Z5 F1: the exact text meta_messaging.send_service_cards synthesizes
+# for a service card's own "Details" button (clinic tenants only — this
+# turn never reaches ecommerce). It already names the service, so there's
+# no FAQ to search for: routing it through the knowledge_fast_path wasted a
+# full search_knowledge round trip (2s, nothing useful) before list_services
+# ever ran. Matched up front so it can be excluded from
+# _is_knowledge_only_turn's path and given its own list_services prefetch
+# instead (see knowledge_fast_path below).
+_SERVICE_DETAILS_POSTBACK = re.compile(r"^Tell me more about (.+)$", re.IGNORECASE)
+
 # SBAL-Z3 brief B1: Hardik's lane log (10-06) shows the model answering
 # "is 11:30 free?" / "what about 12?" straight from its own guess —
 # tools=[] on every one of those turns — while a check_availability call
@@ -1065,6 +1090,12 @@ class ClinicAgentService:
 
         current_turn = _next_turn(session_id or "anonymous")
         timing_tools: list[str] = []
+        # SBAL-Z2: structured `ui` for the `done` event — built from tool
+        # results only, never model text (brief item 2). Voice/chat ignore
+        # the extra key; only an IG (or future structured) renderer reads it.
+        # Declared here (rather than just before the tool loop) because the
+        # SBAL-Z5 F1 service-details prefetch below can also populate it.
+        ui_state: dict = {}
 
         # P4 B4: decide once, up front, whether this turn gets the collapsed
         # knowledge/FAQ path — before the system prompt is built, since the
@@ -1082,14 +1113,77 @@ class ClinicAgentService:
         # live anchor is exactly the signal that this session is mid-booking.
         awaiting_confirmation = get_awaiting_confirmation(session_id, current_turn)
         mid_booking_flow = bool(anchor_key and _DATE_ANCHOR.get(anchor_key))
+        service_details_match = (
+            None if (awaiting_confirmation or mid_booking_flow)
+            else _SERVICE_DETAILS_POSTBACK.match((question or "").strip())
+        )
         knowledge_fast_path = (
             not awaiting_confirmation
             and not mid_booking_flow
+            and not service_details_match
             and _is_knowledge_only_turn(question, now_npt_dt)
         )
         knowledge_tools_for_iteration_1 = tools_for_turn
         knowledge_prefetch_line = ""
-        if knowledge_fast_path:
+        if service_details_match:
+            # SBAL-Z5 F1: resolve the named service directly via
+            # list_services instead of the knowledge_fast_path's
+            # search_knowledge — this turn already names the exact service,
+            # there's nothing to search for.
+            service_query = service_details_match.group(1).strip()
+            prefetch_start = time.monotonic()
+            prefetch_result = await execute_clinic_tool(
+                tool_name="list_services",
+                tool_args={"query": service_query},
+                db=db,
+                customer=customer,
+                config=config,
+                site_id=site_id,
+                session_id=session_id,
+                current_turn=current_turn,
+                user_message=user_message,
+                trace_id=trace_id,
+            )
+            prefetch_ms = (time.monotonic() - prefetch_start) * 1000
+            timing_tools.append(f"0:list_services:{prefetch_ms:.0f}")
+            logger.info(
+                "[CLINIC-LATENCY] tool_call trace_id=%s site_id=%s session_id=%s "
+                "iteration=0 tool=list_services latency_ms=%.0f",
+                trace_id, site_id, session_id, prefetch_ms,
+            )
+            services = (prefetch_result or {}).get("services") or []
+            if services:
+                ui_lang = get_readback_lang(session_id) or detected_lang
+                if len(services) == 1:
+                    ui_state["service_detail"] = _services_ui(services, limit=1)[0]
+                else:
+                    ui_state["services"] = _services_ui(services)
+                    ui_state["services_caption"] = _SERVICES_CAPTION_BY_LANG.get(
+                        ui_lang, _SERVICES_CAPTION_BY_LANG["en"]
+                    )
+                knowledge_prefetch_line = (
+                    "\nSERVICE-THIS-TURN: This is already the result of looking up "
+                    f'"{service_query}" via list_services:\n'
+                    f"{json.dumps(services[:5])}\n"
+                    "Answer directly from this — name, price, duration, and description "
+                    "when present — and invite them to book. Do not call list_services or "
+                    "search_knowledge again this turn.\n"
+                )
+            else:
+                knowledge_prefetch_line = (
+                    "\nSERVICE-THIS-TURN: list_services was already tried for "
+                    f'"{service_query}" and found nothing. Say so honestly; do not call '
+                    "list_services or search_knowledge again this turn.\n"
+                )
+            knowledge_tools_for_iteration_1 = [
+                t for t in tools_for_turn
+                if t["function"]["name"] not in ("list_services", "search_knowledge")
+            ]
+            logger.info(
+                "[CLINIC-AGENT] service_details_fast_path_used site_id=%s session_id=%s matches=%d",
+                site_id, session_id, len(services),
+            )
+        elif knowledge_fast_path:
             prefetch_start = time.monotonic()
             prefetch_result = await execute_clinic_tool(
                 tool_name="search_knowledge",
@@ -1178,10 +1272,6 @@ class ClinicAgentService:
         # loop below.
         turn_prepared_pending: dict | None = None
         turn_booking_confirmed = False
-        # SBAL-Z2: structured `ui` for the `done` event — built from tool
-        # results only, never model text (brief item 2). Voice/chat ignore
-        # the extra key; only an IG (or future structured) renderer reads it.
-        ui_state: dict = {}
         turn_confirmed: tuple[dict, str] | None = None
         # P4 B1: hard cap on the service-guess fan-out (prod incident: guess
         # "Teeth Cleaning" -> check_availability -> list_services -> guess
@@ -1632,7 +1722,20 @@ class ClinicAgentService:
                     elif tool_name == "list_services" and not result.get("blocked"):
                         services = result.get("services")
                         if services:
-                            ui_state["services"] = _services_ui(services)
+                            # SBAL-Z5 F1/F2: a single match (the visitor named
+                            # one service, even outside the Details-postback
+                            # fast path above) gets its own detail shape, not
+                            # a one-card carousel; a real multi-service list
+                            # gets the carousel with a language-matched
+                            # caption instead of the old hardcoded English one.
+                            if len(services) == 1:
+                                ui_state["service_detail"] = _services_ui(services, limit=1)[0]
+                            else:
+                                ui_lang = get_readback_lang(session_id) or detected_lang
+                                ui_state["services"] = _services_ui(services)
+                                ui_state["services_caption"] = _SERVICES_CAPTION_BY_LANG.get(
+                                    ui_lang, _SERVICES_CAPTION_BY_LANG["en"]
+                                )
                     elif tool_name == "check_availability" and not result.get("blocked"):
                         ui_lang = get_readback_lang(session_id) or detected_lang
                         slots = _slots_ui(result, lang=ui_lang)
