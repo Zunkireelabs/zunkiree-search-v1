@@ -169,6 +169,23 @@ async def test_slots_ui_renders_chips():
     client = await _run(result)
     client.send_chips.assert_awaited_once()
     assert client.send_chips.await_args.kwargs["chips"] == slots
+    # SBAL-Z8 F3: no slots_prompt on `ui` (an older/unexpected shape) falls
+    # back to the original English text rather than sending no text at all.
+    assert client.send_chips.await_args.kwargs["text"] == "Pick a time:"
+
+
+@pytest.mark.asyncio
+async def test_slots_ui_chip_prompt_follows_conversation_language():
+    slots = [{"label": "10:00", "payload": "Book Lash Lift on 2026-10-10 at 10:00"}]
+    result = {
+        "answer": "Yo samaya haru khali cha.",
+        "suggestions": [],
+        "ui": {"slots": slots, "slots_prompt": "Time chan-nuhos:"},
+        "response_time_ms": 10,
+        "query_log_id": None,
+    }
+    client = await _run(result)
+    assert client.send_chips.await_args.kwargs["text"] == "Time chan-nuhos:"
 
 
 @pytest.mark.asyncio

@@ -262,6 +262,22 @@ def has_pending_booking(session_id: str | None) -> bool:
     return bool(state and state.get("pending"))
 
 
+def get_sticky_language(session_id: str | None) -> str | None:
+    """SBAL-Z8 F2: the conversation's established language, set only from a
+    real (non-synthetic, non-neutral) visitor message — see
+    clinic_agent.py's `_is_synthetic_or_neutral_text`. None before any real
+    message has set it."""
+    if not session_id:
+        return None
+    state = _SESSION_STATE.get(session_id)
+    return state.get("sticky_lang") if state else None
+
+
+def set_sticky_language(session_id: str | None, lang: str) -> None:
+    if session_id:
+        _state(session_id)["sticky_lang"] = lang
+
+
 def reset_session_state(session_id: str) -> None:
     """Test helper — clear in-memory state for a session."""
     _SESSION_STATE.pop(session_id, None)
@@ -931,9 +947,19 @@ async def _prepare_booking(
 
     phone_e164 = to_e164(phone)
     if not phone_e164:
-        return {"error": "INVALID_PHONE", "message": "A valid phone number is required."}
+        # SBAL-Z8 F1: service/date/time are already resolved at this point
+        # (treatment matched, date/time parsed) — carried back so the agent
+        # can ask for just the missing details deterministically instead of
+        # leaving the model to narrate a booking that didn't happen.
+        return {
+            "error": "INVALID_PHONE", "message": "A valid phone number is required.",
+            "service_name": treatment["name"], "date": date, "time": time,
+        }
     if not full_name or not full_name.strip():
-        return {"error": "INVALID_NAME", "message": "The visitor's full name is required."}
+        return {
+            "error": "INVALID_NAME", "message": "The visitor's full name is required.",
+            "service_name": treatment["name"], "date": date, "time": time,
+        }
 
     now_npt = datetime.now(NPT)
     duration = treatment.get("duration_minutes") or avail.DEFAULT_DURATION_MINUTES
