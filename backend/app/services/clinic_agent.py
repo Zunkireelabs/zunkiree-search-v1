@@ -378,10 +378,11 @@ def _services_ui(services: list[dict], limit: int = 10) -> list[dict]:
 # building in the agent, which is the only place that already knows
 # `detected_lang`/`get_readback_lang`.
 _SERVICES_CAPTION_BY_LANG = {
-    "ne_devanagari": "यी हाम्रा सेवाहरू हुन् — स्वाइप गरेर हेर्नुहोस्।",
-    "ne_romanized": "Yeeh hamro services haru hun — swipe garera hernus.",
+    # Brain review on #122: exact wording.
+    "ne_devanagari": "हाम्रा सेवाहरू यहाँ छन् — स्वाइप गरेर हेर्नुहोस्।",
+    "ne_romanized": "Hamro services haru yaha chan — swipe garera hernuhos.",
     "en": "Here are our services — swipe to see them.",
-    "mixed_ne_en": "Yeeh hamro services haru hun — swipe garera hernus.",
+    "mixed_ne_en": "Hamro services haru yaha chan — swipe garera hernuhos.",
 }
 
 

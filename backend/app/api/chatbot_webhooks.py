@@ -835,19 +835,20 @@ async def _handle_incoming_message(
                 except Exception as e:
                     logger.warning("Booking card failed: %s", e)
             elif ui and ui.get("service_detail"):
+                # Brain review on #122: the chip must reach the IDENTICAL
+                # booking handling as the carousel's own "Book this" — same
+                # {"action":"book_service",...} postback payload (built by
+                # the one shared meta_messaging.book_service_payload), not
+                # a differently-worded plain-text synthesis.
                 detail = ui["service_detail"]
-                name = detail.get("name", "this service")
                 try:
-                    await client.send_chips(
+                    await client.send_service_detail(
                         platform=platform, page_id=send_page_id, access_token=access_token,
                         recipient_id=sender_id, text=send_text,
-                        chips=[{
-                            "label": "Book this",
-                            "payload": f"I'd like to book '{name}'. [service_id:{detail.get('id', '')}]",
-                        }],
+                        service_id=detail.get("id", ""), service_name=detail.get("name", "this service"),
                     )
                 except Exception as e:
-                    logger.warning("Service detail chip failed: %s", e)
+                    logger.warning("Service detail button failed: %s", e)
                     await client.send_text_message(
                         platform=platform, page_id=send_page_id, access_token=access_token,
                         recipient_id=sender_id, text=send_text,

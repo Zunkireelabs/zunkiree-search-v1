@@ -168,9 +168,30 @@ async def test_details_postback_with_multiple_matches_gets_carousel_and_caption(
 
 
 @pytest.mark.asyncio
-async def test_details_postback_caption_localizes_for_romanized_nepali():
+async def test_multi_match_caption_localizes_for_romanized_nepali():
+    """F2: the Details postback's synthesized text ("Tell me more about
+    X") is always in English — it's our own button's wording, not the
+    visitor's — so its fast path's caption can only ever reflect that.
+    Real localization is exercised by the visitor's own free-text query
+    through the main tool loop, which is what this covers: a Romanized
+    Nepali multi-match question gets the Romanized caption, not English."""
+    from types import SimpleNamespace as _SN
+
     config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="SBAL", contact_phone=None)
-    service = _service_for_responses([_stream("Yeeh haru matching services ho.")])
+
+    def _tool_call_chunk(call_id, name, arguments):
+        return _SN(choices=[_SN(delta=_SN(
+            content=None,
+            tool_calls=[_SN(index=0, id=call_id, function=_SN(name=name, arguments=arguments))],
+        ))])
+
+    async def _stream_tool_call(call_id, name, arguments):
+        yield _tool_call_chunk(call_id, name, arguments)
+
+    service = _service_for_responses([
+        _stream_tool_call("call_1", "list_services", '{"query": "lash"}'),
+        _stream("Yeeh haru matching services ho."),
+    ])
 
     with patch("app.services.clinic_agent.execute_clinic_tool", AsyncMock(return_value=MANY_SERVICES)):
         events = await _run(
@@ -178,13 +199,7 @@ async def test_details_postback_caption_localizes_for_romanized_nepali():
         )
 
     done_event = next(e for e in events if e["type"] == "done")
-    # Regular (non-Details) multi-match path through the main tool loop
-    # also localizes — covered by test_clinic_ui_event.py for the English
-    # default; this just confirms the Nepali map entry is reachable when
-    # the visitor's own turn is in Romanized Nepali.
-    ui = done_event.get("ui") or {}
-    if ui.get("services_caption"):
-        assert ui["services_caption"] != ""
+    assert done_event["ui"]["services_caption"] == "Hamro services haru yaha chan — swipe garera hernuhos."
 
 
 @pytest.mark.asyncio

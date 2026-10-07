@@ -108,7 +108,8 @@ def _patched(db, process_message_result, meta_client):
 def _meta_client():
     client = MagicMock()
     for m in ("mark_seen", "send_typing_on", "send_text_message", "send_chips",
-              "send_service_cards", "send_booking_card", "send_product_cards", "send_suggestion_cards"):
+              "send_service_cards", "send_service_detail", "send_booking_card",
+              "send_product_cards", "send_suggestion_cards"):
         setattr(client, m, AsyncMock())
     return client
 
@@ -235,10 +236,10 @@ async def test_no_ui_falls_through_to_existing_product_cards_path():
 
 
 @pytest.mark.asyncio
-async def test_service_detail_ui_renders_model_text_plus_book_chip():
+async def test_service_detail_ui_renders_model_text_plus_book_button():
     """F1: a single-service match ("Details" tap, or any query resolving to
     exactly one service) is answered with the model's own text (already
-    carrying price/duration) plus a single "Book this" chip — never the
+    carrying price/duration) plus a single "Book this" button — never the
     one-card carousel / canned caption."""
     detail = {"id": "svc-xyz", "name": "Highly Defining Dye", "price": 1200,
               "duration": 45, "image_url": None, "description": "A bold brow tint."}
@@ -251,14 +252,62 @@ async def test_service_detail_ui_renders_model_text_plus_book_chip():
     }
     client = await _run(result)
     client.send_service_cards.assert_not_awaited()
-    client.send_chips.assert_awaited_once()
-    kwargs = client.send_chips.await_args.kwargs
+    client.send_chips.assert_not_awaited()
+    client.send_service_detail.assert_awaited_once()
+    kwargs = client.send_service_detail.await_args.kwargs
     assert kwargs["text"] == result["answer"]
-    assert kwargs["chips"] == [
-        {"label": "Book this", "payload": "I'd like to book 'Highly Defining Dye'. [service_id:svc-xyz]"}
-    ]
-    # the plain-text send is skipped — text rides on the same message as the chip
+    assert kwargs["service_id"] == "svc-xyz"
+    assert kwargs["service_name"] == "Highly Defining Dye"
+    # the plain-text send is skipped — text rides on the same message as the button
     client.send_text_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_service_detail_book_button_reaches_identical_booking_handling_as_carousel():
+    """Brain review on #122: the service_detail "Book this" button and the
+    carousel's own "Book this" button must produce the EXACT same postback
+    payload, so both taps parse through the identical `action ==
+    "book_service"` branch in `_process_instagram_entry` — one booking
+    code path, not two differently-worded ones."""
+    from app.services.meta_messaging import book_service_payload
+
+    carousel_payload = book_service_payload("svc-xyz", "Highly Defining Dye")
+
+    detail = {"id": "svc-xyz", "name": "Highly Defining Dye", "price": 1200,
+              "duration": 45, "image_url": None, "description": "A bold brow tint."}
+    result = {
+        "answer": "Highly Defining Dye is NPR 1200.",
+        "suggestions": [],
+        "ui": {"service_detail": detail},
+        "response_time_ms": 10,
+        "query_log_id": None,
+    }
+    client = await _run(result)
+    detail_kwargs = client.send_service_detail.await_args.kwargs
+
+    with patch.object(cw_module, "_handle_incoming_message", AsyncMock()) as mock_handle:
+        await cw_module._process_instagram_entry({
+            "messaging": [{
+                "sender": {"id": "ig-user-1"}, "recipient": {"id": "page-1"},
+                "postback": {
+                    "payload": book_service_payload(detail_kwargs["service_id"], detail_kwargs["service_name"]),
+                    "mid": "mid-1",
+                },
+            }]
+        })
+    detail_turn_text = mock_handle.await_args.kwargs["message_text"]
+
+    with patch.object(cw_module, "_handle_incoming_message", AsyncMock()) as mock_handle2:
+        await cw_module._process_instagram_entry({
+            "messaging": [{
+                "sender": {"id": "ig-user-1"}, "recipient": {"id": "page-1"},
+                "postback": {"payload": carousel_payload, "mid": "mid-2"},
+            }]
+        })
+    carousel_turn_text = mock_handle2.await_args.kwargs["message_text"]
+
+    assert carousel_payload == book_service_payload(detail_kwargs["service_id"], detail_kwargs["service_name"])
+    assert detail_turn_text == carousel_turn_text == "I'd like to book 'Highly Defining Dye'. [service_id:svc-xyz]"
 
 
 @pytest.mark.asyncio
@@ -266,19 +315,19 @@ async def test_services_ui_uses_localized_caption_when_present():
     """F2: when clinic_agent.py supplies a localized `services_caption`,
     that string is used verbatim instead of the hardcoded English one."""
     result = {
-        "answer": "Yeeh hamro services haru ho.",
+        "answer": "Hamro services haru yaha chan.",
         "suggestions": [],
         "ui": {
             "services": [{"id": "s1", "name": "Lash Lift", "price": 2500, "duration": 60,
                            "image_url": None, "description": "d"}],
-            "services_caption": "Yeeh hamro services haru hun — swipe garera hernus.",
+            "services_caption": "Hamro services haru yaha chan — swipe garera hernuhos.",
         },
         "response_time_ms": 10,
         "query_log_id": None,
     }
     client = await _run(result)
     client.send_text_message.assert_awaited_once()
-    assert client.send_text_message.await_args.kwargs["text"] == "Yeeh hamro services haru hun — swipe garera hernus."
+    assert client.send_text_message.await_args.kwargs["text"] == "Hamro services haru yaha chan — swipe garera hernuhos."
 
 
 @pytest.mark.asyncio

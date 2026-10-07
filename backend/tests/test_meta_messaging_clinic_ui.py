@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.services.meta_messaging import MetaMessagingClient, _format_price_npr
+from app.services.meta_messaging import MetaMessagingClient, _format_price_npr, book_service_payload
 
 
 def _client_with_mocked_http(status_code=200, json_body=None):
@@ -69,6 +69,29 @@ async def test_send_service_cards_builds_title_subtitle_and_book_button_with_id(
     payload = _json.loads(book_button["payload"])
     assert payload == {"action": "book_service", "service_id": "s1", "name": "Lash Lift"}
     assert element["buttons"][1]["title"] == "Details"
+
+
+@pytest.mark.asyncio
+async def test_send_service_detail_book_button_matches_carousel_payload():
+    """SBAL-Z5 F1 (brain review on #122): send_service_detail's "Book
+    this" button must carry the byte-identical payload the carousel's own
+    "Book this" sends — both built from the one shared
+    book_service_payload, so they parse through the same booking handling."""
+    client, _ = _client_with_mocked_http()
+    await client.send_service_detail(
+        platform="instagram", page_id="page-1", access_token="tok",
+        recipient_id="r1", text="Highly Defining Dye is NPR 1200 and takes 45 minutes.",
+        service_id="svc-xyz", service_name="Highly Defining Dye",
+    )
+    _, kwargs = client._http.post.call_args
+    sent_payload = kwargs["json"]["message"]["attachment"]["payload"]
+    assert sent_payload["template_type"] == "button"
+    assert sent_payload["text"] == "Highly Defining Dye is NPR 1200 and takes 45 minutes."
+    button = sent_payload["buttons"][0]
+    assert button["title"] == "Book this"
+    assert button["payload"] == book_service_payload("svc-xyz", "Highly Defining Dye")
+    # no image/subtitle card — the whole point of F1 was no one-card carousel.
+    assert "elements" not in sent_payload
 
 
 @pytest.mark.asyncio
