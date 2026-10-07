@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-from openai import APIConnectionError
+from openai import NOT_GIVEN, APIConnectionError
 
 from app.models.customer import Customer
 from app.services.clinic_agent import ClinicAgentService
@@ -116,3 +116,74 @@ async def test_timeout_on_voice_channel_never_retries():
         await _run(service, channel="voice")
 
     assert service.client.chat.completions.create.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_chat_channel_uses_8s_per_call_timeout_voice_uses_client_default():
+    """
+    Review on #126 follow-up: the retry only fits inside IG's 20s lane
+    timeout and Orca's 25s widget-run budget if each attempt is shorter
+    than the "chat" client profile's default 15s. Non-voice channels pass
+    an explicit 8s per-call `timeout` kwarg; voice passes none (NOT_GIVEN),
+    keeping the client's own 15s/0-retry default — `timeout=None` would
+    instead mean "no timeout at all" to the SDK.
+    """
+    captured_timeouts = []
+
+    def _record(**kwargs):
+        captured_timeouts.append(kwargs.get("timeout"))
+        return _ok_stream("Here are our services.")
+
+    for channel in ("chat", "voice"):
+        service = _service()
+        service.client = AsyncMock()
+        service.client.chat.completions.create = AsyncMock(side_effect=_record)
+        await _run(service, channel=channel)
+
+    assert captured_timeouts[0] == 8.0
+    assert captured_timeouts[1] is NOT_GIVEN
+
+
+class _FakeMonotonicClock:
+    """A controllable stand-in for time.monotonic() — advances only when
+    told to, so a test can simulate "this call burned N seconds" without
+    an real sleep."""
+
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+@pytest.mark.asyncio
+async def test_timeout_then_retry_finishes_under_20s_with_mocked_clock():
+    service = _service()
+    service.client = AsyncMock()
+    clock = _FakeMonotonicClock()
+    call_count = {"n": 0}
+
+    def _side_effect(**kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            # Burns the full 8s per-call timeout before failing.
+            clock.advance(8.0)
+            raise _timeout_error()
+        # Retry succeeds well inside the remaining budget.
+        clock.advance(1.5)
+        return _ok_stream("Here are our services.")
+
+    service.client.chat.completions.create = AsyncMock(side_effect=_side_effect)
+
+    with patch("time.monotonic", clock):
+        events = await _run(service, channel="chat")
+
+    assert service.client.chat.completions.create.call_count == 2
+    tokens = "".join(e["data"] for e in events if e.get("type") == "token")
+    assert "Here are our services." in tokens
+    # The clock only advances inside the mocked LLM calls (8.0 + 1.5 = 9.5s),
+    # well under IG's 20s lane timeout / Orca's 25s widget-run budget.
+    assert clock.now < 20.0
