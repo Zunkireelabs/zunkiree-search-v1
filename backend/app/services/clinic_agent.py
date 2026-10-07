@@ -1096,6 +1096,17 @@ class ClinicAgentService:
         # Declared here (rather than just before the tool loop) because the
         # SBAL-Z5 F1 service-details prefetch below can also populate it.
         ui_state: dict = {}
+        # SBAL-Z6: when the widget's card UI is enabled for this tenant
+        # (per-tenant `widget_configs.service_cards`, sbal only today), a
+        # multi-service match skips the model's own enumerated-list
+        # generation entirely — today's 10-12s turn for "what services do
+        # you have?" is almost all that generation. `full_answer` becomes
+        # just the localized caption; IG/widget both already render the
+        # caption + cards from `ui_state`, not from model prose, so nothing
+        # is lost. Voice never shows cards, so it's excluded regardless of
+        # the flag — guardrail: voice is unchanged by this brief.
+        widget_cards_enabled = bool(config and config.service_cards) and channel != "voice"
+        turn_services_shortcut_caption: str | None = None
 
         # P4 B4: decide once, up front, whether this turn gets the collapsed
         # knowledge/FAQ path — before the system prompt is built, since the
@@ -1161,6 +1172,8 @@ class ClinicAgentService:
                     ui_state["services_caption"] = _SERVICES_CAPTION_BY_LANG.get(
                         ui_lang, _SERVICES_CAPTION_BY_LANG["en"]
                     )
+                    if widget_cards_enabled:
+                        turn_services_shortcut_caption = ui_state["services_caption"]
                 knowledge_prefetch_line = (
                     "\nSERVICE-THIS-TURN: This is already the result of looking up "
                     f'"{service_query}" via list_services:\n'
@@ -1265,6 +1278,14 @@ class ClinicAgentService:
 
         full_answer = ""
         iteration = 0
+        if turn_services_shortcut_caption:
+            # SBAL-Z6: the service_details_match prefetch above already
+            # resolved a multi-service match before the tool loop even
+            # starts — same code-built-answer shortcut as
+            # forced-confirmation below, just earlier.
+            full_answer = turn_services_shortcut_caption
+            yield {"type": "token", "data": full_answer}
+            iteration = MAX_TOOL_ITERATIONS
         # F1 (CLINIC-BOOKING-TRUTH-BRIEF): tracks, for THIS turn only,
         # whether a prepare_booking succeeded (and its structured fields,
         # for the MUST A read-back template) and whether a confirm_booking
@@ -1736,6 +1757,8 @@ class ClinicAgentService:
                                 ui_state["services_caption"] = _SERVICES_CAPTION_BY_LANG.get(
                                     ui_lang, _SERVICES_CAPTION_BY_LANG["en"]
                                 )
+                                if widget_cards_enabled:
+                                    turn_services_shortcut_caption = ui_state["services_caption"]
                     elif tool_name == "check_availability" and not result.get("blocked"):
                         ui_lang = get_readback_lang(session_id) or detected_lang
                         slots = _slots_ui(result, lang=ui_lang)
@@ -1823,6 +1846,14 @@ class ClinicAgentService:
                     if full_answer:
                         yield {"type": "token", "data": full_answer}
                         mark_readback(session_id, current_turn, detected_lang)
+                    break
+
+                if turn_services_shortcut_caption is not None:
+                    # SBAL-Z6: same shortcut as the pre-loop one above, for a
+                    # multi-service match reached through the normal tool
+                    # loop rather than the Details-postback prefetch.
+                    full_answer = turn_services_shortcut_caption
+                    yield {"type": "token", "data": full_answer}
                     break
 
                 # SBAL-Z3 language regression (follow-up on #117): B1's forced

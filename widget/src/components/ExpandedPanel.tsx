@@ -3,6 +3,8 @@ import { MarkdownContent } from './Markdown'
 import { Autocomplete } from './Autocomplete'
 import { ProductGrid } from './ProductGrid'
 import { RoomGrid } from './RoomGrid'
+import { ServiceGrid } from './ServiceGrid'
+import { ServiceCard, ServiceItem } from './ServiceCard'
 import { FeedbackButtons } from './FeedbackButtons'
 import { CartView } from './CartView'
 import { CheckoutView } from './CheckoutView'
@@ -26,6 +28,9 @@ interface Message {
   paymentSelector?: { orderId: string; total: number; currency: string }
   toolStatus?: { name: string; status: 'running' | 'done' }
   imagePreview?: string
+  rooms?: any[]
+  services?: ServiceItem[]
+  serviceDetail?: ServiceItem
 }
 
 interface ExpandedPanelProps {
@@ -59,6 +64,8 @@ interface ExpandedPanelProps {
   onPaymentComplete?: (gateway: string) => void
   onPaymentFailed?: () => void
   onBookRoom?: (roomId: string) => void
+  onBookService?: (name: string) => void
+  onServiceDetails?: (name: string) => void
   isLongSession?: boolean
   websiteType?: string | null
 }
@@ -110,6 +117,8 @@ export function ExpandedPanel({
   onPaymentComplete,
   onPaymentFailed,
   onBookRoom,
+  onBookService,
+  onServiceDetails,
   isLongSession,
   websiteType,
 }: ExpandedPanelProps) {
@@ -384,6 +393,20 @@ export function ExpandedPanel({
                 )}
                 {message.rooms && message.rooms.length > 0 && onBookRoom && (
                   <RoomGrid rooms={message.rooms} onBookRoom={onBookRoom} />
+                )}
+                {message.services && message.services.length > 0 && onBookService && onServiceDetails && (
+                  <ServiceGrid
+                    services={message.services}
+                    onBookService={onBookService}
+                    onServiceDetails={onServiceDetails}
+                  />
+                )}
+                {message.serviceDetail && onBookService && (
+                  <ServiceCard
+                    service={message.serviceDetail}
+                    onBookService={onBookService}
+                    showDescription
+                  />
                 )}
                 {message.cartUpdate && onRemoveFromCart && onCheckout && (
                   <CartView cart={message.cartUpdate} onRemoveItem={onRemoveFromCart} onCheckout={onCheckout} />
