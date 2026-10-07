@@ -484,7 +484,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   }
 
   const handleBookRoom = (roomId: string) => {
-    handleSubmit(null as any, `I'd like to book room ${roomId}`)
+    handleSubmit(fakeEvent, `I'd like to book room ${roomId}`)
   }
 
   // SBAL-Z6: same "send a normal user message" pattern as handleBookRoom
@@ -492,10 +492,10 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   // exact text the IG Details postback sends too, so SBAL-Z5's fast path
   // (clinic_agent.py _SERVICE_DETAILS_POSTBACK) handles it identically here.
   const handleBookService = (name: string) => {
-    handleSubmit(null as any, `I'd like to book ${name}`)
+    handleSubmit(fakeEvent, `I'd like to book ${name}`)
   }
   const handleServiceDetails = (name: string) => {
-    handleSubmit(null as any, `Tell me more about ${name}`)
+    handleSubmit(fakeEvent, `Tell me more about ${name}`)
   }
 
   const handleSuggestionClick = (suggestion: string) => {

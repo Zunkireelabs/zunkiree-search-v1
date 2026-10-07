@@ -618,7 +618,11 @@ class ChatbotQueryService:
                                 raise RuntimeError(event.get("message", "clinic lane error"))
             except Exception as e:
                 logger.error("[BOOKING-AGENT] clinic lane call failed channel=%s: %s", channel.id, e)
-                answer = "Sorry, I'm having trouble reaching the booking system right now. Please try again shortly."
+                # SBAL demo-blocker fix: this used to say "trouble reaching the
+                # booking system", which blames ClinicMD even when the actual
+                # cause is an OpenAI call on our side timing out — not true,
+                # and not actionable for the visitor either way.
+                answer = "Sorry, that took a little longer than expected. Please try again in a moment."
 
         if greet_name and answer:
             answer = f"Hi {greet_name}! {answer}"
