@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from openai import APIConnectionError
+from openai import NOT_GIVEN, APIConnectionError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -1441,6 +1441,20 @@ class ClinicAgentService:
             if block_check_availability_next_iteration:
                 iteration_tools = [t for t in iteration_tools if t["function"]["name"] != "check_availability"]
                 block_check_availability_next_iteration = False  # only blocks the one iteration
+            # SBAL follow-up (review on #126): the one retry below only fits
+            # inside IG's 20s lane timeout and Orca's 25s widget-run budget
+            # if each attempt is shorter than the "chat" profile's default
+            # 15s — two 15s attempts could reach ~30s. Non-voice channels
+            # (the only ones that ever retry) get an 8s per-attempt timeout
+            # instead, so the worst case (timeout + retry) is ~16s. Voice
+            # never retries and keeps the unmodified 15s/0-retry client —
+            # passed as a per-call override (not `self.client.with_options`,
+            # which would build a second client and complicate testing) so
+            # it stays a plain kwarg on the same client instance. NOT_GIVEN,
+            # not None, for voice — `timeout=None` to the SDK means "no
+            # timeout at all", not "use the client's default".
+            per_call_timeout = NOT_GIVEN if channel == "voice" else 8.0
+
             llm_attempt = 0
             while True:
                 llm_attempt += 1
@@ -1473,6 +1487,7 @@ class ClinicAgentService:
                         # `usage` at all when this is set — otherwise every chunk's
                         # `.usage` is None, including the last one.
                         stream_options={"include_usage": True},
+                        timeout=per_call_timeout,
                     )
 
                     async for chunk in response:
