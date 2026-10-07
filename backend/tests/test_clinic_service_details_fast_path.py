@@ -92,6 +92,26 @@ MANY_SERVICES = {
     ],
 }
 
+# SBAL-Z7: "Lash Lift" is one of 5 names _list_services' loose substring
+# match returns for the query "Lash Lift" (it also matches every OTHER
+# name/category containing "lash" or "lift") — but exactly one of the 5
+# matches the visitor's own words verbatim.
+FIVE_LOOSE_ONE_EXACT = {
+    "branch": {"id": "b1", "name": "Thamel"},
+    "services": [
+        {"id": "svc-2", "name": "Lash Lift", "category": "Lash",
+         "duration_minutes": 60, "price_npr": 2500, "description": "Lift and set."},
+        {"id": "svc-3", "name": "Lash Lift Removal", "category": "Lash",
+         "duration_minutes": 20, "price_npr": 800, "description": "Removes a prior lift."},
+        {"id": "svc-4", "name": "Classic Lash Extension", "category": "Lash",
+         "duration_minutes": 90, "price_npr": 3500, "description": "Classic extensions."},
+        {"id": "svc-5", "name": "Volume Lash Lift", "category": "Lash",
+         "duration_minutes": 75, "price_npr": 3000, "description": "Volume lift."},
+        {"id": "svc-6", "name": "Brow Lift", "category": "Brow",
+         "duration_minutes": 40, "price_npr": 1800, "description": "Brow lift treatment."},
+    ],
+}
+
 
 @pytest.mark.asyncio
 async def test_details_postback_resolves_via_list_services_not_search_knowledge():
@@ -164,6 +184,44 @@ async def test_details_postback_with_multiple_matches_gets_carousel_and_caption(
     done_event = next(e for e in events if e["type"] == "done")
     assert len(done_event["ui"]["services"]) == 2
     assert done_event["ui"]["services_caption"] == "Here are our services — swipe to see them."
+    assert "service_detail" not in done_event["ui"]
+
+
+@pytest.mark.asyncio
+async def test_details_postback_exact_name_match_wins_over_loose_matches():
+    """SBAL-Z7: "Tell me more about Lash Lift" named the service EXACTLY —
+    even though list_services' loose substring match also pulls in 4 other
+    "lash"/"lift" services, the one exact (case-insensitive, trimmed) name
+    match wins outright and gets service_detail, not a 5-card carousel."""
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="SBAL", contact_phone=None)
+    service = _service_for_responses([_stream("Lash Lift is NPR 2500 and takes 60 minutes.")])
+
+    with patch(
+        "app.services.clinic_agent.execute_clinic_tool", AsyncMock(return_value=FIVE_LOOSE_ONE_EXACT),
+    ):
+        events = await _run(service, config, "Tell me more about Lash Lift", session_id="details-exact-1")
+
+    done_event = next(e for e in events if e["type"] == "done")
+    assert done_event["ui"]["service_detail"]["id"] == "svc-2"
+    assert done_event["ui"]["service_detail"]["name"] == "Lash Lift"
+    assert "services" not in done_event["ui"]
+
+
+@pytest.mark.asyncio
+async def test_details_postback_loose_query_with_no_exact_match_stays_multi():
+    """"lash" (lowercase, no exact name match among the 5 loose hits)
+    keeps today's carousel behaviour — the exact-match shortcut only fires
+    when one of the candidates matches verbatim."""
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="SBAL", contact_phone=None)
+    service = _service_for_responses([_stream("Here are our lash-related services.")])
+
+    with patch(
+        "app.services.clinic_agent.execute_clinic_tool", AsyncMock(return_value=FIVE_LOOSE_ONE_EXACT),
+    ):
+        events = await _run(service, config, "Tell me more about lash", session_id="details-exact-2")
+
+    done_event = next(e for e in events if e["type"] == "done")
+    assert len(done_event["ui"]["services"]) == 5
     assert "service_detail" not in done_event["ui"]
 
 

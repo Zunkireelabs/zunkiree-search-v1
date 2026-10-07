@@ -1163,12 +1163,27 @@ class ClinicAgentService:
                 trace_id, site_id, session_id, prefetch_ms,
             )
             services = (prefetch_result or {}).get("services") or []
+            # SBAL-Z7: "Tell me more about Lash Lift" named the service
+            # EXACTLY, but list_services' own substring match is loose (it
+            # also matches "Highly Defining Dye Lash Lift", "Lash Lift
+            # Removal", ...) — 5 loose hits buried the one the visitor
+            # actually asked about behind a carousel instead of its own
+            # details. An exact (case-insensitive, trimmed) name match
+            # wins outright; the loose list is only the fallback when
+            # nothing names the service exactly.
+            exact_name_matches = [
+                s for s in services
+                if (s.get("name") or "").strip().casefold() == service_query.strip().casefold()
+            ]
+            if len(exact_name_matches) == 1:
+                services = exact_name_matches
             if services:
                 ui_lang = get_readback_lang(session_id) or detected_lang
                 if len(services) == 1:
                     ui_state["service_detail"] = _services_ui(services, limit=1)[0]
                 else:
-                    ui_state["services"] = _services_ui(services)
+                    carousel_limit = 10 if channel == "instagram" else len(services)
+                    ui_state["services"] = _services_ui(services, limit=carousel_limit)
                     ui_state["services_caption"] = _SERVICES_CAPTION_BY_LANG.get(
                         ui_lang, _SERVICES_CAPTION_BY_LANG["en"]
                     )
@@ -1753,7 +1768,12 @@ class ClinicAgentService:
                                 ui_state["service_detail"] = _services_ui(services, limit=1)[0]
                             else:
                                 ui_lang = get_readback_lang(session_id) or detected_lang
-                                ui_state["services"] = _services_ui(services)
+                                # SBAL-Z7: Meta's carousel caps at 10
+                                # elements — the widget has no such limit
+                                # (sbal has 16 services), so only cap the
+                                # IG/Messenger shape.
+                                carousel_limit = 10 if channel == "instagram" else len(services)
+                                ui_state["services"] = _services_ui(services, limit=carousel_limit)
                                 ui_state["services_caption"] = _SERVICES_CAPTION_BY_LANG.get(
                                     ui_lang, _SERVICES_CAPTION_BY_LANG["en"]
                                 )

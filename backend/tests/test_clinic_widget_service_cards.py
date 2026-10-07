@@ -97,6 +97,50 @@ MANY_SERVICES = {
 }
 
 
+SIXTEEN_SERVICES = {
+    "branch": {"id": "b1", "name": "Thamel"},
+    "services": [
+        {"id": f"svc-{i}", "name": f"Service {i}", "category": "Misc",
+         "duration_minutes": 30, "price_npr": 1000 + i, "description": "d"}
+        for i in range(16)
+    ],
+}
+
+
+@pytest.mark.asyncio
+async def test_widget_channel_returns_all_sixteen_services():
+    """SBAL-Z7: Meta's carousel caps at 10 — the widget has no such limit
+    (sbal has 16 services) and must show all of them, not the old
+    across-the-board cap-at-10."""
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="SBAL", contact_phone=None, service_cards=True)
+    service = _service_for_responses([
+        _stream_tool_call("call_1", "list_services", "{}"),
+    ])
+
+    with patch("app.services.clinic_agent.execute_clinic_tool", AsyncMock(return_value=SIXTEEN_SERVICES)):
+        events = await _run(service, config, "what services do you have?", session_id="widget-limit-1", channel="chat")
+
+    done_event = next(e for e in events if e["type"] == "done")
+    assert len(done_event["ui"]["services"]) == 16
+
+
+@pytest.mark.asyncio
+async def test_instagram_channel_still_caps_at_ten():
+    """Regression: IG/Messenger keep Meta's carousel limit."""
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="SBAL", contact_phone=None, service_cards=True)
+    service = _service_for_responses([
+        _stream_tool_call("call_1", "list_services", "{}"),
+    ])
+
+    with patch("app.services.clinic_agent.execute_clinic_tool", AsyncMock(return_value=SIXTEEN_SERVICES)):
+        events = await _run(
+            service, config, "what services do you have?", session_id="widget-limit-2", channel="instagram",
+        )
+
+    done_event = next(e for e in events if e["type"] == "done")
+    assert len(done_event["ui"]["services"]) == 10
+
+
 @pytest.mark.asyncio
 async def test_flag_on_skips_second_llm_call_for_multi_match():
     config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="SBAL", contact_phone=None, service_cards=True)
