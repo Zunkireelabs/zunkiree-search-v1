@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.services.meta_messaging import MetaMessagingClient, _format_price_npr
+from app.services.meta_messaging import MetaMessagingClient, _format_price_npr, book_service_payload
 
 
 def _client_with_mocked_http(status_code=200, json_body=None):
@@ -69,6 +69,81 @@ async def test_send_service_cards_builds_title_subtitle_and_book_button_with_id(
     payload = _json.loads(book_button["payload"])
     assert payload == {"action": "book_service", "service_id": "s1", "name": "Lash Lift"}
     assert element["buttons"][1]["title"] == "Details"
+
+
+@pytest.mark.asyncio
+async def test_send_service_detail_book_button_matches_carousel_payload():
+    """SBAL-Z5 F1 (brain review on #122): send_service_detail's "Book
+    this" button must carry the byte-identical payload the carousel's own
+    "Book this" sends — both built from the one shared
+    book_service_payload, so they parse through the same booking handling."""
+    client, _ = _client_with_mocked_http()
+    await client.send_service_detail(
+        platform="instagram", page_id="page-1", access_token="tok",
+        recipient_id="r1", text="Highly Defining Dye is NPR 1200 and takes 45 minutes.",
+        service_id="svc-xyz", service_name="Highly Defining Dye",
+    )
+    _, kwargs = client._http.post.call_args
+    sent_payload = kwargs["json"]["message"]["attachment"]["payload"]
+    assert sent_payload["template_type"] == "button"
+    assert sent_payload["text"] == "Highly Defining Dye is NPR 1200 and takes 45 minutes."
+    button = sent_payload["buttons"][0]
+    assert button["title"] == "Book this"
+    assert button["payload"] == book_service_payload("svc-xyz", "Highly Defining Dye")
+    # no image/subtitle card — the whole point of F1 was no one-card carousel.
+    assert "elements" not in sent_payload
+
+
+@pytest.mark.asyncio
+async def test_send_service_detail_falls_back_to_text_on_non_200():
+    """Brain review on #122: IG is only testable on prod — a rejected
+    button template (non-200) must not just log and return the error dict;
+    the visitor needs SOME reply, so this falls back to send_text_message
+    with the same text."""
+    client = MetaMessagingClient.__new__(MetaMessagingClient)
+    error_resp = MagicMock()
+    error_resp.status_code = 400
+    error_resp.json.return_value = {"error": {"message": "Invalid parameter", "code": 100}}
+    ok_resp = MagicMock()
+    ok_resp.status_code = 200
+    ok_resp.json.return_value = {"recipient_id": "r1", "message_id": "m2"}
+    client._http = AsyncMock()
+    client._http.post = AsyncMock(side_effect=[error_resp, ok_resp])
+
+    result = await client.send_service_detail(
+        platform="instagram", page_id="page-1", access_token="tok",
+        recipient_id="r1", text="Highly Defining Dye is NPR 1200.",
+        service_id="svc-xyz", service_name="Highly Defining Dye",
+    )
+
+    assert client._http.post.await_count == 2
+    fallback_payload = client._http.post.await_args.kwargs["json"]
+    assert fallback_payload["message"]["text"] == "Highly Defining Dye is NPR 1200."
+    assert result == {"recipient_id": "r1", "message_id": "m2"}
+
+
+@pytest.mark.asyncio
+async def test_send_service_detail_falls_back_to_text_on_200_with_error_key():
+    """Meta can return HTTP 200 with an `error` key in the body — status
+    code alone isn't a reliable success signal."""
+    client = MetaMessagingClient.__new__(MetaMessagingClient)
+    error_resp = MagicMock()
+    error_resp.status_code = 200
+    error_resp.json.return_value = {"error": {"message": "Button template rejected"}}
+    ok_resp = MagicMock()
+    ok_resp.status_code = 200
+    ok_resp.json.return_value = {"recipient_id": "r1", "message_id": "m3"}
+    client._http = AsyncMock()
+    client._http.post = AsyncMock(side_effect=[error_resp, ok_resp])
+
+    result = await client.send_service_detail(
+        platform="instagram", page_id="page-1", access_token="tok",
+        recipient_id="r1", text="Lash Lift is NPR 2500.",
+        service_id="svc-1", service_name="Lash Lift",
+    )
+
+    assert client._http.post.await_count == 2
+    assert result == {"recipient_id": "r1", "message_id": "m3"}
 
 
 @pytest.mark.asyncio

@@ -7,6 +7,7 @@ import { DockedPanel } from './DockedPanel'
 import { bootstrap, destroy, getDockPanel } from '../layout/LayoutManager'
 import { enterDock, exitDock, DOCK_MIN_WIDTH } from '../layout/DockStateManager'
 import { fetchStream, assertOkOrThrow, shouldRetryDirect } from '../lib/streamFallback'
+import { ServiceItem } from './ServiceCard'
 
 interface Product {
   id: string
@@ -74,6 +75,11 @@ export interface Message {
   toolStatus?: { name: string; status: 'running' | 'done' }
   imagePreview?: string
   rooms?: any[]
+  // SBAL-Z6: clinic agent's `ui.services`/`ui.service_detail` (see
+  // ServiceCard.tsx for the shape) — only rendered when the tenant's
+  // `service_cards` widget_configs flag is on (config.service_cards).
+  services?: ServiceItem[]
+  serviceDetail?: ServiceItem
   queryLogId?: string
 }
 
@@ -91,6 +97,11 @@ interface WidgetConfig {
   // instead of {apiUrl}/api/v1/query/stream. Nothing else (config,
   // autocomplete, feedback, payments) ever reads this field.
   chat_stream_url?: string | null
+  // SBAL-Z6: gates ui.services/ui.service_detail card rendering + the
+  // one-line caption for clinic tenants. Default false/absent — every
+  // tenant without it (e.g. dental-city) keeps today's enumerated-list
+  // text, unaffected by this field existing on the wire.
+  service_cards?: boolean
 }
 
 interface WidgetProps {
@@ -305,6 +316,13 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
                     localStorage.setItem(`zk_session_${siteId}`, event.session_id)
                   }
               streamingRef.current = null
+              // SBAL-Z6: the backend always attaches ui.services/
+              // ui.service_detail for a clinic tenant (SBAL-Z5, used by
+              // IG) — the widget only renders cards from it when this
+              // tenant's own service_cards flag is on; otherwise `ui` is
+              // simply ignored and today's enumerated-text answer renders
+              // exactly as before.
+              const ui = config?.service_cards ? event.ui : undefined
               // Final commit — one React update with the complete content
               setMessages(prev =>
                 prev.map(m => m.id === assistantId ? {
@@ -313,6 +331,8 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
                   suggestions: event.suggestions,
                   toolStatus: undefined,
                   queryLogId: event.query_log_id,
+                  services: ui?.services,
+                  serviceDetail: ui?.service_detail,
                 } : m)
               )
               setIsLoading(false)
@@ -467,6 +487,17 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     handleSubmit(null as any, `I'd like to book room ${roomId}`)
   }
 
+  // SBAL-Z6: same "send a normal user message" pattern as handleBookRoom
+  // above — no special action handler. "Tell me more about <name>" is the
+  // exact text the IG Details postback sends too, so SBAL-Z5's fast path
+  // (clinic_agent.py _SERVICE_DETAILS_POSTBACK) handles it identically here.
+  const handleBookService = (name: string) => {
+    handleSubmit(null as any, `I'd like to book ${name}`)
+  }
+  const handleServiceDetails = (name: string) => {
+    handleSubmit(null as any, `Tell me more about ${name}`)
+  }
+
   const handleSuggestionClick = (suggestion: string) => {
     setInput(suggestion)
     if (mode === 'bottom-minimized') setMode('bottom-expanded')
@@ -503,6 +534,8 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     onMoveToCart: handleMoveToCart, onAddressSubmit: handleAddressSubmit, isOrderSubmitting, onImageSearch: handleImageSearch,
     onPaymentComplete: handlePaymentComplete, onPaymentFailed: handlePaymentFailed,
     onBookRoom: handleBookRoom,
+    onBookService: handleBookService,
+    onServiceDetails: handleServiceDetails,
     isLongSession: isLongSession(),
     streamingId: streamingRef.current?.id || null,
   }

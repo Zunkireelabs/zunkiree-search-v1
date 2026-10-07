@@ -428,33 +428,24 @@ async def _handle_incoming_message(
                 logger.warning("No active channel for %s page_id=%s", platform, page_id)
                 return
 
-            # Mark seen + typing indicator immediately
+            # SBAL-Z5 F3: resolve the send client/token up front (needed below
+            # regardless of dedupe outcome), but hold off on mark_seen/
+            # typing_on — a dropped duplicate must send Meta NOTHING, not
+            # even a seen receipt or typing bubble with no reply to follow.
             import asyncio
             import json as _json
+            access_token = None
+            client = None
+            send_page_id = page_id
             try:
                 access_token = decrypt_token(channel.page_access_token)
                 client = get_meta_messaging_client()
-                send_page_id = page_id
                 if platform == "instagram" and channel.config:
                     try:
                         config = _json.loads(channel.config) if isinstance(channel.config, str) else channel.config
                         send_page_id = config.get("facebook_page_id", page_id)
                     except Exception:
                         pass
-                # 1. Mark message as seen
-                await client.mark_seen(
-                    platform=platform,
-                    page_id=send_page_id,
-                    access_token=access_token,
-                    recipient_id=sender_id,
-                )
-                # 2. Show typing indicator
-                await client.send_typing_on(
-                    platform=platform,
-                    page_id=send_page_id,
-                    access_token=access_token,
-                    recipient_id=sender_id,
-                )
             except Exception:
                 pass  # Non-critical
 
@@ -495,6 +486,26 @@ async def _handle_incoming_message(
                         sender_id, channel.id, message_text[:100],
                     )
                     return
+
+            # Mark seen + typing indicator — only once we know this message
+            # will actually be processed, so a dropped duplicate never
+            # leaves a "…" typing bubble with no reply behind it (SBAL-Z5 F3).
+            if client is not None:
+                try:
+                    await client.mark_seen(
+                        platform=platform,
+                        page_id=send_page_id,
+                        access_token=access_token,
+                        recipient_id=sender_id,
+                    )
+                    await client.send_typing_on(
+                        platform=platform,
+                        page_id=send_page_id,
+                        access_token=access_token,
+                        recipient_id=sender_id,
+                    )
+                except Exception:
+                    pass  # Non-critical
 
             # Log inbound message
             inbound_log = ChatbotMessageLog(
@@ -736,13 +747,26 @@ async def _handle_incoming_message(
                 # the cards use, but in that result's own order). A fixed
                 # one-line lead-in can never contradict or duplicate the
                 # cards, because it never names a service at all.
-                send_text = "Here are our services — swipe to see them."
+                # SBAL-Z5 F2: the caption itself now follows the visitor's
+                # language — clinic_agent.py bakes the localized string into
+                # `ui["services_caption"]` (it already knows detected_lang);
+                # the English literal is only a fallback for an older/bare
+                # `ui.services` payload with no caption key.
+                send_text = ui.get("services_caption") or "Here are our services — swipe to see them."
+            # SBAL-Z5 F1: a single-service match ("Details" button, or any
+            # other turn that resolves to exactly one service) is answered
+            # with the model's own text — already carrying name/price/
+            # duration per the FACTS rule — never shortened and never
+            # replaced by the services carousel caption. The "Book this"
+            # button is attached to that same message (send_chips below),
+            # same one-bubble pattern as the confirm case.
+            send_service_detail_with_chip = bool(ui and ui.get("service_detail"))
 
             # Send answer — with quick replies attached if available.
             # The confirm case sends its chips below, combined with this
             # same text in one message — skip the plain-text send here so
             # the visitor never sees "Shall I book this?" as two bubbles.
-            if send_confirm_with_chips:
+            if send_confirm_with_chips or send_service_detail_with_chip:
                 pass
             elif quick_reply_options:
                 try:
@@ -810,6 +834,25 @@ async def _handle_incoming_message(
                     )
                 except Exception as e:
                     logger.warning("Booking card failed: %s", e)
+            elif ui and ui.get("service_detail"):
+                # Brain review on #122: the chip must reach the IDENTICAL
+                # booking handling as the carousel's own "Book this" — same
+                # {"action":"book_service",...} postback payload (built by
+                # the one shared meta_messaging.book_service_payload), not
+                # a differently-worded plain-text synthesis.
+                detail = ui["service_detail"]
+                try:
+                    await client.send_service_detail(
+                        platform=platform, page_id=send_page_id, access_token=access_token,
+                        recipient_id=sender_id, text=send_text,
+                        service_id=detail.get("id", ""), service_name=detail.get("name", "this service"),
+                    )
+                except Exception as e:
+                    logger.warning("Service detail button failed: %s", e)
+                    await client.send_text_message(
+                        platform=platform, page_id=send_page_id, access_token=access_token,
+                        recipient_id=sender_id, text=send_text,
+                    )
             elif ui and ui.get("confirm"):
                 confirm = ui["confirm"]
                 try:

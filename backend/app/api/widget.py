@@ -25,6 +25,7 @@ class WidgetConfigResponse(BaseModel):
     website_type: str | None = None
     enable_shopping: bool = False
     chat_stream_url: str | None = None
+    service_cards: bool = False
 
 
 @router.get("/config/{site_id}", response_model=WidgetConfigResponse)
@@ -103,4 +104,5 @@ async def get_widget_config(
         website_type=customer.website_type,
         enable_shopping=config.enable_shopping,
         chat_stream_url=config.chat_stream_url,
+        service_cards=bool(config.service_cards),
     )

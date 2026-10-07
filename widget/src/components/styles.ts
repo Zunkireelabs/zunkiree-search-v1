@@ -598,7 +598,13 @@ export const styles = (primaryColor: string) => `
 
   .zk-md .zk-list {
     margin: 6px 0 10px 0;
-    padding-left: 20px;
+    /* SBAL-Z6: 20px only reserves room for a single-digit marker box —
+       a 2-digit "10." etc. overflowed it and got clipped against the
+       <li> content edge, rendering as "I0.", "I1." (the right stroke of
+       a clipped "1"). list-style-position makes the reservation explicit
+       instead of relying on the marker fitting in whatever padding is left. */
+    padding-left: 28px;
+    list-style-position: outside;
   }
 
   .zk-md .zk-list li {
@@ -1287,7 +1293,7 @@ export const styles = (primaryColor: string) => `
   .zk-mobile .zk-md .zk-table td { padding: 6px 8px !important; }
   .zk-mobile .zk-md .zk-table-wrap { background: #fff !important; border-color: #e5e7eb !important; }
   .zk-mobile .zk-md .zk-table th { background: #f9fafb !important; }
-  .zk-mobile .zk-md .zk-list { padding-left: 16px !important; }
+  .zk-mobile .zk-md .zk-list { padding-left: 24px !important; }
 
   /* ===== iOS height ===== */
   @supports (-webkit-touch-callout: none) {
@@ -1464,6 +1470,49 @@ export const styles = (primaryColor: string) => `
     font-size: 10px;
     color: #9ca3af;
     font-weight: 400;
+  }
+
+  /* SBAL-Z6: service cards reuse .zk-product-card entirely; a service
+     card's actions row has TWO buttons (Book + Details) instead of
+     ProductCard/RoomCard's one, so .zk-product-card__actions needs a row
+     layout only when it holds more than one button — the single-button
+     cases above stay width:100% untouched. */
+  .zk-product-card__actions--row {
+    display: flex;
+    gap: 6px;
+  }
+
+  .zk-product-card__actions--row .zk-product-card__add-btn {
+    flex: 1;
+  }
+
+  .zk-service-card__details-btn {
+    flex: 1;
+    padding: 5px 0;
+    background: white;
+    color: #111827;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color 150ms;
+    font-family: inherit;
+  }
+
+  .zk-service-card__details-btn:hover {
+    border-color: #9ca3af;
+  }
+
+  .zk-service-card__description {
+    font-size: 11px;
+    color: #6b7280;
+    margin-top: 2px;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   .zk-feedback {
