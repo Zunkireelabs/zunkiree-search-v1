@@ -254,9 +254,11 @@ async def submit_query(
 
     brand_name = config.brand_name if config else customer.name
 
-    # Handle greeting
+    # Handle greeting — clinic tenants skip this generic template and go to
+    # the clinic agent instead (SBAL-Z4: that's the only place assistant_name
+    # self-introduction lives; a bare "hi" must reach it, not dead-end here).
     cleaned = query.question.lower().strip()
-    if cleaned in GREETING_WORDS:
+    if cleaned in GREETING_WORDS and customer.website_type != "clinic":
         suggestions: list[str] = []
         if config and config.quick_actions:
             try:
@@ -559,9 +561,11 @@ async def submit_query_stream(
 
     brand_name = config.brand_name if config else customer.name
 
-    # Handle greeting — return immediately (no streaming needed)
+    # Handle greeting — return immediately (no streaming needed). Clinic
+    # tenants skip this and go to the clinic agent instead (SBAL-Z4: that's
+    # the only place assistant_name self-introduction lives).
     cleaned = query.question.lower().strip()
-    if cleaned in GREETING_WORDS:
+    if cleaned in GREETING_WORDS and customer.website_type != "clinic":
         suggestions: list[str] = []
         if config and config.quick_actions:
             try:
