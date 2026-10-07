@@ -93,10 +93,13 @@ def _build_phone_fact_line(contact_phone: str | None) -> str:
     )
 
 
-def _build_intro_line(assistant_name: str | None, brand_name: str, is_first_turn: bool) -> str:
+def _build_intro_line(assistant_name: str | None, brand_name: str, is_first_turn: bool, channel: str = "chat") -> str:
     # SBAL-Z4: the name is tenant data (widget_configs.assistant_name), never a
     # per-tenant code branch. Absent assistant_name = today's behaviour exactly.
-    if not assistant_name or not is_first_turn:
+    # PR #119 review: on voice, ElevenLabs' own First Message already
+    # introduces Sammy before the caller's first utterance reaches us (which
+    # is still current_turn 1 here) — injecting this too would double-introduce.
+    if not assistant_name or not is_first_turn or channel == "voice":
         return ""
     return (
         f"\nINTRO: This is the first message of the conversation. Introduce yourself as "
@@ -1131,7 +1134,7 @@ class ClinicAgentService:
         system_prompt = CLINIC_SYSTEM_PROMPT.format(
             brand_name=brand_name,
             intro_line=_build_intro_line(
-                config.assistant_name if config else None, brand_name, current_turn == 1
+                config.assistant_name if config else None, brand_name, current_turn == 1, channel
             ),
             now_npt=now_npt,
             phone_fact_line=phone_fact_line,
