@@ -169,9 +169,13 @@ async def test_list_services_populates_ui_services():
         events = await _run(service, config, question="What services do you offer?")
 
     done_event = next(e for e in events if e["type"] == "done")
-    assert done_event["ui"]["services"] == [
-        {"id": "svc1", "name": "Lash Lift", "price": 2500, "duration": 60, "image_url": None, "description": "A lash lift."},
-    ]
+    # SBAL-Z5 F1: a single match gets `service_detail`, not a one-card
+    # `services` carousel (see test_clinic_service_details_fast_path.py for
+    # the multi-match carousel case).
+    assert done_event["ui"]["service_detail"] == {
+        "id": "svc1", "name": "Lash Lift", "price": 2500, "duration": 60, "image_url": None, "description": "A lash lift.",
+    }
+    assert "services" not in done_event["ui"]
 
 
 @pytest.mark.asyncio
@@ -271,7 +275,7 @@ async def test_voice_channel_done_event_unaffected_by_ui():
     assert done_event["suggestions"] == []
     assert done_event["sources"] == []
     # ui is present (built regardless of channel) but voice simply doesn't read it.
-    assert "services" in done_event["ui"]
+    assert "service_detail" in done_event["ui"]
 
 
 @pytest.mark.asyncio

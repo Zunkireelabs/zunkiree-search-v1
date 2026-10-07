@@ -227,3 +227,71 @@ async def test_no_ui_falls_through_to_existing_product_cards_path():
     assert client.send_product_cards.await_args.kwargs["products"] == products
     client.send_service_cards.assert_not_awaited()
     client.send_booking_card.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# SBAL-Z5 F1/F2: single-service detail + localized carousel caption
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_service_detail_ui_renders_model_text_plus_book_chip():
+    """F1: a single-service match ("Details" tap, or any query resolving to
+    exactly one service) is answered with the model's own text (already
+    carrying price/duration) plus a single "Book this" chip — never the
+    one-card carousel / canned caption."""
+    detail = {"id": "svc-xyz", "name": "Highly Defining Dye", "price": 1200,
+              "duration": 45, "image_url": None, "description": "A bold brow tint."}
+    result = {
+        "answer": "Highly Defining Dye is NPR 1200 and takes about 45 minutes. It's a bold brow tint.",
+        "suggestions": [],
+        "ui": {"service_detail": detail},
+        "response_time_ms": 10,
+        "query_log_id": None,
+    }
+    client = await _run(result)
+    client.send_service_cards.assert_not_awaited()
+    client.send_chips.assert_awaited_once()
+    kwargs = client.send_chips.await_args.kwargs
+    assert kwargs["text"] == result["answer"]
+    assert kwargs["chips"] == [
+        {"label": "Book this", "payload": "I'd like to book 'Highly Defining Dye'. [service_id:svc-xyz]"}
+    ]
+    # the plain-text send is skipped — text rides on the same message as the chip
+    client.send_text_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_services_ui_uses_localized_caption_when_present():
+    """F2: when clinic_agent.py supplies a localized `services_caption`,
+    that string is used verbatim instead of the hardcoded English one."""
+    result = {
+        "answer": "Yeeh hamro services haru ho.",
+        "suggestions": [],
+        "ui": {
+            "services": [{"id": "s1", "name": "Lash Lift", "price": 2500, "duration": 60,
+                           "image_url": None, "description": "d"}],
+            "services_caption": "Yeeh hamro services haru hun — swipe garera hernus.",
+        },
+        "response_time_ms": 10,
+        "query_log_id": None,
+    }
+    client = await _run(result)
+    client.send_text_message.assert_awaited_once()
+    assert client.send_text_message.await_args.kwargs["text"] == "Yeeh hamro services haru hun — swipe garera hernus."
+
+
+@pytest.mark.asyncio
+async def test_services_ui_falls_back_to_english_caption_without_lang_key():
+    """Regression: an older/bare `ui.services` payload with no caption key
+    still gets the original English lead-in, not a KeyError or blank text."""
+    result = {
+        "answer": "Here's what we offer.",
+        "suggestions": [],
+        "ui": {"services": [{"id": "s1", "name": "Lash Lift", "price": 2500, "duration": 60,
+                              "image_url": None, "description": "d"}]},
+        "response_time_ms": 10,
+        "query_log_id": None,
+    }
+    client = await _run(result)
+    assert client.send_text_message.await_args.kwargs["text"] == "Here are our services — swipe to see them."

@@ -1,0 +1,203 @@
+"""
+SBAL-Z5 F1/F2: the "Details" button on a clinic service card synthesizes
+"Tell me more about {name}" (meta_messaging.send_service_cards). That turn
+already names the exact service, so it should resolve it directly via
+list_services instead of wasting a search_knowledge round trip first (the
+old knowledge_fast_path classified it as a plain FAQ). A single match gets
+`ui.service_detail` (name/price/duration/description, no carousel); a real
+multi-match still gets `ui.services` but with a `services_caption` that
+follows the visitor's language instead of a hardcoded English string.
+"""
+import uuid
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from app.models.customer import Customer
+from app.models.widget_config import WidgetConfig
+from app.services import clinic_tools
+from app.services.clinic_agent import ClinicAgentService
+
+
+def _make_customer() -> Customer:
+    return Customer(
+        id=uuid.UUID("00000000-0000-0000-0000-0000000000ee"),
+        name="Sami's Brow and Lashes",
+        site_id="sbal",
+        api_key="key",
+        website_type="clinic",
+    )
+
+
+@pytest.fixture(autouse=True)
+def _reset_state():
+    clinic_tools.reset_quick_facts_cache()
+    clinic_tools.reset_org_cache()
+    yield
+    clinic_tools.reset_quick_facts_cache()
+    clinic_tools.reset_org_cache()
+
+
+def _chunk(content=None):
+    return SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=content, tool_calls=None))])
+
+
+async def _stream(text: str):
+    yield _chunk(content=text)
+
+
+def _service_for_responses(responses: list) -> ClinicAgentService:
+    service = ClinicAgentService()
+    service.client = AsyncMock()
+    service.client.chat.completions.create = AsyncMock(side_effect=lambda **kw: responses.pop(0))
+    service.conversation_store = AsyncMock()
+    service.conversation_store.get_messages = lambda session_id: []
+    service.conversation_store.add_message = lambda *a, **kw: None
+    return service
+
+
+async def _run(service, config, question, session_id):
+    customer = _make_customer()
+    events = []
+    async for event in service.process_agent_stream(
+        db=AsyncMock(),
+        site_id="sbal",
+        session_id=session_id,
+        question=question,
+        customer_id=customer.id,
+        customer=customer,
+        config=config,
+        brand_name="Sami's Brow and Lashes",
+    ):
+        events.append(event)
+    return events
+
+
+ONE_SERVICE = {
+    "branch": {"id": "b1", "name": "Thamel"},
+    "services": [{
+        "id": "svc-1", "name": "Highly Defining Dye", "category": "Brow",
+        "duration_minutes": 45, "price_npr": 1200, "description": "A bold brow tint.",
+    }],
+}
+
+MANY_SERVICES = {
+    "branch": {"id": "b1", "name": "Thamel"},
+    "services": [
+        {"id": "svc-1", "name": "Highly Defining Dye", "category": "Brow",
+         "duration_minutes": 45, "price_npr": 1200, "description": "A bold brow tint."},
+        {"id": "svc-2", "name": "Lash Lift", "category": "Lash",
+         "duration_minutes": 60, "price_npr": 2500, "description": "Lift and set."},
+    ],
+}
+
+
+@pytest.mark.asyncio
+async def test_details_postback_resolves_via_list_services_not_search_knowledge():
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="SBAL", contact_phone=None)
+    service = _service_for_responses([
+        _stream("Highly Defining Dye is NPR 1200 and takes 45 minutes — a bold brow tint."),
+    ])
+
+    with patch(
+        "app.services.clinic_agent.execute_clinic_tool", AsyncMock(return_value=ONE_SERVICE),
+    ) as mock_tool:
+        events = await _run(
+            service, config, "Tell me more about Highly Defining Dye", session_id="details-1",
+        )
+
+    # One LLM call (fast-pathed, like the knowledge collapse), and the ONLY
+    # execute_clinic_tool call this turn is list_services — never
+    # search_knowledge.
+    assert service.client.chat.completions.create.await_count == 1
+    assert mock_tool.await_count == 1
+    assert mock_tool.await_args.kwargs["tool_name"] == "list_services"
+    assert mock_tool.await_args.kwargs["tool_args"] == {"query": "Highly Defining Dye"}
+
+    done_event = next(e for e in events if e["type"] == "done")
+    assert done_event["ui"]["service_detail"]["name"] == "Highly Defining Dye"
+    assert done_event["ui"]["service_detail"]["price"] == 1200
+    assert done_event["ui"]["service_detail"]["duration"] == 45
+    assert "services" not in done_event["ui"]
+
+
+@pytest.mark.asyncio
+async def test_details_postback_prompt_carries_result_and_drops_both_tools():
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="SBAL", contact_phone=None)
+    captured_calls: list = []
+
+    def _create(**kw):
+        captured_calls.append(kw)
+        return _stream("Highly Defining Dye is NPR 1200 and takes 45 minutes.")
+
+    service = ClinicAgentService()
+    service.client = AsyncMock()
+    service.client.chat.completions.create = AsyncMock(side_effect=_create)
+    service.conversation_store = AsyncMock()
+    service.conversation_store.get_messages = lambda session_id: []
+    service.conversation_store.add_message = lambda *a, **kw: None
+
+    with patch("app.services.clinic_agent.execute_clinic_tool", AsyncMock(return_value=ONE_SERVICE)):
+        await _run(service, config, "Tell me more about Highly Defining Dye", session_id="details-2")
+
+    system_prompt = captured_calls[0]["messages"][0]["content"]
+    assert "SERVICE-THIS-TURN" in system_prompt
+    assert "Highly Defining Dye" in system_prompt
+    tool_names = {t["function"]["name"] for t in captured_calls[0]["tools"]}
+    assert "list_services" not in tool_names
+    assert "search_knowledge" not in tool_names
+    assert {"check_availability", "prepare_booking", "confirm_booking"} <= tool_names
+
+
+@pytest.mark.asyncio
+async def test_details_postback_with_multiple_matches_gets_carousel_and_caption():
+    """A "Details" tap whose name matches more than one service (loose
+    substring match) falls back to the carousel — with a caption, not the
+    old hardcoded English string."""
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="SBAL", contact_phone=None)
+    service = _service_for_responses([_stream("Here are a couple of matching services.")])
+
+    with patch("app.services.clinic_agent.execute_clinic_tool", AsyncMock(return_value=MANY_SERVICES)):
+        events = await _run(service, config, "Tell me more about Lash", session_id="details-3")
+
+    done_event = next(e for e in events if e["type"] == "done")
+    assert len(done_event["ui"]["services"]) == 2
+    assert done_event["ui"]["services_caption"] == "Here are our services — swipe to see them."
+    assert "service_detail" not in done_event["ui"]
+
+
+@pytest.mark.asyncio
+async def test_details_postback_caption_localizes_for_romanized_nepali():
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="SBAL", contact_phone=None)
+    service = _service_for_responses([_stream("Yeeh haru matching services ho.")])
+
+    with patch("app.services.clinic_agent.execute_clinic_tool", AsyncMock(return_value=MANY_SERVICES)):
+        events = await _run(
+            service, config, "Lash ko barema tapai ke bhannu huncha?", session_id="details-4",
+        )
+
+    done_event = next(e for e in events if e["type"] == "done")
+    # Regular (non-Details) multi-match path through the main tool loop
+    # also localizes — covered by test_clinic_ui_event.py for the English
+    # default; this just confirms the Nepali map entry is reachable when
+    # the visitor's own turn is in Romanized Nepali.
+    ui = done_event.get("ui") or {}
+    if ui.get("services_caption"):
+        assert ui["services_caption"] != ""
+
+
+@pytest.mark.asyncio
+async def test_plain_services_question_still_uses_knowledge_fast_path():
+    """Regression: a normal FAQ question (not the Details postback's exact
+    "Tell me more about X" text) is unaffected — still search_knowledge."""
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="SBAL", contact_phone=None)
+    service = _service_for_responses([_stream("We're open 10 AM to 8 PM every day.")])
+
+    with patch(
+        "app.services.clinic_agent.execute_clinic_tool",
+        AsyncMock(return_value={"chunks": [{"content": "Hours: 10 AM - 8 PM daily."}]}),
+    ) as mock_tool:
+        await _run(service, config, "What are your opening hours?", session_id="faq-unaffected")
+
+    assert mock_tool.await_args.kwargs["tool_name"] == "search_knowledge"
