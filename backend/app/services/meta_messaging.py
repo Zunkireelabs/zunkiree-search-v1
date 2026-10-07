@@ -412,8 +412,19 @@ class MetaMessagingClient:
         }
         resp = await self._http.post(url, json=payload, params={"access_token": access_token})
         result = resp.json()
-        if resp.status_code != 200:
+        if resp.status_code != 200 or result.get("error"):
+            # Brain review on #122: IG is only testable on prod, and a
+            # rejected button template (bad payload, platform quirk, etc.)
+            # was swallowed here — status/error logged but the method
+            # still returned normally, so the visitor got NOTHING. Fall
+            # back to a plain text send with the same text so there's
+            # always a reply, same as the caller's own except-Exception
+            # fallback already does for a raised exception.
             logger.error("Meta Send API error (service_detail): %s %s", resp.status_code, result)
+            return await self.send_text_message(
+                platform=platform, page_id=page_id, access_token=access_token,
+                recipient_id=recipient_id, text=text,
+            )
         return result
 
     async def send_booking_card(

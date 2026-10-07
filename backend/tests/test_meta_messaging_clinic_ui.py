@@ -95,6 +95,58 @@ async def test_send_service_detail_book_button_matches_carousel_payload():
 
 
 @pytest.mark.asyncio
+async def test_send_service_detail_falls_back_to_text_on_non_200():
+    """Brain review on #122: IG is only testable on prod — a rejected
+    button template (non-200) must not just log and return the error dict;
+    the visitor needs SOME reply, so this falls back to send_text_message
+    with the same text."""
+    client = MetaMessagingClient.__new__(MetaMessagingClient)
+    error_resp = MagicMock()
+    error_resp.status_code = 400
+    error_resp.json.return_value = {"error": {"message": "Invalid parameter", "code": 100}}
+    ok_resp = MagicMock()
+    ok_resp.status_code = 200
+    ok_resp.json.return_value = {"recipient_id": "r1", "message_id": "m2"}
+    client._http = AsyncMock()
+    client._http.post = AsyncMock(side_effect=[error_resp, ok_resp])
+
+    result = await client.send_service_detail(
+        platform="instagram", page_id="page-1", access_token="tok",
+        recipient_id="r1", text="Highly Defining Dye is NPR 1200.",
+        service_id="svc-xyz", service_name="Highly Defining Dye",
+    )
+
+    assert client._http.post.await_count == 2
+    fallback_payload = client._http.post.await_args.kwargs["json"]
+    assert fallback_payload["message"]["text"] == "Highly Defining Dye is NPR 1200."
+    assert result == {"recipient_id": "r1", "message_id": "m2"}
+
+
+@pytest.mark.asyncio
+async def test_send_service_detail_falls_back_to_text_on_200_with_error_key():
+    """Meta can return HTTP 200 with an `error` key in the body — status
+    code alone isn't a reliable success signal."""
+    client = MetaMessagingClient.__new__(MetaMessagingClient)
+    error_resp = MagicMock()
+    error_resp.status_code = 200
+    error_resp.json.return_value = {"error": {"message": "Button template rejected"}}
+    ok_resp = MagicMock()
+    ok_resp.status_code = 200
+    ok_resp.json.return_value = {"recipient_id": "r1", "message_id": "m3"}
+    client._http = AsyncMock()
+    client._http.post = AsyncMock(side_effect=[error_resp, ok_resp])
+
+    result = await client.send_service_detail(
+        platform="instagram", page_id="page-1", access_token="tok",
+        recipient_id="r1", text="Lash Lift is NPR 2500.",
+        service_id="svc-1", service_name="Lash Lift",
+    )
+
+    assert client._http.post.await_count == 2
+    assert result == {"recipient_id": "r1", "message_id": "m3"}
+
+
+@pytest.mark.asyncio
 async def test_send_booking_card_includes_ref_and_location():
     client, _ = _client_with_mocked_http()
     booking = {"booking_number": "BK-999", "service": "Lash Lift", "when": "2026-10-10 10:00", "name": "Thamel Branch"}
