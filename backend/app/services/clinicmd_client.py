@@ -31,6 +31,16 @@ TIMEOUT_SECONDS = 10.0
 current_org_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("clinicmd_org_id", default=None)
 
 
+def _clean_price(value: float | int | None) -> float | int | None:
+    """A whole-NPR price round-trips through Postgres numeric as a float
+    ("1500.0") — drop the trailing .0 so every caller (and the model's own
+    narration of list_services' result) sees "1500". See zennly_client's
+    sibling of this function — SBAL-Z3 P4."""
+    if isinstance(value, float) and value == int(value):
+        return int(value)
+    return value
+
+
 def _log_call(op: str, org_id: str | None = None, **ids: Any) -> None:
     extra = "".join(f" {k}={v}" for k, v in ids.items() if v)
     logger.info("[CLINICMD] call op=%s org_id=%s%s", op, org_id or current_org_id.get() or "-", extra)
@@ -131,6 +141,9 @@ class ClinicMdClient:
         excluded = set((branch or {}).get("excluded_treatment_categories") or [])
         if excluded:
             treatments = [t for t in treatments if t.get("category") not in excluded]
+        for t in treatments:
+            if "price_npr" in t:
+                t["price_npr"] = _clean_price(t["price_npr"])
         return treatments
 
     async def list_chairs(self, branch_id: str) -> list[dict]:

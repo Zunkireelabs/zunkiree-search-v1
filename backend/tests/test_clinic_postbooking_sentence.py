@@ -37,7 +37,9 @@ def test_reference_chat_only_and_switchable(monkeypatch):
 
 
 def test_clinic_will_confirm_is_one_constant(monkeypatch):
-    assert "clinic will confirm" in _build_confirmation_sentence(CONF, None, "en", "voice")
+    # SBAL-Z3 P2: neutral "we'll confirm" — no hardcoded "clinic" reaching a
+    # non-clinic (e.g. salon) tenant's confirmation.
+    assert "We'll confirm" in _build_confirmation_sentence(CONF, None, "en", "voice")
     monkeypatch.setattr(clinic_agent, "_CLINIC_WILL_CONFIRM", {"en": ""})
     assert "confirm" not in _build_confirmation_sentence(CONF, None, "en", "voice")
 

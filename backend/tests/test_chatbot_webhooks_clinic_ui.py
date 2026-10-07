@@ -149,6 +149,10 @@ async def test_services_ui_renders_service_cards():
     assert client.send_service_cards.await_args.kwargs["services"] == result["ui"]["services"]
     client.send_booking_card.assert_not_awaited()
     client.send_chips.assert_not_awaited()
+    # SBAL-Z3 P3: a fixed one-line lead-in, never a (possibly truncated,
+    # possibly differently-ordered) list of services duplicating the cards.
+    client.send_text_message.assert_awaited_once()
+    assert client.send_text_message.await_args.kwargs["text"] == "Here are our services — swipe to see them."
 
 
 @pytest.mark.asyncio
@@ -183,6 +187,10 @@ async def test_confirm_ui_renders_confirm_and_change_chips():
         {"label": "✅ Confirm", "payload": "Yes"},
         {"label": "✏️ Change", "payload": "I'd like to change the details"},
     ]
+    # SBAL-Z3 P1: the summary (incl. "Shall I book this?") rides on the SAME
+    # message as the chips — never sent again as a separate text bubble.
+    assert client.send_chips.await_args.kwargs["text"] == result["answer"]
+    client.send_text_message.assert_not_awaited()
 
 
 @pytest.mark.asyncio

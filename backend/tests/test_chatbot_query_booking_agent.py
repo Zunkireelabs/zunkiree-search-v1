@@ -285,6 +285,40 @@ async def test_first_clinic_dm_threads_sender_first_name_as_greet_name():
 
 
 @pytest.mark.asyncio
+async def test_first_clinic_dm_skips_one_letter_name():
+    """SBAL-Z3 P6: "Hi H!" came from a one-letter IG display name (a first
+    initial, an emoji-stripped stub, etc.) — greet without a name instead."""
+    svc = _make_service()
+    svc.conversation_service.get_history = AsyncMock(return_value=[])
+
+    customer = MagicMock()
+    customer.id = "cust-5"
+    customer.is_active = True
+    customer.site_id = "sbal"
+    customer.website_type = "clinic"
+
+    config = _widget_config("clinic")
+    channel = _make_channel()
+    channel.platform = "instagram"
+
+    db = AsyncMock()
+    config_result = MagicMock()
+    config_result.scalar_one_or_none.return_value = config
+    db.get = AsyncMock(return_value=customer)
+    db.execute = AsyncMock(return_value=config_result)
+
+    profile = MagicMock()
+    profile.name = "H"
+
+    with patch.object(svc, "_process_booking_agent_message", AsyncMock(return_value={"answer": "ok"})) as mock_clinic, \
+         patch("app.services.chatbot_query.get_sender_profile_service") as mock_profile_svc:
+        mock_profile_svc.return_value.get_or_fetch = AsyncMock(return_value=profile)
+        await svc.process_message(db=db, channel=channel, sender_id="s1", message_text="Book a lash lift")
+
+    assert mock_clinic.await_args.kwargs["greet_name"] is None
+
+
+@pytest.mark.asyncio
 async def test_later_clinic_dm_does_not_greet_by_name():
     svc = _make_service()
     svc.conversation_service.get_history = AsyncMock(return_value=[{"role": "user", "content": "hi"}])

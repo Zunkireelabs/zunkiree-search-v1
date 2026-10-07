@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 
 interface CollapsedBarProps {
   brandName: string
+  launcherName: string
   suggestions: string[]
   animate: boolean
   hasMessages: boolean
@@ -16,6 +17,7 @@ const SCROLL_THRESHOLD = 200
 
 export function CollapsedBar({
   brandName,
+  launcherName,
   suggestions,
   animate,
   hasMessages,
@@ -63,7 +65,7 @@ export function CollapsedBar({
       <button
         className={`zk-fab ${showPill ? 'zk-fab--desktop' : ''} ${visible ? 'zk-fab--visible' : ''}`}
         onClick={onClick}
-        aria-label={`Ask ${brandName} a question`}
+        aria-label={`Talk to ${launcherName}`}
         type="button"
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
@@ -71,7 +73,7 @@ export function CollapsedBar({
           <path d="M18 12l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3z" />
           <path d="M6 16l.75 2.25L9 19l-2.25.75L6 22l-.75-2.25L3 19l2.25-.75L6 16z" opacity="0.7" />
         </svg>
-        <span className="zk-fab__label">Ask {brandName}</span>
+        <span className="zk-fab__label">Talk to {launcherName}</span>
       </button>
 
       {/* Desktop full bar — always rendered, hidden via CSS when pill is showing */}

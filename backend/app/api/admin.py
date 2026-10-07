@@ -99,6 +99,7 @@ class JobResponse(BaseModel):
 
 class UpdateConfigRequest(BaseModel):
     brand_name: str | None = None
+    assistant_name: str | None = Field(None, max_length=80)
     tone: str | None = Field(None, pattern="^(formal|neutral|friendly)$")
     primary_color: str | None = Field(None, pattern="^#[0-9a-fA-F]{6}$")
     placeholder_text: str | None = None
