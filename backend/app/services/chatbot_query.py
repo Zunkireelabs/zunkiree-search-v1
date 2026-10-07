@@ -316,9 +316,12 @@ class ChatbotQueryService:
                 "feedback_signal": feedback_result,
             }
 
-        # --- Check for greetings (skip RAG) ---
+        # --- Check for greetings (skip RAG). Clinic tenants skip this generic
+        # template and fall through to the booking agent below instead
+        # (SBAL-Z4: that's the only place assistant_name self-introduction
+        # lives — a bare "hi" must reach it, not dead-end here). ---
         cleaned = re.sub(r"[?!.,]+$", "", message_text.strip().lower())
-        if cleaned in GREETING_WORDS:
+        if cleaned in GREETING_WORDS and website_type != "clinic":
             if welcome_message:
                 greeting = welcome_message
             else:
