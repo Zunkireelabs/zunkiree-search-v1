@@ -3,6 +3,11 @@ import { MarkdownContent } from './Markdown'
 import { Autocomplete } from './Autocomplete'
 import { ProductGrid } from './ProductGrid'
 import { RoomGrid } from './RoomGrid'
+import { BlockRenderer } from './blocks/BlockRenderer'
+import { BlockSkeleton } from './blocks/BlockSkeleton'
+import { ProfileProgress } from './blocks/ProfileProgress'
+import type { ProfileProgressData } from './blocks/ProfileProgress'
+import type { UIBlock, OnBlockAction } from './blocks/types'
 import { ServiceGrid } from './ServiceGrid'
 import { ServiceCard, ServiceItem } from './ServiceCard'
 import { FeedbackButtons } from './FeedbackButtons'
@@ -28,6 +33,8 @@ interface Message {
   paymentSelector?: { orderId: string; total: number; currency: string }
   toolStatus?: { name: string; status: 'running' | 'done' }
   imagePreview?: string
+  blocks?: UIBlock[]
+  pending?: { block_type: string; label: string }
   rooms?: any[]
   services?: ServiceItem[]
   serviceDetail?: ServiceItem
@@ -64,6 +71,8 @@ interface ExpandedPanelProps {
   onPaymentComplete?: (gateway: string) => void
   onPaymentFailed?: () => void
   onBookRoom?: (roomId: string) => void
+  onBlockAction?: OnBlockAction
+  profileProgress?: ProfileProgressData | null
   onBookService?: (name: string) => void
   onServiceDetails?: (name: string) => void
   isLongSession?: boolean
@@ -117,6 +126,8 @@ export function ExpandedPanel({
   onPaymentComplete,
   onPaymentFailed,
   onBookRoom,
+  onBlockAction,
+  profileProgress,
   onBookService,
   onServiceDetails,
   isLongSession,
@@ -283,6 +294,9 @@ export function ExpandedPanel({
     reader.readAsDataURL(file)
   }
 
+  // Only the newest block set is interactive; earlier ones stay visible but locked.
+  const lastBlockMessageId = [...messages].reverse().find(m => m.blocks && m.blocks.length)?.id
+
   return (
     <>
       {/* Subtle backdrop */}
@@ -359,11 +373,13 @@ export function ExpandedPanel({
           </div>
         )}
 
+      {websiteType === 'education' && profileProgress && <ProfileProgress progress={profileProgress} />}
+
         {/* Conversation Area */}
         <div className="zk-expanded-panel__messages" ref={messagesRef}>
           <div className="zk-expanded-panel__messages-inner">
             {messages.map(message => (
-              <div key={message.id} className={`zk-message zk-message-${message.role}`}>
+              <div key={message.id} className={`zk-message zk-message-${message.role}${websiteType === 'education' ? ' zk-message--rich' : ''}`}>
                 <div className="zk-message-content">
                   {message.role === 'assistant' ? (
                     streamingId === message.id ? (
@@ -391,6 +407,18 @@ export function ExpandedPanel({
                     onAddToWishlist={onAddToWishlist}
                   />
                 )}
+                {message.pending && !(message.blocks && message.blocks.length) && (
+                <BlockSkeleton blockType={message.pending.block_type} label={message.pending.label} />
+              )}
+              {message.blocks && message.blocks.length > 0 && onBlockAction && message.blocks.map(block => (
+                  <BlockRenderer
+                  key={block.block_id}
+                  block={block}
+                  onAction={onBlockAction}
+                  locked={isLoading || message.id !== lastBlockMessageId}
+                  busy={isLoading}
+                />
+              ))}
                 {message.rooms && message.rooms.length > 0 && onBookRoom && (
                   <RoomGrid rooms={message.rooms} onBookRoom={onBookRoom} />
                 )}

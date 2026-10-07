@@ -1,3 +1,5 @@
+import { blockStyles } from './blocks/blockStyles'
+
 export const styles = (primaryColor: string) => `
   /* ===== Reset ===== */
   .zk-collapsed-bar *,
@@ -2298,4 +2300,6 @@ export const styles = (primaryColor: string) => `
       animation: none;
     }
   }
+
+  ${blockStyles(primaryColor)}
 `
