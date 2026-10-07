@@ -23,7 +23,7 @@ interface ServiceCardProps {
 export const ServiceCard = React.memo(function ServiceCard({
   service, onBookService, onServiceDetails, showDescription,
 }: ServiceCardProps) {
-  const formatPrice = (price: number | null) => price === null ? '' : `Rs ${price.toLocaleString()}`
+  const formatPrice = (price: number | null) => price === null ? '' : `NPR ${price.toLocaleString()}`
 
   return (
     <div className="zk-product-card">
