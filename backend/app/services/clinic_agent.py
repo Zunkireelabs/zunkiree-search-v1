@@ -13,6 +13,7 @@ import uuid
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from openai import APIConnectionError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -1440,86 +1441,117 @@ class ClinicAgentService:
             if block_check_availability_next_iteration:
                 iteration_tools = [t for t in iteration_tools if t["function"]["name"] != "check_availability"]
                 block_check_availability_next_iteration = False  # only blocks the one iteration
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                tools=iteration_tools,
-                tool_choice=force_tool_choice,
-                max_tokens=max_completion_tokens,
-                temperature=0.3,
-                stream=True,
-                # ZUNKIREE-EMIT-USAGE-BRIEF: a streaming completion only carries
-                # `usage` at all when this is set — otherwise every chunk's
-                # `.usage` is None, including the last one.
-                stream_options={"include_usage": True},
-            )
+            llm_attempt = 0
+            while True:
+                llm_attempt += 1
+                current_text = ""
+                flushed_len = 0
+                tool_calls_data: dict[int, dict] = {}
+                finish_length = False
+                finish_reason: str | None = None
+                call_usage: dict | None = None
+                # N2 follow-up: a removed phone number can leave two originally-
+                # separate single spaces (one on each side of it) adjacent to each
+                # other, split across two different flush chunks — neither chunk's
+                # own text ever contains both spaces together, so the per-chunk
+                # "[ \t]{2,}" collapse can't see the run and a double space leaks
+                # to the client. Track whether the last emitted chunk ended in
+                # whitespace so the next chunk's leading whitespace can be dropped
+                # when it would otherwise double up.
+                stream_ends_with_space = False
 
-            current_text = ""
-            flushed_len = 0
-            tool_calls_data: dict[int, dict] = {}
-            finish_length = False
-            # N2 follow-up: a removed phone number can leave two originally-
-            # separate single spaces (one on each side of it) adjacent to each
-            # other, split across two different flush chunks — neither chunk's
-            # own text ever contains both spaces together, so the per-chunk
-            # "[ \t]{2,}" collapse can't see the run and a double space leaks
-            # to the client. Track whether the last emitted chunk ended in
-            # whitespace so the next chunk's leading whitespace can be dropped
-            # when it would otherwise double up.
-            stream_ends_with_space = False
+                try:
+                    response = await self.client.chat.completions.create(
+                        model=self.model,
+                        messages=messages,
+                        tools=iteration_tools,
+                        tool_choice=force_tool_choice,
+                        max_tokens=max_completion_tokens,
+                        temperature=0.3,
+                        stream=True,
+                        # ZUNKIREE-EMIT-USAGE-BRIEF: a streaming completion only carries
+                        # `usage` at all when this is set — otherwise every chunk's
+                        # `.usage` is None, including the last one.
+                        stream_options={"include_usage": True},
+                    )
 
-            async for chunk in response:
-                # With stream_options.include_usage, the final chunk carries
-                # usage and an empty `choices` list (no delta to read).
-                chunk_usage = _usage_to_dict(getattr(chunk, "usage", None))
-                if chunk_usage:
-                    _add_usage(turn_usage, chunk_usage)
-                if not chunk.choices:
-                    continue
-                delta = chunk.choices[0].delta
-                if getattr(chunk.choices[0], "finish_reason", None) == "length":
-                    finish_length = True
+                    async for chunk in response:
+                        # With stream_options.include_usage, the final chunk carries
+                        # usage and an empty `choices` list (no delta to read).
+                        chunk_usage = _usage_to_dict(getattr(chunk, "usage", None))
+                        if chunk_usage:
+                            _add_usage(turn_usage, chunk_usage)
+                            call_usage = chunk_usage
+                        if not chunk.choices:
+                            continue
+                        delta = chunk.choices[0].delta
+                        chunk_finish_reason = getattr(chunk.choices[0], "finish_reason", None)
+                        if chunk_finish_reason:
+                            finish_reason = chunk_finish_reason
+                        if chunk_finish_reason == "length":
+                            finish_length = True
 
-                if delta.content:
-                    # F3: stream live, but hold back the trailing HOLD_BACK_TOKENS
-                    # words so a phone number split across deltas ("+977", "1",
-                    # "4444444") is never flushed mid-formation — only the
-                    # not-yet-inspected tail is delayed, not the whole answer.
-                    current_text += delta.content
-                    boundary = _safe_flush_index(current_text, HOLD_BACK_TOKENS)
-                    if boundary > flushed_len:
-                        pending = current_text[flushed_len:boundary]
-                        sanitized_chunk = sanitize_phone_numbers(
-                            pending, allowed_phone_digits, is_final=False
-                        )
-                        if stream_ends_with_space and sanitized_chunk[:1] in (" ", "\t"):
-                            sanitized_chunk = sanitized_chunk.lstrip(" \t")
-                        if sanitized_chunk:
-                            yield {"type": "token", "data": sanitized_chunk}
-                            stream_ends_with_space = sanitized_chunk[-1:] in (" ", "\t")
-                        flushed_len = boundary
+                        if delta.content:
+                            # F3: stream live, but hold back the trailing HOLD_BACK_TOKENS
+                            # words so a phone number split across deltas ("+977", "1",
+                            # "4444444") is never flushed mid-formation — only the
+                            # not-yet-inspected tail is delayed, not the whole answer.
+                            current_text += delta.content
+                            boundary = _safe_flush_index(current_text, HOLD_BACK_TOKENS)
+                            if boundary > flushed_len:
+                                pending = current_text[flushed_len:boundary]
+                                sanitized_chunk = sanitize_phone_numbers(
+                                    pending, allowed_phone_digits, is_final=False
+                                )
+                                if stream_ends_with_space and sanitized_chunk[:1] in (" ", "\t"):
+                                    sanitized_chunk = sanitized_chunk.lstrip(" \t")
+                                if sanitized_chunk:
+                                    yield {"type": "token", "data": sanitized_chunk}
+                                    stream_ends_with_space = sanitized_chunk[-1:] in (" ", "\t")
+                                flushed_len = boundary
 
-                if delta.tool_calls:
-                    for tc in delta.tool_calls:
-                        idx = tc.index
-                        if idx not in tool_calls_data:
-                            tool_calls_data[idx] = {"id": tc.id or "", "name": "", "arguments": ""}
-                        if tc.id:
-                            tool_calls_data[idx]["id"] = tc.id
-                        if tc.function:
-                            if tc.function.name:
-                                tool_calls_data[idx]["name"] = tc.function.name
-                            if tc.function.arguments:
-                                tool_calls_data[idx]["arguments"] += tc.function.arguments
+                        if delta.tool_calls:
+                            for tc in delta.tool_calls:
+                                idx = tc.index
+                                if idx not in tool_calls_data:
+                                    tool_calls_data[idx] = {"id": tc.id or "", "name": "", "arguments": ""}
+                                if tc.id:
+                                    tool_calls_data[idx]["id"] = tc.id
+                                if tc.function:
+                                    if tc.function.name:
+                                        tool_calls_data[idx]["name"] = tc.function.name
+                                    if tc.function.arguments:
+                                        tool_calls_data[idx]["arguments"] += tc.function.arguments
+                    break
+                except APIConnectionError:
+                    # The "chat" client profile (openai_client.py) deliberately
+                    # carries 0 SDK retries so no single call can blow past
+                    # voice's 25s Orca run budget. But a bare timeout on this
+                    # call with nothing shown to the visitor yet is worth one
+                    # retry on non-voice channels — voice is the only channel
+                    # that bound was protecting, and chat/IG would otherwise
+                    # surface a failure to the visitor on a single hiccup.
+                    if llm_attempt >= 2 or channel == "voice" or flushed_len > 0:
+                        raise
+                    logger.warning(
+                        "[CLINIC-LATENCY] llm_call_timeout_retry trace_id=%s site_id=%s "
+                        "session_id=%s iteration=%d channel=%s",
+                        trace_id, site_id, session_id, iteration, channel,
+                    )
 
             llm_call_ms = (time.monotonic() - llm_call_start) * 1000
             timing_llm_ms.append(llm_call_ms)
             logger.info(
                 "[CLINIC-LATENCY] llm_call trace_id=%s site_id=%s session_id=%s iteration=%d "
-                "kind=%s latency_ms=%.0f",
+                "kind=%s latency_ms=%.0f finish_reason=%s completion_tokens=%s content_len=%d "
+                "max_tokens=%d",
                 trace_id, site_id, session_id, iteration,
                 "tool_call" if tool_calls_data else "final_answer",
                 llm_call_ms,
+                finish_reason,
+                call_usage.get("completion_tokens") if call_usage else None,
+                len(current_text),
+                max_completion_tokens,
             )
 
             if current_text and not tool_calls_data:
