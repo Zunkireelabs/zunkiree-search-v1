@@ -106,3 +106,33 @@ async def get_widget_config(
         chat_stream_url=config.chat_stream_url,
         service_cards=bool(config.service_cards),
     )
+
+
+@router.get("/history/{site_id}/{session_id}")
+async def get_widget_history(
+    site_id: str,
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Restore a conversation (messages + the UI blocks shown) after a page reload.
+    Education tenants only; every other tenant gets an empty list, so their
+    widgets behave exactly as before. The session id is an unguessable UUID
+    kept in the visitor's localStorage.
+    """
+    customer = (await db.execute(
+        select(Customer).where(Customer.site_id == site_id, Customer.is_active == True)  # noqa: E712
+    )).scalar_one_or_none()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Site not found")
+    if customer.website_type != "education":
+        return {"messages": []}
+
+    from app.services.education_memory import DbEducationMemory
+    from app.services.education_profile import progress
+
+    memory = DbEducationMemory(db)
+    return {
+        "messages": await memory.list_messages(customer.id, session_id),
+        "profile_progress": progress(await memory.load_profile(customer.id, session_id)),
+    }

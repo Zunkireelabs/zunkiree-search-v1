@@ -190,6 +190,10 @@ class QueryRequest(BaseModel):
     session_id: str | None = Field(None, description="Session identifier for identity verification")
     language: str | None = Field(None, description="Response language code (e.g. 'en', 'ne')")
     image_data: str | None = Field(None, description="Base64-encoded image for visual product search")
+    block_action: dict | None = Field(
+        None,
+        description="Structured tap on a generative-UI block: {blockId, blockType, actionId, values, displayText}",
+    )
     channel: str | None = Field(
         None,
         pattern="^(chat|voice|instagram)$",
@@ -565,7 +569,7 @@ async def submit_query_stream(
     # tenants skip this and go to the clinic agent instead (SBAL-Z4: that's
     # the only place assistant_name self-introduction lives).
     cleaned = query.question.lower().strip()
-    if cleaned in GREETING_WORDS and customer.website_type != "clinic":
+    if cleaned in GREETING_WORDS and customer.website_type not in ("clinic", "education"):
         suggestions: list[str] = []
         if config and config.quick_actions:
             try:
@@ -597,8 +601,10 @@ async def submit_query_stream(
     # Clinic tenants have their own agent + booking confirmation flow; the
     # generic "register as a new patient" / "sign me up" phrasing would
     # otherwise be caught by the identity-verification registration gate
-    # below and never reach ClinicAgentService.
-    is_reg_query = False if customer.website_type == "clinic" else _is_registration_query(question_to_answer)
+    # below and never reach ClinicAgentService. Education tenants likewise:
+    # "which countries fit my profile" must reach the counselor agent, and the
+    # agent owns contact capture through its own lead form.
+    is_reg_query = False if customer.website_type in ("clinic", "education") else _is_registration_query(question_to_answer)
     if (verification_enabled or has_lead_intents or is_reg_query) and query.session_id:
         v_session = await get_or_create_session(db, query.session_id, customer.id)
 
@@ -723,6 +729,25 @@ async def submit_query_stream(
                     config=config,
                     brand_name=brand_name,
                     channel=query.channel or "chat",
+                ):
+                    yield f"data: {json.dumps(event)}\n\n"
+                return
+
+            # Route education customers to the generative-UI counselor agent
+            if customer.website_type == "education":
+                from app.services.education_agent import get_education_agent_service
+                agent_service = get_education_agent_service()
+                async for event in agent_service.process_agent_stream(
+                    db=db,
+                    site_id=query.site_id,
+                    session_id=query.session_id or "",
+                    question=question_to_answer,
+                    customer_id=customer.id,
+                    customer=customer,
+                    config=config,
+                    brand_name=brand_name,
+                    channel=query.channel or "chat",
+                    block_action=query.block_action,
                 ):
                     yield f"data: {json.dumps(event)}\n\n"
                 return

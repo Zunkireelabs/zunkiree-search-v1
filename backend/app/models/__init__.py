@@ -19,6 +19,7 @@ from app.models.tenant_outbound_webhook import TenantOutboundWebhook
 from app.models.inbound_webhook_event import InboundWebhookEvent
 from app.models.admin_audit_log import AdminAuditLog
 from app.models.tenant_quick_fact import TenantQuickFact
+from app.models.education_memory import VisitorProfile, WidgetMessage
 
 __all__ = [
     "Customer",
@@ -45,4 +46,6 @@ __all__ = [
     "InboundWebhookEvent",
     "AdminAuditLog",
     "TenantQuickFact",
+    "VisitorProfile",
+    "WidgetMessage",
 ]
