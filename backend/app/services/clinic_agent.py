@@ -918,6 +918,7 @@ class ClinicAgentService:
     def __init__(self):
         self.client = get_openai_client("chat")
         self.model = settings.llm_model
+        self.fallback_model = settings.clinic_agent_fallback_model
         self.conversation_store = get_conversation_store()
 
     async def _translate_escalation_to_devanagari(self, text: str) -> tuple[str | None, dict | None]:
@@ -1441,23 +1442,29 @@ class ClinicAgentService:
             if block_check_availability_next_iteration:
                 iteration_tools = [t for t in iteration_tools if t["function"]["name"] != "check_availability"]
                 block_check_availability_next_iteration = False  # only blocks the one iteration
-            # SBAL follow-up (review on #126): the one retry below only fits
-            # inside IG's 20s lane timeout and Orca's 25s widget-run budget
-            # if each attempt is shorter than the "chat" profile's default
-            # 15s — two 15s attempts could reach ~30s. Non-voice channels
-            # (the only ones that ever retry) get an 8s per-attempt timeout
-            # instead, so the worst case (timeout + retry) is ~16s. Voice
-            # never retries and keeps the unmodified 15s/0-retry client —
-            # passed as a per-call override (not `self.client.with_options`,
-            # which would build a second client and complicate testing) so
-            # it stays a plain kwarg on the same client instance. NOT_GIVEN,
-            # not None, for voice — `timeout=None` to the SDK means "no
-            # timeout at all", not "use the client's default".
-            per_call_timeout = NOT_GIVEN if channel == "voice" else 8.0
+            # SBAL follow-up (review on #126/#127): the one retry below only
+            # fits inside IG's 20s lane timeout and Orca's 25s widget-run
+            # budget if each attempt is shorter than the "chat" profile's
+            # default 15s. Non-voice channels (the only ones that ever
+            # retry) get attempt 1 = 8s / attempt 2 (retry) = 6s, so the
+            # worst case is ~14s. Voice never retries and keeps the
+            # unmodified 15s/0-retry client — NOT_GIVEN, not None, since
+            # `timeout=None` to the SDK means "no timeout at all", not "use
+            # the client's default".
+            #
+            # Demo-hardening (stage evidence 2026-10-07 10:58 UTC: a repeat
+            # of the exact same question 3x right after a same-model stall
+            # answered in 2.4-2.6s) — a same-model retry is more likely to
+            # hit the same stalled infra. The retry uses a DIFFERENT model
+            # (self.fallback_model) instead.
+            is_voice = channel == "voice"
 
             llm_attempt = 0
             while True:
                 llm_attempt += 1
+                is_retry = llm_attempt >= 2
+                attempt_timeout = NOT_GIVEN if is_voice else (6.0 if is_retry else 8.0)
+                attempt_model = self.fallback_model if (is_retry and not is_voice) else self.model
                 current_text = ""
                 flushed_len = 0
                 tool_calls_data: dict[int, dict] = {}
@@ -1476,7 +1483,7 @@ class ClinicAgentService:
 
                 try:
                     response = await self.client.chat.completions.create(
-                        model=self.model,
+                        model=attempt_model,
                         messages=messages,
                         tools=iteration_tools,
                         tool_choice=force_tool_choice,
@@ -1487,7 +1494,7 @@ class ClinicAgentService:
                         # `usage` at all when this is set — otherwise every chunk's
                         # `.usage` is None, including the last one.
                         stream_options={"include_usage": True},
-                        timeout=per_call_timeout,
+                        timeout=attempt_timeout,
                     )
 
                     async for chunk in response:
@@ -1546,12 +1553,12 @@ class ClinicAgentService:
                     # retry on non-voice channels — voice is the only channel
                     # that bound was protecting, and chat/IG would otherwise
                     # surface a failure to the visitor on a single hiccup.
-                    if llm_attempt >= 2 or channel == "voice" or flushed_len > 0:
+                    if llm_attempt >= 2 or is_voice or flushed_len > 0:
                         raise
                     logger.warning(
                         "[CLINIC-LATENCY] llm_call_timeout_retry trace_id=%s site_id=%s "
-                        "session_id=%s iteration=%d channel=%s",
-                        trace_id, site_id, session_id, iteration, channel,
+                        "session_id=%s iteration=%d channel=%s next_model=%s",
+                        trace_id, site_id, session_id, iteration, channel, self.fallback_model,
                     )
 
             llm_call_ms = (time.monotonic() - llm_call_start) * 1000
@@ -1559,7 +1566,7 @@ class ClinicAgentService:
             logger.info(
                 "[CLINIC-LATENCY] llm_call trace_id=%s site_id=%s session_id=%s iteration=%d "
                 "kind=%s latency_ms=%.0f finish_reason=%s completion_tokens=%s content_len=%d "
-                "max_tokens=%d",
+                "max_tokens=%d model=%s",
                 trace_id, site_id, session_id, iteration,
                 "tool_call" if tool_calls_data else "final_answer",
                 llm_call_ms,
@@ -1567,6 +1574,7 @@ class ClinicAgentService:
                 call_usage.get("completion_tokens") if call_usage else None,
                 len(current_text),
                 max_completion_tokens,
+                attempt_model,
             )
 
             if current_text and not tool_calls_data:
