@@ -144,6 +144,67 @@ async def test_chat_channel_uses_8s_per_call_timeout_voice_uses_client_default()
     assert captured_timeouts[1] is NOT_GIVEN
 
 
+@pytest.mark.asyncio
+async def test_retry_uses_fallback_model_and_6s_timeout_not_same_model():
+    """
+    Demo-hardening (stage evidence 2026-10-07): a same-model retry is more
+    likely to hit the same stalled serving infra as the call that just
+    timed out. The retry (attempt 2, non-voice only) uses a different
+    model — `self.fallback_model` — and a tighter 6s timeout, so the
+    worst case (8s + 6s) stays at ~14s.
+    """
+    service = _service()
+    service.client = AsyncMock()
+    calls = []
+
+    def _record(**kwargs):
+        calls.append({"model": kwargs["model"], "timeout": kwargs.get("timeout")})
+        if len(calls) == 1:
+            raise _timeout_error()
+        return _ok_stream("Here are our services.")
+
+    service.client.chat.completions.create = AsyncMock(side_effect=_record)
+
+    await _run(service, channel="chat")
+
+    assert calls[0] == {"model": service.model, "timeout": 8.0}
+    assert calls[1] == {"model": service.fallback_model, "timeout": 6.0}
+    assert service.fallback_model != service.model
+
+
+@pytest.mark.asyncio
+async def test_voice_never_uses_fallback_model():
+    service = _service()
+    service.client = AsyncMock()
+    service.client.chat.completions.create = AsyncMock(side_effect=_timeout_error())
+
+    with pytest.raises(APIConnectionError):
+        await _run(service, channel="voice")
+
+    kwargs = service.client.chat.completions.create.call_args.kwargs
+    assert kwargs["model"] == service.model
+    assert kwargs["timeout"] is NOT_GIVEN
+
+
+@pytest.mark.asyncio
+async def test_latency_log_records_which_model_answered(caplog):
+    service = _service()
+    service.client = AsyncMock()
+    service.client.chat.completions.create = AsyncMock(
+        side_effect=[_timeout_error(), _ok_stream("Here are our services.")]
+    )
+
+    with caplog.at_level("INFO", logger="zunkiree.clinic_agent"):
+        await _run(service, channel="chat")
+
+    final_answer_logs = [
+        r.message for r in caplog.records
+        if "[CLINIC-LATENCY] llm_call " in r.message and "kind=final_answer" in r.message
+    ]
+    assert len(final_answer_logs) == 1
+    assert f"model={service.fallback_model}" in final_answer_logs[0]
+
+
 class _FakeMonotonicClock:
     """A controllable stand-in for time.monotonic() — advances only when
     told to, so a test can simulate "this call burned N seconds" without
@@ -172,8 +233,8 @@ async def test_timeout_then_retry_finishes_under_20s_with_mocked_clock():
             # Burns the full 8s per-call timeout before failing.
             clock.advance(8.0)
             raise _timeout_error()
-        # Retry succeeds well inside the remaining budget.
-        clock.advance(1.5)
+        # Retry (fallback model, 6s budget) succeeds just inside it.
+        clock.advance(5.5)
         return _ok_stream("Here are our services.")
 
     service.client.chat.completions.create = AsyncMock(side_effect=_side_effect)
@@ -184,6 +245,7 @@ async def test_timeout_then_retry_finishes_under_20s_with_mocked_clock():
     assert service.client.chat.completions.create.call_count == 2
     tokens = "".join(e["data"] for e in events if e.get("type") == "token")
     assert "Here are our services." in tokens
-    # The clock only advances inside the mocked LLM calls (8.0 + 1.5 = 9.5s),
-    # well under IG's 20s lane timeout / Orca's 25s widget-run budget.
+    # The clock only advances inside the mocked LLM calls (8.0 + 5.5 = 13.5s,
+    # under the ~14s worst case of an 8s timeout + 6s retry), well under
+    # IG's 20s lane timeout / Orca's 25s widget-run budget.
     assert clock.now < 20.0
