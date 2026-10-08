@@ -45,6 +45,9 @@ async def _collect_sse(response) -> str:
         ("what services do you have?", "en"),
         ("services haru k cha?", "ne_romanized"),
         ("सेवाहरू के छन्?", "ne_devanagari"),
+        # Review on #131: mixed_ne_en is Latin-script code-switching ("is it
+        # cha?") — those visitors type romanized, not Devanagari.
+        ("is it cha?", "ne_romanized"),
     ],
 )
 def test_stream_failure_message_matches_turn_language(question, expected_key):

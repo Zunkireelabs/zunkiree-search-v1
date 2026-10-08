@@ -25,9 +25,11 @@ from app.services.clinic_tools import (
     execute_clinic_tool,
     get_awaiting_confirmation,
     get_readback_lang,
+    get_sticky_language,
     get_vocab_for_customer,
     has_pending_booking,
     mark_readback,
+    set_sticky_language,
 )
 from app.services.clinic_confirm import is_clear_confirmation  # noqa: F401 (re-exported)
 from app.services.conversation import get_conversation_store
@@ -247,6 +249,85 @@ _LANGUAGE_DIRECTIVES = {
     "mixed_ne_en": "\nLANGUAGE-THIS-TURN: The visitor wrote in a mix of Nepali and English. Reply in the same mix, matching how they wrote.\n",
 }
 
+# SBAL-Z8 F2: a chip tap, carousel postback, or card button sends a
+# CODE-SYNTHESIZED English sentence as the visitor's "message" — not
+# anything they actually wrote. Detecting language from that text flips a
+# Nepali conversation to English the moment the visitor taps a button. Every
+# synthetic template this codebase builds (meta_messaging.py,
+# chatbot_webhooks.py, clinic_agent.py's own slot/another-day chips, and the
+# widget's Book/Details buttons in Widget.tsx) is enumerated here, plus the
+# short, language-neutral replies (a bare time, "ok", a thumbs-up) that
+# carry no real language signal either way. Matching either means: don't
+# update the session's sticky language from this turn — reuse what was
+# already established. Deliberately exhaustive/literal rather than a fuzzy
+# heuristic, since every pattern it must catch is one this same codebase
+# generates and therefore fully known.
+_SLOT_PICK_PATTERN = re.compile(r"^book .+ on .+ at .+$", re.IGNORECASE)
+# Review on #131: a slot pick isn't only a chip tap — a visitor can just as
+# well TYPE the time they want ("12:30", "12:30 ma", "10:30 baje") right
+# after a slot list. Matched alongside _SLOT_PICK_PATTERN wherever "this
+# turn picked a slot" is decided (turn_is_slot_pick below), so the no-
+# reoffer-chips fix doesn't depend on how the pick arrived.
+_TYPED_TIME_PICK_PATTERN = re.compile(r"^\d{1,2}:\d{2}\s*(am|pm|ma|baje)?\.?$", re.IGNORECASE)
+_SYNTHETIC_PAYLOAD_PATTERNS = [
+    _SLOT_PICK_PATTERN,
+    re.compile(r"^book room .+$", re.IGNORECASE),
+    re.compile(r"^i.d like to book .+$", re.IGNORECASE),
+    re.compile(r"^tell me more about .+$", re.IGNORECASE),
+    re.compile(r"^what other days is .+ available\??$", re.IGNORECASE),
+    re.compile(r"^add .+ to my cart(\s*\[product_id:.+\])?$", re.IGNORECASE),
+    re.compile(r"^\[shared (post|link): .+\] i want to know about this$", re.IGNORECASE),
+]
+_NEUTRAL_TEXT_PATTERN = re.compile(
+    r"^(\d{1,2}(:\d{2})?\s*(am|pm)?|ok(ay)?|yes|no|sure|k|yep|nope)[.!]?$", re.IGNORECASE
+)
+_EMOJI_ONLY_PATTERN = re.compile(r"^[\s\U0001F300-\U0001FAFF☀-➿]+$")
+# SBAL-Z8 exit test 1: giving a name + phone in answer to the deterministic
+# "what's your full name and phone number?" ask (exit test 1's "Test Demo,
+# 9800000000") must not flip the language either — a name and a phone
+# number carry no Nepali-vs-English signal regardless of which language
+# the visitor is actually speaking, so plain detect_language's silent
+# default-to-"en" on zero Nepali words would otherwise flip the session on
+# the exact turn that answers the agent's own question.
+_NAME_PHONE_REPLY_PATTERN = re.compile(r"^[A-Za-z][A-Za-z .'-]*,?\s*\+?\d[\d \-]{6,}$")
+
+
+def _is_synthetic_or_neutral_text(text: str) -> bool:
+    stripped = (text or "").strip()
+    if not stripped:
+        return False
+    if any(p.match(stripped) for p in _SYNTHETIC_PAYLOAD_PATTERNS):
+        return True
+    return bool(
+        _NEUTRAL_TEXT_PATTERN.match(stripped)
+        or _EMOJI_ONLY_PATTERN.match(stripped)
+        or _NAME_PHONE_REPLY_PATTERN.match(stripped)
+    )
+
+
+# SBAL-Z8 F3: the IG slot-chip prompt (chatbot_webhooks.py) was a hardcoded
+# English "Pick a time:" regardless of the conversation's language.
+# Review on #131: mixed_ne_en is Latin-script code-switching — those
+# visitors type romanized, not Devanagari, so it maps to ne_romanized here
+# (and in _MISSING_DETAILS_PROMPT_BY_LANG below), not ne_devanagari.
+_PICK_A_TIME_LABEL_BY_LANG = {
+    "ne_devanagari": "समय छान्नुहोस्:",
+    "ne_romanized": "Samaya chhannuhos:",
+    "en": "Pick a time:",
+    "mixed_ne_en": "Samaya chhannuhos:",
+}
+
+# SBAL-Z8 F1: prepare_booking resolved the service/date/time but failed on
+# the visitor's own details (INVALID_NAME/INVALID_PHONE) — asked
+# deterministically, in the conversation's sticky language, same pattern as
+# _build_booking_readback (no LLM narration of what's missing or why).
+_MISSING_DETAILS_PROMPT_BY_LANG = {
+    "en": "Great — {weekday}, {day} {month} at {time} for {service}. What's your full name and phone number?",
+    "ne_romanized": "Sahi cha — {weekday}, {day} {month} {time} baje {service} ko lagi. Tapaiko pura naam ra phone number pathaunus?",
+    "ne_devanagari": "ठिक छ — {weekday}, {day} {month} {time} बजे {service} को लागि। तपाईंको पूरा नाम र फोन नम्बर दिनुहोस्?",
+    "mixed_ne_en": "Sahi cha — {weekday}, {day} {month} {time} baje {service} ko lagi. Tapaiko pura naam ra phone number pathaunus?",
+}
+
 # --- No false booking claims (CLINIC-BOOKING-TRUTH-BRIEF F1) ---
 #
 # Localized closing question for the deterministic no-false-claim override
@@ -321,6 +402,18 @@ def _slot_parts(pending: dict, lang: str) -> tuple[str, str, str]:
     else:
         weekday = date_obj.strftime("%A")
     return weekday, str(date_obj.day), date_obj.strftime("%B")
+
+
+def _build_missing_details_prompt(info: dict, lang: str) -> str:
+    """SBAL-Z8 F1: `info` is prepare_booking's INVALID_NAME/INVALID_PHONE
+    result — service/date/time already resolved, only the visitor's own
+    details are missing."""
+    weekday, day, month = _slot_parts(info, lang)
+    tpl = _MISSING_DETAILS_PROMPT_BY_LANG.get(lang, _MISSING_DETAILS_PROMPT_BY_LANG["en"])
+    return tpl.format(
+        weekday=weekday, day=day, month=month,
+        time=info.get("time") or "", service=info.get("service_name") or "",
+    )
 
 
 # --- Post-booking sentence (CLINIC-POSTBOOKING-SENTENCE) ---
@@ -1029,7 +1122,20 @@ class ClinicAgentService:
                 "closed_reason=%s handoff_available=%s escalation_turn=%s",
                 site_id, session_id, channel_open, closed_reason, handoff_available, escalation_turn,
             )
-        detected_lang = detect_language(question)
+        # SBAL-Z8 F2: a chip/postback/button tap sends code-synthesized
+        # English (or a bare neutral reply like "12:30"), not anything the
+        # visitor actually wrote — detecting language from it would flip a
+        # Nepali conversation to English the moment a button is tapped.
+        # Voice is explicitly unchanged (it never sends synthetic text in
+        # the first place): no sticky-language read or write on that
+        # channel, so this cannot alter existing voice behaviour.
+        raw_detected_lang = detect_language(question)
+        if channel != "voice" and _is_synthetic_or_neutral_text(question):
+            detected_lang = get_sticky_language(session_id) or raw_detected_lang
+        else:
+            detected_lang = raw_detected_lang
+            if channel != "voice":
+                set_sticky_language(session_id, detected_lang)
         language_directive = _LANGUAGE_DIRECTIVES.get(detected_lang, "")
 
         # SBAL-Z3 B1: this turn names a time/date, or asks whether something
@@ -1038,6 +1144,20 @@ class ClinicAgentService:
         # memory (see _AVAILABILITY_SIGNAL's note).
         force_availability_check = bool(
             _AVAILABILITY_SIGNAL.search(question) or _mentions_time_or_date(question, now_npt_dt)
+        )
+        # SBAL-Z8 F1 (addendum + review on #131): a slot pick — a chip's
+        # "Book X on D at T" postback OR a typed time ("12:30", "12:30 ma",
+        # "10:30 baje") — forces this same check_availability re-
+        # verification above, but the visitor already picked a time;
+        # re-offering slot chips this turn is the loop from the addendum
+        # repro (pick 12:30 -> asked for name/phone + chips anyway; pick
+        # 10:30 -> same). This holds regardless of whether the model goes
+        # on to call prepare_booking this turn or just asks for the
+        # details itself in its own text — either way, slot chips are
+        # never this turn's own open question.
+        stripped_question = question.strip()
+        turn_is_slot_pick = bool(
+            _SLOT_PICK_PATTERN.match(stripped_question) or _TYPED_TIME_PICK_PATTERN.match(stripped_question)
         )
 
         # PR #64 review (MINOR): `session_id or "anonymous"` made every
@@ -1311,6 +1431,10 @@ class ClinicAgentService:
         turn_prepared_pending: dict | None = None
         turn_booking_confirmed = False
         turn_confirmed: tuple[dict, str] | None = None
+        # SBAL-Z8 F1: prepare_booking resolved service/date/time but failed
+        # on the visitor's own details (INVALID_NAME/INVALID_PHONE) — asked
+        # deterministically below, same pattern as turn_prepared_pending.
+        turn_missing_details: dict | None = None
         # P4 B1: hard cap on the service-guess fan-out (prod incident: guess
         # "Teeth Cleaning" -> check_availability -> list_services -> guess
         # "General Dentistry" -> check_availability again = 4 iterations,
@@ -1835,10 +1959,28 @@ class ClinicAgentService:
                                 if widget_cards_enabled:
                                     turn_services_shortcut_caption = ui_state["services_caption"]
                     elif tool_name == "check_availability" and not result.get("blocked"):
-                        ui_lang = get_readback_lang(session_id) or detected_lang
-                        slots = _slots_ui(result, lang=ui_lang)
-                        if slots:
-                            ui_state["slots"] = slots
+                        # SBAL-Z8 F1 (addendum): this turn is itself a slot
+                        # pick ("Book X on D at T") — check_availability ran
+                        # only as B1's forced same-slot re-verification, not
+                        # because slots are this turn's open question.
+                        # Re-offering them is the addendum's exact loop, and
+                        # it doesn't depend on whether prepare_booking also
+                        # ran this turn (sometimes the model asks for
+                        # name/phone in its own text without ever calling
+                        # it) — so this is gated on the turn's own text, not
+                        # on prepare_booking's result.
+                        if not turn_is_slot_pick:
+                            ui_lang = get_readback_lang(session_id) or detected_lang
+                            slots = _slots_ui(result, lang=ui_lang)
+                            if slots:
+                                ui_state["slots"] = slots
+                                # SBAL-Z8 F3: the IG adapter's "Pick a time:"
+                                # chip prompt, localized — ui.py builders are
+                                # the only place that already knows the
+                                # turn's language.
+                                ui_state["slots_prompt"] = _PICK_A_TIME_LABEL_BY_LANG.get(
+                                    ui_lang, _PICK_A_TIME_LABEL_BY_LANG["en"]
+                                )
                     elif tool_name == "prepare_booking":
                         # F1 (PHONE-HALLUCINATION-BRIEF): the phone the visitor gave to
                         # book with is grounded — prepare_booking's read-back must be
@@ -1863,6 +2005,21 @@ class ClinicAgentService:
                                 "change_label": _CHANGE_CHIP_LABEL_BY_LANG.get(ui_lang, _CHANGE_CHIP_LABEL_BY_LANG["en"]),
                                 "change_payload": "I'd like to change the details",
                             }
+                        elif result.get("error") in ("INVALID_NAME", "INVALID_PHONE"):
+                            # SBAL-Z8 F1: the slot is already picked (service/
+                            # date/time all resolved) — only the visitor's own
+                            # details are missing. Ask for exactly that,
+                            # deterministically, and never re-offer slot chips
+                            # this turn (the lane incident: a re-run
+                            # check_availability earlier this same turn had
+                            # already set ui_state["slots"]).
+                            turn_missing_details = {
+                                "service_name": result.get("service_name") or tool_args.get("service") or "",
+                                "date": result.get("date") or tool_args.get("date") or "",
+                                "time": result.get("time") or tool_args.get("time") or "",
+                            }
+                            ui_state.pop("slots", None)
+                            ui_state.pop("slots_prompt", None)
                     elif tool_name == "confirm_booking":
                         # N1: a booking_number is phone-shaped (7-13 digits) and comes
                         # straight from ClinicMD, so it's grounded exactly like a phone
@@ -1921,6 +2078,24 @@ class ClinicAgentService:
                     if full_answer:
                         yield {"type": "token", "data": full_answer}
                         mark_readback(session_id, current_turn, detected_lang)
+                    break
+
+                if turn_missing_details is not None:
+                    # SBAL-Z8 F1: the slot is picked (service/date/time all
+                    # resolved by prepare_booking itself) but the visitor's
+                    # own details are missing — ask for exactly that,
+                    # deterministically, in the sticky language, and end
+                    # the turn immediately. Same reasoning as the
+                    # turn_prepared_pending branch above: the model is
+                    # never given a chance to narrate a booking that
+                    # didn't happen, or to re-offer slots that are no
+                    # longer the open question this turn.
+                    full_answer = sanitize_phone_numbers(
+                        _build_missing_details_prompt(turn_missing_details, detected_lang),
+                        allowed_phone_digits,
+                    )
+                    if full_answer:
+                        yield {"type": "token", "data": full_answer}
                     break
 
                 if turn_services_shortcut_caption is not None:
