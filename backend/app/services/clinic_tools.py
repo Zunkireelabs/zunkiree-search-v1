@@ -45,6 +45,54 @@ DEFAULT_DIAL = "+977"
 MAX_BARE_NATIONAL = 10
 
 
+# SBAL-Z9 F2: ASR writes a spoken phone number as words ("नाइन एट फोर वन ..."),
+# which `\D` stripping turned into nothing. Devanagari-transliterated English,
+# Nepali numerals-in-words and romanized forms, folded to digits.
+_DIGIT_WORDS: dict[str, str] = {}
+for _d, _words in {
+    "0": "zero o oh shunya sunya जिरो जीरो ज़िरो ओ शून्य सुन्य",
+    "1": "one ek एक वन",
+    "2": "two dui दुई टु तु",
+    "3": "three teen tin तीन थ्री त्री",
+    "4": "four char chaar चार फोर",
+    "5": "five panch paanch पाँच पांच पाच फाइभ फाईभ फाइव",
+    "6": "six chha chhah छ छः सिक्स",
+    "7": "seven saat sat सात सेभेन सेवेन",
+    "8": "eight aath aat आठ एट एइट",
+    "9": "nine nau नौ नाइन नाईन",
+}.items():
+    for _w in _words.split():
+        _DIGIT_WORDS[_w] = _d
+# Words that double as ordinary speech ("छ" = "is", "ओ" = "oh") — dropped on
+# a retry when counting them yields an implausible length.
+_AMBIGUOUS_DIGIT_WORDS = {"छ", "छः", "ओ", "o", "oh", "sat", "tin", "aat"}
+_DEVANAGARI_TO_ASCII = str.maketrans("०१२३४५६७८९", "0123456789")
+_REPEAT_WORDS = {"double": 2, "डबल": 2, "triple": 3, "ट्रिपल": 3}
+
+
+def _fold_digit_words(s: str) -> str | None:
+    """Spoken digit-words -> digit string, only when the result is a
+    plausible 9-10 digit national number; never invents digits."""
+    tokens = [t for t in re.split(r"[\s,\-–—.।]+", s.lower()) if t]
+    for skip_ambiguous in (False, True):
+        out: list[str] = []
+        repeat = 1
+        for t in tokens:
+            if t in _REPEAT_WORDS:
+                repeat = _REPEAT_WORDS[t]
+                continue
+            d = _DIGIT_WORDS.get(t)
+            if d is None or (skip_ambiguous and t in _AMBIGUOUS_DIGIT_WORDS):
+                repeat = 1
+                continue
+            out.append(d * repeat)
+            repeat = 1
+        folded = "".join(out)
+        if 9 <= len(folded) <= 10:
+            return folded
+    return None
+
+
 def to_e164(raw: str | None, fallback_dial: str = DEFAULT_DIAL) -> str | None:
     """Port of clinic-md/src/utils/phone.js toE164()."""
     if raw is None:
@@ -52,6 +100,9 @@ def to_e164(raw: str | None, fallback_dial: str = DEFAULT_DIAL) -> str | None:
     s = str(raw).strip()
     if not s:
         return None
+    s = s.translate(_DEVANAGARI_TO_ASCII)  # backend + read-back sanitizer want ASCII digits
+    if not re.search(r"\d", s):
+        s = _fold_digit_words(s) or s
     had_plus = s.startswith("+")
     digits = re.sub(r"\D", "", s)
     if not digits:
@@ -214,6 +265,21 @@ def _state(session_id: str) -> dict:
     return _SESSION_STATE.setdefault(session_id, {"pending": None, "confirmed": []})
 
 
+def bump_missing_asks(session_id: str | None, repeat: bool = True) -> int:
+    """SBAL-Z9 F2: attempt number of the deterministic missing-details ask
+    this session (reset to 0 when a prepare_booking succeeds). `repeat` =
+    the visitor supplied a value that failed; an ask because nothing was
+    given yet records the first ask without escalating."""
+    if not session_id:
+        return 1
+    state = _state(session_id)
+    n = max(state.get("missing_asks", 0), 1)
+    if repeat:
+        n += 1
+    state["missing_asks"] = n
+    return n
+
+
 def get_awaiting_confirmation(session_id: str | None, current_turn: int) -> dict | None:
     """The staged booking the visitor has already been shown and not yet
     confirmed, or None. Read-only — never creates session state."""
@@ -341,6 +407,7 @@ async def execute_clinic_tool(
                 db, customer, tool_args.get("service", ""), tool_args.get("date"),
                 gender_preference=tool_args.get("gender_preference"),
                 exclude_time=tool_args.get("exclude_time"),
+                session_id=session_id,
             )
         if tool_name == "prepare_booking":
             result = await _prepare_booking(db, customer, session_id, current_turn, **tool_args)
@@ -690,6 +757,37 @@ def _match_service(treatments: list[dict], service_name: str) -> tuple[dict | No
     return None, matches
 
 
+_LATIN_RE = re.compile(r"[A-Za-z]")
+
+
+def _resolve_session_service(
+    treatments: list[dict], service: str | None, session_id: str | None,
+) -> tuple[dict | None, list[dict]]:
+    """SBAL-Z9 F1: resolve the service, binding the result to the session.
+
+    Once a treatment has resolved for this session, a later call whose
+    service string does not match a catalog service (the model re-calls with
+    the name transliterated into Devanagari, which can never match a Latin
+    catalog) keeps the bound one. A string that matches a DIFFERENT service
+    still wins ("actually, make it a brow lamination") and rebinds. No bound
+    service -> identical to _match_service."""
+    state = _state(session_id) if session_id else None
+    matched, ambiguous = _match_service(treatments, service) if service and service.strip() else (None, [])
+    if matched:
+        if state is not None:
+            state["bound_service_id"] = matched["id"]
+        return matched, []
+    bound = None
+    if state is not None:
+        bound = next((t for t in treatments if t["id"] == state.get("bound_service_id")), None)
+    # An ambiguous Latin string is a real (new) request the visitor must
+    # disambiguate; a non-Latin string is the model's corrupted echo.
+    if bound and (not ambiguous or not _LATIN_RE.search(service or "")):
+        logger.info("[CLINIC-AGENT] service_rebound_to_session service_id=%s", bound["id"])
+        return bound, []
+    return None, ambiguous
+
+
 # --- Services ---
 
 async def _list_services(db: AsyncSession, customer: Customer, query: str | None = None) -> dict:
@@ -780,6 +878,7 @@ async def _next_open_slots(
 async def _check_availability(
     db: AsyncSession, customer: Customer, service: str, date: str | None = None,
     gender_preference: str | None = None, exclude_time: str | None = None,
+    session_id: str | None = None,
 ) -> dict:
     org_id, branches, backend_type = await _resolve_org(db, customer)
     branch = _default_branch(branches)
@@ -789,7 +888,7 @@ async def _check_availability(
     client = _client_for_backend(backend_type)
     enable_rooms = _cached_enable_rooms(customer.site_id)
     treatments = await client.list_treatments(org_id, branch)
-    treatment, ambiguous = _match_service(treatments, service)
+    treatment, ambiguous = _resolve_session_service(treatments, service, session_id)
     if treatment is None:
         if ambiguous:
             return {"ambiguous": True, "options": [{"id": t["id"], "name": t["name"]} for t in ambiguous]}
@@ -918,10 +1017,12 @@ async def _prepare_booking(
     client = _client_for_backend(backend_type)
     treatments = await client.list_treatments(org_id, branch)
     treatment = next((t for t in treatments if _is_uuid(service_id) and t["id"] == service_id), None)
-    if treatment is None:
-        if not service:
+    if treatment is not None:
+        _state(session_id)["bound_service_id"] = treatment["id"]
+    else:
+        matched, ambiguous_services = _resolve_session_service(treatments, service, session_id)
+        if not matched and not service:
             return {"error": "INVALID_SERVICE", "message": "A service name is required."}
-        matched, ambiguous_services = _match_service(treatments, service)
         if matched:
             treatment = matched
         elif ambiguous_services:
@@ -1030,6 +1131,7 @@ async def _prepare_booking(
         prepared_turn = existing_pending["prepared_turn"]
         substituted_for = substituted_for or existing_pending.get("substituted_for")
 
+    _state(session_id)["missing_asks"] = 0
     pending = {
         "service_id": treatment["id"],
         "service_name": treatment["name"],

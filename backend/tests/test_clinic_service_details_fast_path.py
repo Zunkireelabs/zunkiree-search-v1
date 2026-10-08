@@ -183,7 +183,8 @@ async def test_details_postback_with_multiple_matches_gets_carousel_and_caption(
 
     done_event = next(e for e in events if e["type"] == "done")
     assert len(done_event["ui"]["services"]) == 2
-    assert done_event["ui"]["services_caption"] == "Here are our services — swipe to see them."
+    # SBAL-Z11 V3: ambiguous Details -> disambiguation question, not "here is the catalog".
+    assert done_event["ui"]["services_caption"] == "Which of these did you mean? Tap one to see its details."
     assert "service_detail" not in done_event["ui"]
 
 
@@ -274,3 +275,26 @@ async def test_plain_services_question_still_uses_knowledge_fast_path():
         await _run(service, config, "What are your opening hours?", session_id="faq-unaffected")
 
     assert mock_tool.await_args.kwargs["tool_name"] == "search_knowledge"
+
+
+@pytest.mark.asyncio
+async def test_details_text_mid_booking_flow_still_returns_the_one_exact_service():
+    """SBAL-Z11 V3: a live date anchor (earlier booking turn this session)
+    used to push "Tell me more about <exact name>" into the generic tool
+    loop -> generic carousel. The Details tap must still win."""
+    from app.services import clinic_agent as ca
+
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="SBAL", contact_phone=None)
+    service = _service_for_responses([_stream("Lash Lift is NPR 2500 and takes 60 minutes.")])
+    ca._DATE_ANCHOR["details-midflow"] = "2026-10-09"
+    try:
+        with patch(
+            "app.services.clinic_agent.execute_clinic_tool", AsyncMock(return_value=FIVE_LOOSE_ONE_EXACT),
+        ):
+            events = await _run(service, config, "Tell me more about Lash Lift", session_id="details-midflow")
+    finally:
+        ca._DATE_ANCHOR.pop("details-midflow", None)
+
+    done_event = next(e for e in events if e["type"] == "done")
+    assert done_event["ui"]["service_detail"]["name"] == "Lash Lift"
+    assert "services" not in done_event["ui"]

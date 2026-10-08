@@ -31,6 +31,7 @@ interface Message {
   rooms?: any[]
   services?: ServiceItem[]
   serviceDetail?: ServiceItem
+  queryLogId?: string
 }
 
 interface ExpandedPanelProps {
@@ -215,11 +216,17 @@ export function ExpandedPanel({
     return () => panel.removeEventListener('wheel', onWheel)
   }, [])
 
+  // Auto-grow the composer. When the field is empty we clear the inline
+  // height entirely and let CSS govern, rather than writing a measured one:
+  // in the docked panel this effect first runs while the portal still has
+  // no width, so the placeholder wraps, scrollHeight blows past the cap and
+  // the empty textarea gets frozen at 120px for the rest of the session.
   useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.style.height = 'auto'
-      inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 120)}px`
-    }
+    const textarea = inputRef.current
+    if (!textarea) return
+    textarea.style.height = 'auto'
+    if (!input) return
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`
   }, [input])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -227,7 +234,9 @@ export function ExpandedPanel({
     setShowAutocomplete(e.target.value.trim().length >= 2)
     const textarea = e.target
     textarea.style.height = 'auto'
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`
+    if (e.target.value) {
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -473,7 +482,10 @@ export function ExpandedPanel({
         </div>
 
         {/* Sticky Input Area */}
-        <form className="zk-expanded-panel__input" onSubmit={onSubmit} style={{ position: 'relative' }}>
+        {/* Positioning lives in CSS — the composer is absolutely placed so the
+            conversation scrolls underneath it. It still forms the containing
+            block the Autocomplete anchors to. */}
+        <form className="zk-expanded-panel__input" onSubmit={onSubmit}>
           <Autocomplete
             apiUrl={apiUrl}
             siteId={siteId}

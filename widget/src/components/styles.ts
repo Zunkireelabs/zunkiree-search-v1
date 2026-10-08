@@ -1,4 +1,38 @@
 export const styles = (primaryColor: string) => `
+  /* ===== Zunkiree brand orb =====
+     Green gradient sphere with a fine noise grain. Shared by the launcher
+     pill, the launcher bar and the mobile FAB so the brand reads the same
+     in every collapsed state, independent of the tenant's primary_color
+     (which still drives chips/focus accents). */
+  .zk-orb {
+    position: relative;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: radial-gradient(circle at 32% 26%,
+      #a8f8cb 0%, #4ade80 22%, #1aa95f 54%, #0a7f47 80%, #05532f 100%);
+    box-shadow:
+      inset 0 -3px 8px rgba(2, 52, 29, 0.38),
+      inset 0 2px 6px rgba(255, 255, 255, 0.5),
+      0 2px 10px rgba(10, 127, 71, 0.35);
+    overflow: hidden;
+  }
+
+  .zk-orb::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='zkn'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23zkn)'/%3E%3C/svg%3E");
+    background-size: 72px 72px;
+    opacity: 0.42;
+    mix-blend-mode: overlay;
+    pointer-events: none;
+  }
+
+  .zk-orb--lg { width: 38px; height: 38px; }
+  .zk-orb--md { width: 28px; height: 28px; }
+  .zk-orb--sm { width: 20px; height: 20px; }
+
   /* ===== Reset ===== */
   .zk-collapsed-bar *,
   .zk-expanded-panel *,
@@ -16,8 +50,8 @@ export const styles = (primaryColor: string) => `
     right: auto !important;
     transform: translateX(-50%) translateY(20px) !important;
     opacity: 0;
-    width: 720px !important;
-    max-width: 720px !important;
+    width: 640px !important;
+    max-width: calc(100vw - 48px) !important;
     min-width: 0 !important;
     z-index: 9999 !important;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -38,27 +72,29 @@ export const styles = (primaryColor: string) => `
     pointer-events: none !important;
   }
 
-  /* Card container - glassmorphic */
+  /* Card container - light surface, brand lives in the orb */
   .zk-collapsed-bar__card {
     position: relative;
-    background: linear-gradient(180deg, #2067fb 0%, #000b22 140.34%);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 20px;
-    padding: 20px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.06);
+    background: #ffffff;
+    border: 1px solid rgba(16, 24, 40, 0.07);
+    border-radius: 26px;
+    padding: 10px;
+    box-shadow:
+      0 14px 44px rgba(16, 24, 40, 0.12),
+      0 2px 6px rgba(16, 24, 40, 0.05);
   }
 
   /* Minimize button - top right */
   .zk-collapsed-bar__minimize {
     position: absolute;
-    top: -10px;
-    right: -10px;
-    width: 28px;
-    height: 28px;
+    top: -9px;
+    right: -9px;
+    width: 26px;
+    height: 26px;
     border-radius: 50%;
     background: white;
-    border: 1px solid #e5e7eb;
-    color: #6b7280;
+    border: 1px solid rgba(16, 24, 40, 0.08);
+    color: #9ca3af;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -79,12 +115,11 @@ export const styles = (primaryColor: string) => `
     cursor: pointer;
   }
 
+  /* Shape, fill, padding and gap all come from the shared .zk-input-inner
+     so the launcher bar and the panel composer stay identical. The only
+     difference is this one is a fixed-height, non-growing row. */
   .zk-collapsed-bar__input-inner {
-    display: flex;
-    align-items: center;
-    gap: 10px;
     height: 48px;
-    padding: 0 8px 0 14px;
     cursor: pointer;
   }
 
@@ -99,21 +134,32 @@ export const styles = (primaryColor: string) => `
 
   .zk-collapsed-bar__placeholder {
     flex: 1;
-    font-size: 14px;
+    font-size: 15px;
     color: #9ca3af;
+    letter-spacing: -0.01em;
     user-select: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .zk-collapsed-bar__send {
-    width: 32px;
-    height: 32px;
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
-    background: #eb1600;
+    background: radial-gradient(circle at 32% 26%,
+      #4ade80 0%, #1aa95f 52%, #0a7f47 100%);
     color: white;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(10, 127, 71, 0.32);
+    transition: transform 150ms ease;
+  }
+
+  .zk-collapsed-bar__input-wrap:hover .zk-collapsed-bar__send {
+    transform: scale(1.06);
   }
 
   /* Chips inside card */
@@ -121,20 +167,20 @@ export const styles = (primaryColor: string) => `
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    margin-top: 12px;
+    margin: 10px 4px 2px;
   }
 
-  /* Card-variant chips (on dark glass background) */
+  /* Card-variant chips (light surface) */
   .zk-chip--card {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.2);
-    color: rgba(255, 255, 255, 0.85);
+    background: #f6f7f9;
+    border-color: rgba(16, 24, 40, 0.07);
+    color: #4b5563;
   }
 
   .zk-chip--card:hover {
-    background: rgba(255, 255, 255, 0.18);
-    border-color: rgba(255, 255, 255, 0.35);
-    color: white;
+    background: #eef0f3;
+    border-color: rgba(16, 24, 40, 0.14);
+    color: #16181d;
   }
 
   /* ===== Backdrop ===== */
@@ -158,11 +204,18 @@ export const styles = (primaryColor: string) => `
     position: fixed;
     bottom: 24px;
     left: 50%;
-    width: min(1000px, 90%);
-    height: min(80vh, 760px);
-    background: linear-gradient(248.35deg, #86cdff -11.3%, #f4f4fe 16.44%, #fff 28.3%, #fff 72.47%, #ebeafe 89.69%, #bec6f7 101.94%);
-    border-radius: 24px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
+    width: min(640px, calc(100vw - 48px));
+    /* Hug the content: the card is only as tall as the conversation needs,
+       up to the cap. Replaces the old fixed 80vh box that left a large
+       empty area on the welcome screen. */
+    height: auto;
+    max-height: min(74vh, 660px);
+    background: #ffffff;
+    border: 1px solid rgba(16, 24, 40, 0.06);
+    border-radius: 26px;
+    box-shadow:
+      0 28px 70px rgba(16, 24, 40, 0.18),
+      0 2px 8px rgba(16, 24, 40, 0.06);
     z-index: 9999;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     display: flex;
@@ -182,22 +235,22 @@ export const styles = (primaryColor: string) => `
     }
   }
 
-  /* Header - 64px */
+  /* Header - slim 44px strip */
   .zk-expanded-panel__header {
     display: flex;
     align-items: center;
-    height: 64px;
-    padding: 0 24px;
-    background: white;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    height: 44px;
+    padding: 0 10px 0 18px;
+    background: transparent;
+    border-bottom: 1px solid rgba(16, 24, 40, 0.06);
     flex-shrink: 0;
-    border-radius: 24px 24px 0 0;
+    border-radius: 26px 26px 0 0;
   }
 
   .zk-expanded-panel__title {
     flex: 1;
     font-weight: 600;
-    font-size: 16px;
+    font-size: 13px;
     color: #111827;
   }
 
@@ -301,21 +354,22 @@ export const styles = (primaryColor: string) => `
 
   /* Hero Section - only when no messages */
   .zk-expanded-panel__hero {
-    flex: 1;
+    flex: 0 0 auto;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 40px 32px;
+    padding: 28px 24px 100px;
   }
 
   .zk-expanded-panel__hero-title {
-    font-size: 30px;
+    font-size: 19px;
     font-weight: 600;
-    color: #111827;
+    color: #16181d;
     text-align: center;
-    margin-bottom: 24px;
-    line-height: 1.2;
+    margin-bottom: 16px;
+    line-height: 1.3;
+    letter-spacing: -0.01em;
   }
 
   .zk-expanded-panel__hero-chips {
@@ -327,19 +381,27 @@ export const styles = (primaryColor: string) => `
 
   /* Conversation Area */
   .zk-expanded-panel__messages {
-    flex: 1;
-    overflow-y: scroll;
+    /* flex: 0 1 auto so an empty/short conversation does not stretch the
+       card — it only takes the height it needs, then scrolls at the cap. */
+    flex: 0 1 auto;
+    overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: contain;
     touch-action: pan-y;
-    padding: 20px 24px;
+    /* Bottom padding clears the composer, which now floats over this
+       area rather than sitting below it in flow. */
+    padding: 16px 18px 96px;
     will-change: scroll-position;
     contain: layout style;
     min-height: 0;
   }
 
+  .zk-expanded-panel__messages:empty {
+    padding: 0;
+  }
+
   .zk-expanded-panel__messages-inner {
-    max-width: 720px;
+    max-width: 100%;
     margin: 0 auto;
     display: flex;
     flex-direction: column;
@@ -369,17 +431,54 @@ export const styles = (primaryColor: string) => `
   }
 
   /* Input Section - sticky bottom */
+  /* Floating composer — messages scroll underneath it and dissolve into
+     the frosted gradient instead of being cut off by a hard divider. */
   .zk-expanded-panel__input {
-    padding: 16px 24px;
-    border-top: 1px solid rgba(0, 0, 0, 0.06);
-    flex-shrink: 0;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2;
+    padding: 24px 10px 8px;
+    /* The gradient block ignores pointer events so the conversation stays
+       scrollable through it; the controls themselves opt back in below. */
+    pointer-events: none;
+  }
+
+  .zk-expanded-panel__input > * {
+    pointer-events: auto;
+  }
+
+  /* The frost lives on its own layer behind the controls. Masking the form
+     itself would fade the input pill along with the background, so the
+     gradient, the blur and the mask all sit here instead. */
+  .zk-expanded-panel__input::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0) 0%,
+      rgba(255, 255, 255, 0.6) 26%,
+      rgba(255, 255, 255, 0.92) 52%,
+      #ffffff 78%
+    );
+    -webkit-backdrop-filter: blur(9px);
+    backdrop-filter: blur(9px);
+    /* Fade the blur in too, so the frost has no visible top seam. */
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 42%, #000 100%);
+    mask-image: linear-gradient(to bottom, transparent 0%, #000 42%, #000 100%);
+    border-radius: 0 0 26px 26px;
+    pointer-events: none;
   }
 
   /* ===== Docked Panel (inside #zk-right-dock) ===== */
   .zk-docked {
+    position: relative;
     width: 100%;
     height: 100%;
-    background: linear-gradient(248.35deg, #86cdff -11.3%, #f4f4fe 16.44%, #fff 28.3%, #fff 72.47%, #ebeafe 89.69%, #bec6f7 101.94%);
+    background: #ffffff;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     display: flex;
     flex-direction: column;
@@ -389,18 +488,18 @@ export const styles = (primaryColor: string) => `
   .zk-docked__header {
     display: flex;
     align-items: center;
-    height: 64px;
-    padding: 0 20px;
-    background: white;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    height: 44px;
+    padding: 0 10px 0 18px;
+    background: transparent;
+    border-bottom: 1px solid rgba(16, 24, 40, 0.06);
     flex-shrink: 0;
   }
 
   .zk-docked__title {
     flex: 1;
     font-weight: 600;
-    font-size: 16px;
-    color: #111827;
+    font-size: 13px;
+    color: #16181d;
   }
 
   /* Docked Hero */
@@ -410,16 +509,17 @@ export const styles = (primaryColor: string) => `
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 40px 20px;
+    padding: 28px 20px 100px;
   }
 
   .zk-docked__hero-title {
-    font-size: 22px;
+    font-size: 19px;
     font-weight: 600;
-    color: #111827;
+    color: #16181d;
     text-align: center;
-    margin-bottom: 20px;
-    line-height: 1.2;
+    margin-bottom: 16px;
+    line-height: 1.3;
+    letter-spacing: -0.01em;
   }
 
   .zk-docked__hero-chips {
@@ -432,18 +532,19 @@ export const styles = (primaryColor: string) => `
   /* Docked Messages */
   .zk-docked__messages {
     flex: 1;
-    overflow-y: scroll;
+    overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: contain;
     touch-action: pan-y;
-    padding: 24px 16px;
+    /* Bottom padding clears the floating composer, as in the bottom card. */
+    padding: 16px 16px 96px;
     min-height: 0;
   }
 
   .zk-docked__messages-inner {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 10px;
   }
 
   .zk-docked__messages::-webkit-scrollbar {
@@ -468,11 +569,39 @@ export const styles = (primaryColor: string) => `
     scrollbar-color: #e5e7eb transparent;
   }
 
-  /* Docked Input */
+  /* Docked composer — same floating frosted treatment as the bottom card,
+     minus the rounded bottom corners (the dock has square edges). */
   .zk-docked__input {
-    padding: 16px;
-    border-top: 1px solid rgba(0, 0, 0, 0.06);
-    flex-shrink: 0;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2;
+    padding: 24px 16px 8px;
+    pointer-events: none;
+  }
+
+  .zk-docked__input > * {
+    pointer-events: auto;
+  }
+
+  .zk-docked__input::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0) 0%,
+      rgba(255, 255, 255, 0.6) 26%,
+      rgba(255, 255, 255, 0.92) 52%,
+      #ffffff 78%
+    );
+    -webkit-backdrop-filter: blur(9px);
+    backdrop-filter: blur(9px);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 42%, #000 100%);
+    mask-image: linear-gradient(to bottom, transparent 0%, #000 42%, #000 100%);
+    pointer-events: none;
   }
 
   /* ===== Shared: Chip ===== */
@@ -500,7 +629,10 @@ export const styles = (primaryColor: string) => `
   .zk-message {
     max-width: 88%;
     animation: zk-fade-in 150ms ease;
-    contain: content;
+    /* contain:content implies paint containment, which clips a hovered
+       card's lift shadow at the message's edge. Layout+style keeps the
+       isolation benefit without the clipping. */
+    contain: layout style;
   }
 
   @keyframes zk-fade-in {
@@ -518,8 +650,14 @@ export const styles = (primaryColor: string) => `
     align-self: flex-end;
   }
 
+  /* The 88% cap above is a chat-bubble width — right for the user's grey
+     bubble, wrong for assistant turns, whose text has no bubble and whose
+     carousels need the full column. Capping them left a dead gutter to the
+     right of every product/service/room grid. */
   .zk-message-assistant {
     align-self: flex-start;
+    max-width: 100%;
+    width: 100%;
   }
 
   .zk-message-content {
@@ -698,29 +836,39 @@ export const styles = (primaryColor: string) => `
     inherits: false;
   }
 
+  /* Registering the angle lets it interpolate smoothly — an unregistered
+     custom property animates in discrete jumps. */
+  @property --border-angle {
+    syntax: '<angle>';
+    inherits: false;
+    initial-value: 0deg;
+  }
+
   .zk-input-container {
     position: relative;
-    background: #e5e7eb;
-    border-radius: 24px;
-    padding: 1.5px;
+    background: rgba(16, 24, 40, 0.07);
+    border-radius: 999px;
+    padding: 1px;
     isolation: isolate;
   }
 
+  /* Animated brand sweep — a thin, low-contrast green arc travelling the
+     border. Kept faint on purpose: it should register as a glint, not a
+     glowing outline. */
   .zk-input-container::before {
     content: '';
     position: absolute;
     inset: 0;
-    border-radius: 24px;
-    padding: 1.5px;
+    border-radius: inherit;
+    padding: 1px;
     background: conic-gradient(
       from var(--border-angle),
       transparent 0%,
-      transparent 6%,
-      #3b82f6 8%,
-      #06b6d4 10%,
-      #84cc16 12%,
-      #eab308 14%,
-      transparent 16%,
+      transparent 14%,
+      rgba(168, 248, 203, 0.55) 18%,
+      rgba(74, 222, 128, 0.75) 21%,
+      rgba(26, 169, 95, 0.55) 24%,
+      transparent 28%,
       transparent 100%
     );
     -webkit-mask:
@@ -731,45 +879,57 @@ export const styles = (primaryColor: string) => `
       linear-gradient(#fff 0 0) content-box,
       linear-gradient(#fff 0 0);
     mask-composite: exclude;
-    animation: rotate-border 4s linear infinite;
+    animation: rotate-border 7s linear infinite;
+    pointer-events: none;
   }
 
+  /* Matching bloom behind the sweep, barely there. */
   .zk-input-container::after {
     content: '';
     position: absolute;
-    inset: -2px;
-    border-radius: 26px;
+    inset: -1px;
+    border-radius: inherit;
     background: conic-gradient(
       from var(--border-angle),
       transparent 0%,
-      transparent 6%,
-      #3b82f6 8%,
-      #06b6d4 10%,
-      #84cc16 12%,
-      #eab308 14%,
-      transparent 16%,
+      transparent 14%,
+      rgba(74, 222, 128, 0.7) 21%,
+      transparent 28%,
       transparent 100%
     );
-    filter: blur(6px);
-    opacity: 0.4;
+    filter: blur(7px);
+    opacity: 0.22;
     z-index: -1;
-    animation: rotate-border 4s linear infinite;
+    animation: rotate-border 7s linear infinite;
+    pointer-events: none;
   }
 
   @keyframes rotate-border {
-    0% { --border-angle: 0deg; }
+    0%   { --border-angle: 0deg; }
     100% { --border-angle: 360deg; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .zk-input-container::before,
+    .zk-input-container::after {
+      animation: none;
+    }
   }
 
   .zk-input-inner {
     position: relative;
-    background: white;
-    border-radius: 22px;
-    padding: 8px 8px 8px 8px;
-    min-height: 42px;
+    background: #f4f4f5;
+    border-radius: 999px;
+    padding: 6px 6px 6px 10px;
+    min-height: 48px;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 12px;
+    transition: background 150ms ease;
+  }
+
+  .zk-input-inner:focus-within {
+    background: #f0f1f3;
   }
 
   .zk-input-icon {
@@ -846,23 +1006,25 @@ export const styles = (primaryColor: string) => `
   }
 
   .zk-send {
-    width: 32px;
-    height: 32px;
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
-    background: #111827;
+    background: radial-gradient(circle at 32% 26%,
+      #4ade80 0%, #1aa95f 52%, #0a7f47 100%);
     color: white;
     border: none;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background 150ms, transform 150ms;
+    transition: filter 150ms, transform 150ms;
     flex-shrink: 0;
-    margin-right: 2px;
+    box-shadow: 0 2px 8px rgba(10, 127, 71, 0.32);
   }
 
   .zk-send:hover:not(:disabled) {
-    background: #374151;
+    filter: brightness(1.08);
+    transform: scale(1.05);
   }
 
   .zk-send:disabled {
@@ -950,25 +1112,28 @@ export const styles = (primaryColor: string) => `
   .zk-fab--desktop {
     display: flex !important;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
     position: fixed;
     bottom: 24px;
     right: 24px;
-    height: 48px;
-    padding: 0 20px;
-    border-radius: 24px;
-    border: none;
-    background: linear-gradient(135deg, #2067fb 0%, #000b22 100%);
-    color: white;
+    height: 56px;
+    padding: 0 24px 0 9px;
+    border-radius: 999px;
+    border: 1px solid rgba(16, 24, 40, 0.06);
+    background: #ffffff;
+    color: #16181d;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 500;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    letter-spacing: -0.01em;
+    box-shadow:
+      0 10px 32px rgba(16, 24, 40, 0.12),
+      0 2px 6px rgba(16, 24, 40, 0.06);
     z-index: 9999;
     cursor: pointer;
     opacity: 0;
-    transform: scale(0.9);
-    transition: opacity 250ms ease, transform 250ms ease, box-shadow 150ms;
+    transform: scale(0.94);
+    transition: opacity 250ms ease, transform 250ms ease, box-shadow 180ms ease;
   }
 
   .zk-fab--desktop.zk-fab--visible {
@@ -977,8 +1142,10 @@ export const styles = (primaryColor: string) => `
   }
 
   .zk-fab--desktop:hover {
-    box-shadow: 0 6px 28px rgba(0, 0, 0, 0.3);
-    transform: scale(1.03);
+    box-shadow:
+      0 14px 40px rgba(16, 24, 40, 0.16),
+      0 2px 6px rgba(16, 24, 40, 0.06);
+    transform: translateY(-1px) scale(1.01);
   }
 
   .zk-fab--desktop .zk-fab__label {
@@ -1006,9 +1173,11 @@ export const styles = (primaryColor: string) => `
     padding: 0 !important;
     border-radius: 50%;
     border: none;
-    background: linear-gradient(135deg, #2067fb 0%, #000b22 100%);
-    color: white;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    background: #ffffff;
+    color: #16181d;
+    box-shadow:
+      0 8px 24px rgba(16, 24, 40, 0.16),
+      0 2px 6px rgba(16, 24, 40, 0.06);
     z-index: 9999;
     cursor: pointer;
     opacity: 0;
@@ -1023,6 +1192,12 @@ export const styles = (primaryColor: string) => `
 
   .zk-mobile .zk-fab__label {
     display: none !important;
+  }
+
+  /* Mobile FAB is the orb itself */
+  .zk-mobile .zk-fab .zk-orb {
+    width: 40px !important;
+    height: 40px !important;
   }
 
   /* Kill the desktop collapsed bar — it causes page overflow */
@@ -1067,6 +1242,17 @@ export const styles = (primaryColor: string) => `
   @keyframes zk-mob-up {
     from { opacity: 0; transform: translateY(40px); }
     to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* The desktop card hugs its content (flex 0), but the mobile sheet has a
+     fixed 60vh height — restore flex growth there so the input stays
+     pinned to the bottom of the sheet instead of floating mid-panel. */
+  .zk-mobile .zk-expanded-panel__hero {
+    flex: 1 1 auto !important;
+  }
+
+  .zk-mobile .zk-expanded-panel__messages {
+    flex: 1 1 auto !important;
   }
 
   /* --- Header: 48px, solid white, always visible --- */
@@ -1195,26 +1381,26 @@ export const styles = (primaryColor: string) => `
   }
 
   /* --- Input area --- */
+  /* Mobile keeps the composer in flow as a solid bar — the floating
+     frosted treatment is desktop-only. */
   .zk-mobile .zk-expanded-panel__input {
+    position: static !important;
     flex-shrink: 0 !important;
     padding: 8px 10px !important;
     padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important;
     background: #fff !important;
     border-top: 1px solid #e5e7eb !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    -webkit-mask-image: none !important;
+    mask-image: none !important;
+    pointer-events: auto !important;
   }
 
   .zk-mobile .zk-input-container {
-    border-radius: 18px !important;
+    border-radius: 16px !important;
     background: transparent !important;
     padding: 0 !important;
-  }
-
-  .zk-mobile .zk-input-container::before {
-    display: none !important;
-  }
-
-  .zk-mobile .zk-input-container::after {
-    display: none !important;
   }
 
   .zk-mobile .zk-input-inner {
