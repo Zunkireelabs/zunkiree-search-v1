@@ -22,6 +22,7 @@ from app.models.customer import Customer
 from app.models.widget_config import WidgetConfig
 from app.services.clinic_tools import (
     build_clinic_tools,
+    bump_missing_asks,
     execute_clinic_tool,
     get_awaiting_confirmation,
     get_readback_lang,
@@ -324,9 +325,50 @@ _PICK_A_TIME_LABEL_BY_LANG = {
 _MISSING_DETAILS_PROMPT_BY_LANG = {
     "en": "Great — {weekday}, {day} {month} at {time} for {service}. What's your full name and phone number?",
     "ne_romanized": "Sahi cha — {weekday}, {day} {month} {time} baje {service} ko lagi. Tapaiko pura naam ra phone number pathaunus?",
-    "ne_devanagari": "ठिक छ — {weekday}, {day} {month} {time} बजे {service} को लागि। तपाईंको पूरा नाम र फोन नम्बर दिनुहोस्?",
+    "ne_devanagari": "ठिक छ — {weekday}, {day} {month} {time} {service} को लागि। तपाईंको पूरा नाम र फोन नम्बर दिनुहोस्?",
     "mixed_ne_en": "Sahi cha — {weekday}, {day} {month} {time} baje {service} ko lagi. Tapaiko pura naam ra phone number pathaunus?",
 }
+
+# SBAL-Z9 F2: the same sentence again is useless — a repeat ask tells the
+# caller HOW to answer (digit by digit / name only), keyed on what was
+# actually missing. The 3rd ask hands off instead of repeating.
+_MISSING_PHONE_RETRY_BY_LANG = {
+    "en": "Sorry, I didn't catch the number. Please say your phone number one digit at a time.",
+    "ne_romanized": "Maaf garnuhos, number bujhna sakina. Tapaiko phone number ank ma ek-ek gari bhannuhos hai.",
+    "ne_devanagari": "माफ गर्नुहोस्, नम्बर बुझ्न सकिएन। तपाईंको फोन नम्बर अंकमा एक-एक गरी भन्नुहोस् है।",
+    "mixed_ne_en": "Maaf garnuhos, number bujhna sakina. Tapaiko phone number ank ma ek-ek gari bhannuhos hai.",
+}
+_MISSING_NAME_RETRY_BY_LANG = {
+    "en": "Sorry, I didn't catch your name. Please tell me your full name.",
+    "ne_romanized": "Maaf garnuhos, naam bujhna sakina. Tapaiko pura naam bhannuhos hai.",
+    "ne_devanagari": "माफ गर्नुहोस्, नाम बुझ्न सकिएन। तपाईंको पूरा नाम भन्नुहोस् है।",
+    "mixed_ne_en": "Maaf garnuhos, naam bujhna sakina. Tapaiko pura naam bhannuhos hai.",
+}
+_MISSING_DETAILS_HANDOFF_BY_LANG = {
+    "en": "I'm sorry, I'm having trouble getting your details. Please contact the clinic directly{phone} and they'll book you in.",
+    "ne_romanized": "Maaf garnuhos, tapaiko bibaran bujhna sakina. Kripaya clinic lai sidhai sampark garnuhos{phone}, uniharule book garidinuhunchha.",
+    "ne_devanagari": "माफ गर्नुहोस्, तपाईंको विवरण बुझ्न सकिएन। कृपया क्लिनिकमा सिधै सम्पर्क गर्नुहोस्{phone}, उहाँहरूले बुक गरिदिनुहुन्छ।",
+    "mixed_ne_en": "Maaf garnuhos, tapaiko bibaran bujhna sakina. Kripaya clinic lai sidhai sampark garnuhos{phone}, uniharule book garidinuhunchha.",
+}
+HANDOFF_AT_ASK = 3
+
+# SBAL-Z9 F3: Devanagari templates localized end to end — Nepali month,
+# numeral day, and a spoken-style time ("बिहान १० बजे") so a template can't
+# double the "बजे" or splice English date/time into a Nepali sentence.
+_MONTH_NE = ["जनवरी", "फेब्रुअरी", "मार्च", "अप्रिल", "मे", "जुन", "जुलाई", "अगस्ट", "सेप्टेम्बर", "अक्टोबर", "नोभेम्बर", "डिसेम्बर"]
+_TO_DEVANAGARI_DIGITS = str.maketrans("0123456789", "०१२३४५६७८९")
+
+
+def _ne_time_phrase(hhmm: str) -> str:
+    """'10:00' -> 'बिहान १० बजे'; '14:30' -> 'दिउँसो २:३० बजे'."""
+    m = re.fullmatch(r"(\d{1,2}):(\d{2})", (hhmm or "").strip())
+    if not m:
+        return hhmm
+    h, mi = int(m.group(1)), int(m.group(2))
+    part = "बिहान" if h < 12 else "दिउँसो" if h < 16 else "साँझ" if h < 19 else "राति"
+    h12 = h % 12 or 12
+    clock = f"{h12}" if mi == 0 else f"{h12}:{mi:02d}"
+    return f"{part} {clock.translate(_TO_DEVANAGARI_DIGITS)} बजे"
 
 # --- No false booking claims (CLINIC-BOOKING-TRUTH-BRIEF F1) ---
 #
@@ -401,18 +443,29 @@ def _slot_parts(pending: dict, lang: str) -> tuple[str, str, str]:
         weekday = _WEEKDAY_NE_BY_INDEX[date_obj.weekday()]
     else:
         weekday = date_obj.strftime("%A")
+    if lang in ("ne_devanagari", "mixed_ne_en"):
+        return weekday, str(date_obj.day).translate(_TO_DEVANAGARI_DIGITS), _MONTH_NE[date_obj.month - 1]
     return weekday, str(date_obj.day), date_obj.strftime("%B")
 
 
-def _build_missing_details_prompt(info: dict, lang: str) -> str:
+def _build_missing_details_prompt(info: dict, lang: str, attempt: int = 1, contact_phone: str | None = None) -> str:
     """SBAL-Z8 F1: `info` is prepare_booking's INVALID_NAME/INVALID_PHONE
     result — service/date/time already resolved, only the visitor's own
     details are missing."""
+    if attempt >= HANDOFF_AT_ASK:
+        tpl = _MISSING_DETAILS_HANDOFF_BY_LANG.get(lang, _MISSING_DETAILS_HANDOFF_BY_LANG["en"])
+        return tpl.format(phone=f" ({contact_phone})" if contact_phone else "")
+    if attempt == 2:
+        retry = _MISSING_NAME_RETRY_BY_LANG if info.get("error") == "INVALID_NAME" else _MISSING_PHONE_RETRY_BY_LANG
+        return retry.get(lang, retry["en"])
     weekday, day, month = _slot_parts(info, lang)
+    time_str = info.get("time") or ""
+    if lang == "ne_devanagari":
+        time_str = _ne_time_phrase(time_str)
     tpl = _MISSING_DETAILS_PROMPT_BY_LANG.get(lang, _MISSING_DETAILS_PROMPT_BY_LANG["en"])
     return tpl.format(
         weekday=weekday, day=day, month=month,
-        time=info.get("time") or "", service=info.get("service_name") or "",
+        time=time_str, service=info.get("service_name") or "",
     )
 
 
@@ -557,7 +610,7 @@ def _build_confirmation_sentence(
     if lang == "ne_romanized":
         text = f"Tapaiko {service} {weekday}, {day} {month} maa {time_str} baje {branch} maa book bhayo."
     elif lang in ("ne_devanagari", "mixed_ne_en"):
-        text = f"तपाईंको {service} {weekday}, {day} {month} मा {time_str} बजे {branch} मा बुक भयो।"
+        text = f"तपाईंको {service} {weekday}, {day} {month} मा {_ne_time_phrase(time_str)} {branch} मा बुक भयो।"
     else:
         text = f"You're booked: {service} on {weekday} {day} {month} at {time_str} at {branch}."
     will_confirm = _CLINIC_WILL_CONFIRM.get(lang, _CLINIC_WILL_CONFIRM["en"])
@@ -590,7 +643,7 @@ def _build_booking_readback_body(pending: dict, lang: str) -> str:
     if lang in ("ne_devanagari", "mixed_ne_en"):
         price_part = f" मूल्य रु {price}।" if price is not None else ""
         return (
-            f"{weekday}, {day} {month_en} मा {time_str} बजे {service} — {name} को "
+            f"{weekday}, {day} {month_en} मा {_ne_time_phrase(time_str)} {service} — {name} को "
             f"नाममा, फोन {local_phone}, {branch} मा।{price_part}"
         )
     price_part = f" Price: NPR {price}." if price is not None else ""
@@ -2014,6 +2067,8 @@ class ClinicAgentService:
                             # check_availability earlier this same turn had
                             # already set ui_state["slots"]).
                             turn_missing_details = {
+                                "error": result.get("error"),
+                                "phone_given": tool_args.get("phone"),
                                 "service_name": result.get("service_name") or tool_args.get("service") or "",
                                 "date": result.get("date") or tool_args.get("date") or "",
                                 "time": result.get("time") or tool_args.get("time") or "",
@@ -2090,8 +2145,23 @@ class ClinicAgentService:
                     # never given a chance to narrate a booking that
                     # didn't happen, or to re-offer slots that are no
                     # longer the open question this turn.
+                    # SBAL-Z9 F2: count consecutive deterministic asks per
+                    # session (reset when a prepare succeeds) — 2nd ask says
+                    # how to answer, 3rd hands off, never a verbatim repeat.
+                    # Only a phone the caller actually gave that failed to
+                    # parse is a REPEAT; an ask because nothing was given
+                    # yet is still the first ask.
+                    phone_given = (
+                        turn_missing_details.get("error") == "INVALID_PHONE"
+                        and bool(str(turn_missing_details.get("phone_given") or "").strip())
+                    )
+                    missing_ask_n = bump_missing_asks(session_id) if phone_given else 1
                     full_answer = sanitize_phone_numbers(
-                        _build_missing_details_prompt(turn_missing_details, detected_lang),
+                        _build_missing_details_prompt(
+                            turn_missing_details, detected_lang,
+                            attempt=missing_ask_n,
+                            contact_phone=config.contact_phone if config else None,
+                        ),
                         allowed_phone_digits,
                     )
                     if full_answer:
