@@ -2069,6 +2069,7 @@ class ClinicAgentService:
                             turn_missing_details = {
                                 "error": result.get("error"),
                                 "phone_given": tool_args.get("phone"),
+                                "name_given": "full_name" in tool_args,
                                 "service_name": result.get("service_name") or tool_args.get("service") or "",
                                 "date": result.get("date") or tool_args.get("date") or "",
                                 "time": result.get("time") or tool_args.get("time") or "",
@@ -2148,14 +2149,15 @@ class ClinicAgentService:
                     # SBAL-Z9 F2: count consecutive deterministic asks per
                     # session (reset when a prepare succeeds) — 2nd ask says
                     # how to answer, 3rd hands off, never a verbatim repeat.
-                    # Only a phone the caller actually gave that failed to
-                    # parse is a REPEAT; an ask because nothing was given
-                    # yet is still the first ask.
-                    phone_given = (
-                        turn_missing_details.get("error") == "INVALID_PHONE"
-                        and bool(str(turn_missing_details.get("phone_given") or "").strip())
+                    # A value the caller supplied that failed (phone given
+                    # but unparseable; name key present but blank) is a
+                    # REPEAT; asking because nothing was given is the first.
+                    err = turn_missing_details.get("error")
+                    repeat = (
+                        (err == "INVALID_PHONE" and bool(str(turn_missing_details.get("phone_given") or "").strip()))
+                        or (err == "INVALID_NAME" and turn_missing_details.get("name_given"))
                     )
-                    missing_ask_n = bump_missing_asks(session_id) if phone_given else 1
+                    missing_ask_n = bump_missing_asks(session_id, repeat=bool(repeat))
                     full_answer = sanitize_phone_numbers(
                         _build_missing_details_prompt(
                             turn_missing_details, detected_lang,

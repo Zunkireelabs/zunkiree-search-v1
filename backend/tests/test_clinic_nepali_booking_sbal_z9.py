@@ -93,3 +93,50 @@ def test_devanagari_prompt_is_localized_without_double_baje():
 def test_ne_time_phrase():
     assert _ne_time_phrase("14:30") == "दिउँसो २:३० बजे"
     assert _ne_time_phrase("garbage") == "garbage"
+
+
+def test_bump_escalates_on_repeat_not_on_first_ask():
+    sid = "z9-bump"
+    clinic_tools._SESSION_STATE.pop(sid, None)
+    assert clinic_tools.bump_missing_asks(sid, repeat=False) == 1
+    assert clinic_tools.bump_missing_asks(sid, repeat=False) == 1  # different slot, no details
+    assert clinic_tools.bump_missing_asks(sid, repeat=True) == 2
+    assert clinic_tools.bump_missing_asks(sid, repeat=True) == 3
+
+
+def test_invalid_name_loop_reaches_retry_then_handoff():
+    from app.services.clinic_agent import _MISSING_NAME_RETRY_BY_LANG
+    info = {**INFO, "error": "INVALID_NAME"}
+    sid = "z9-name"
+    clinic_tools._SESSION_STATE.pop(sid, None)
+    prompts = [
+        _build_missing_details_prompt(info, "ne_devanagari", clinic_tools.bump_missing_asks(sid, repeat=r), "01-4000000")
+        for r in (False, True, True, True)
+    ]
+    assert prompts[1] == _MISSING_NAME_RETRY_BY_LANG["ne_devanagari"]
+    assert "01-4000000" in prompts[2] and prompts[2] == prompts[3]
+    assert len(set(prompts[:3])) == 3
+
+
+def test_devanagari_mid_flow_service_change_switches_never_silently_keeps(caplog):
+    """R2: "होइन, ब्रो लामिनेसन" is non-Latin and matches nothing by name —
+    it must switch to Brow Lamination, not keep the bound Lash Lift."""
+    import logging
+    sid = "z9-switch"
+    clinic_tools._SESSION_STATE.pop(sid, None)
+    _resolve_session_service(TREATMENTS, "Lash Lift", sid)
+    with caplog.at_level(logging.INFO, logger="zunkiree.clinic_tools"):
+        t, _ = _resolve_session_service(TREATMENTS, "ब्रो लामिनेसन", sid)
+        assert t["id"] == "t-brow"
+        assert "service_transliteration_match" in caplog.text
+        # ...and a later corrupted echo of the NEW service keeps the new one.
+        t, _ = _resolve_session_service(TREATMENTS, "भोलिको", sid)
+        assert t["id"] == "t-brow" and "service_rebound_to_session" in caplog.text
+
+
+def test_devanagari_echo_of_bound_service_resolves_by_transliteration():
+    sid = "z9-echo"
+    clinic_tools._SESSION_STATE.pop(sid, None)
+    _resolve_session_service(TREATMENTS, "Lash Lift", sid)
+    t, _ = _resolve_session_service(TREATMENTS, "ल्यास लिफ्ट", sid)
+    assert t["id"] == "t-lash"

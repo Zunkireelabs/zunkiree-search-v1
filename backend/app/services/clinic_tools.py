@@ -265,14 +265,19 @@ def _state(session_id: str) -> dict:
     return _SESSION_STATE.setdefault(session_id, {"pending": None, "confirmed": []})
 
 
-def bump_missing_asks(session_id: str | None) -> int:
-    """SBAL-Z9 F2: count of consecutive deterministic missing-details asks
-    this session (reset to 0 when a prepare_booking succeeds)."""
+def bump_missing_asks(session_id: str | None, repeat: bool = True) -> int:
+    """SBAL-Z9 F2: attempt number of the deterministic missing-details ask
+    this session (reset to 0 when a prepare_booking succeeds). `repeat` =
+    the visitor supplied a value that failed; an ask because nothing was
+    given yet records the first ask without escalating."""
     if not session_id:
         return 1
     state = _state(session_id)
-    state["missing_asks"] = state.get("missing_asks", 0) + 1
-    return state["missing_asks"]
+    n = max(state.get("missing_asks", 0), 1)
+    if repeat:
+        n += 1
+    state["missing_asks"] = n
+    return n
 
 
 def get_awaiting_confirmation(session_id: str | None, current_turn: int) -> dict | None:
@@ -754,6 +759,43 @@ def _match_service(treatments: list[dict], service_name: str) -> tuple[dict | No
 
 _LATIN_RE = re.compile(r"[A-Za-z]")
 
+_DEV_C = {
+    "क": "k", "ख": "k", "ग": "g", "घ": "g", "ङ": "n", "च": "ch", "छ": "ch", "ज": "j", "झ": "j", "ञ": "n",
+    "ट": "t", "ठ": "t", "ड": "d", "ढ": "d", "ण": "n", "त": "t", "थ": "t", "द": "d", "ध": "d", "न": "n",
+    "प": "p", "फ": "f", "ब": "b", "भ": "b", "म": "m", "य": "y", "र": "r", "ल": "l", "व": "v", "श": "s",
+    "ष": "s", "स": "s", "ह": "h", "ज़": "j",
+}
+_DEV_V = {"अ": "a", "आ": "a", "इ": "i", "ई": "i", "उ": "u", "ऊ": "u", "ए": "e", "ऐ": "e", "ओ": "o", "औ": "o",
+          "ा": "a", "ि": "i", "ी": "i", "ु": "u", "ू": "u", "े": "e", "ै": "e", "ो": "o", "ौ": "o"}
+
+
+def _devanagari_skeleton(text: str) -> str:
+    """Rough consonant skeleton of a Devanagari (or Latin) string, so a
+    transliterated service name ("ब्रो लामिनेसन") can be compared with the
+    Latin catalog name ("Brow Lamination"). Heuristic by design."""
+    out = []
+    for ch in text.lower():
+        if ch in _DEV_C:
+            out.append(_DEV_C[ch])
+        elif "a" <= ch <= "z":
+            out.append(ch)
+    sk = "".join(out)
+    sk = re.sub(r"[aeiouw]", "", sk)
+    return sk.replace("ch", "c").replace("sh", "s").replace("ph", "f").replace("th", "t").replace("kh", "k")
+
+
+def _best_transliteration_match(treatments: list[dict], service: str) -> dict | None:
+    q = _devanagari_skeleton(service)
+    if len(q) < 3:
+        return None
+    scored = sorted(
+        ((difflib.SequenceMatcher(None, q, _devanagari_skeleton(t["name"])).ratio(), t) for t in treatments),
+        key=lambda x: -x[0],
+    )
+    if scored and scored[0][0] >= 0.6 and (len(scored) == 1 or scored[0][0] - scored[1][0] >= 0.1):
+        return scored[0][1]
+    return None
+
 
 def _resolve_session_service(
     treatments: list[dict], service: str | None, session_id: str | None,
@@ -772,6 +814,17 @@ def _resolve_session_service(
         if state is not None:
             state["bound_service_id"] = matched["id"]
         return matched, []
+    if service and not _LATIN_RE.search(service):
+        # Non-Latin: either the model's corrupted echo of the bound service
+        # or a genuine switch stated in Devanagari ("होइन, ब्रो लामिनेसन").
+        # Compare by transliteration skeleton against the whole catalog; a
+        # confident match wins (and rebinds), whichever service it is.
+        translit = _best_transliteration_match(treatments, service)
+        if translit:
+            if state is not None:
+                state["bound_service_id"] = translit["id"]
+            logger.info("[CLINIC-AGENT] service_transliteration_match service_id=%s", translit["id"])
+            return translit, []
     bound = None
     if state is not None:
         bound = next((t for t in treatments if t["id"] == state.get("bound_service_id")), None)
