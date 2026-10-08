@@ -55,3 +55,6 @@ NUL
 
 # MCP client config — holds connection strings/credentials; keep local only
 .mcp.json
+
+# local widget design harness (symlink to samis demo, not committed)
+widget/dev-samis
