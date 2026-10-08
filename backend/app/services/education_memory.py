@@ -15,6 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.education_memory import VisitorProfile, WidgetMessage
+from app.schemas.ui_blocks import upgrade_stored_block
 from app.services.education_profile import new_profile
 
 HISTORY_FOR_LLM = 10
@@ -92,7 +93,7 @@ class DbEducationMemory:
             if row.role == "assistant":
                 for b in row.blocks:
                     if b.get("block_id") == block_id:
-                        return b
+                        return upgrade_stored_block(b)
         return None
 
     async def _recent(self, customer_id: uuid.UUID, session_id: str, limit: int) -> list[WidgetMessage]:
@@ -110,8 +111,8 @@ class DbEducationMemory:
                 shown_titles([{"blocks": m.blocks} for m in rows]))
 
     async def list_messages(self, customer_id: uuid.UUID, session_id: str, limit: int = HISTORY_FOR_WIDGET) -> list[dict]:
-        return [{"id": str(m.id), "role": m.role, "content": m.content, "blocks": m.blocks,
-                 "created_at": m.created_at.isoformat()}
+        return [{"id": str(m.id), "role": m.role, "content": m.content,
+                 "blocks": [upgrade_stored_block(b) for b in m.blocks], "created_at": m.created_at.isoformat()}
                 for m in await self._recent(customer_id, session_id, limit)]
 
 
@@ -153,7 +154,7 @@ class InMemoryEducationMemory:
             if msg["role"] == "assistant":
                 for b in msg["blocks"]:
                     if b.get("block_id") == block_id:
-                        return b
+                        return upgrade_stored_block(b)
         return None
 
     async def load_history(self, customer_id, session_id, limit: int = HISTORY_FOR_LLM):
@@ -161,4 +162,5 @@ class InMemoryEducationMemory:
         return [{"role": m["role"], "content": m["content"]} for m in rows], shown_titles(rows)
 
     async def list_messages(self, customer_id, session_id, limit: int = HISTORY_FOR_WIDGET) -> list[dict]:
-        return self.messages[(customer_id, session_id)][-limit:]
+        return [{**m, "blocks": [upgrade_stored_block(b) for b in m["blocks"]]}
+                for m in self.messages[(customer_id, session_id)][-limit:]]

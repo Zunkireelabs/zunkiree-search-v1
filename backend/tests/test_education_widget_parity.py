@@ -78,3 +78,29 @@ def test_built_blocks_carry_the_registry_version():
     from app.schemas.ui_blocks import build_block
     block = build_block("quick_chips", {"chips": [{"id": "a", "label": "A"}]}, fallback_text="A")
     assert block.schema_version == UI_TYPES["quick_chips"].version
+
+
+# ---- widget SUPPORTED_VERSIONS <-> backend versions ----
+
+def _widget_supported_versions() -> dict[str, list[int]]:
+    src = (BLOCKS_DIR / "blockVersions.ts").read_text()
+    body = src[src.index("SUPPORTED_VERSIONS: Record<string, number[]> = {"):]
+    body = body[:body.index("\n}")]
+    return {m[1]: [int(v) for v in re.findall(r"\d+", m[2])]
+            for m in re.finditer(r"^\s*([a-z_]+):\s*\[([\d,\s]*)\]", body, re.M)}
+
+
+def test_widget_version_table_covers_exactly_the_registered_types():
+    assert set(_widget_supported_versions()) == set(UI_TYPES)
+
+
+def test_widget_can_render_the_version_the_backend_emits_for_every_type():
+    # Fails when a backend `version` is bumped before the widget lists it (rollout rule: widget first, backend second).
+    supported = _widget_supported_versions()
+    behind = {t: (s.version, supported[t]) for t, s in UI_TYPES.items() if s.version not in supported[t]}
+    assert not behind, f"widget cannot render the backend's current version: {behind}"
+
+
+def test_widget_version_lists_are_well_formed():
+    for t, versions in _widget_supported_versions().items():
+        assert versions and all(v >= 1 for v in versions) and versions == sorted(set(versions)), t

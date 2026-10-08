@@ -26,7 +26,7 @@ import logging
 import re
 from dataclasses import dataclass
 
-from app.schemas.ui_blocks import BlockValidationError, UIBlock, build_block
+from app.schemas.ui_blocks import BlockValidationError, UIBlock, build_block, is_current, upgrade_stored_block
 
 logger = logging.getLogger("zunkiree.education_kb_blocks")
 
@@ -264,8 +264,10 @@ async def kb_block(client, model: str, profile: dict, shape: str, question: str,
 
     stored = shown.get(key) or _shared_cache.get(key)
     if stored:
-        shown.setdefault(key, stored)
-        return UIBlock.model_validate(stored["block"])
+        upgraded = upgrade_stored_block(stored["block"])   # an older UI version is upgraded, else rebuilt below
+        if is_current(upgraded):
+            shown.setdefault(key, stored)
+            return UIBlock.model_validate(upgraded)
 
     block = await extract_block(client, model, shape, question, chunks)
     if block:

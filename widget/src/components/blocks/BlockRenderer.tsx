@@ -17,6 +17,7 @@ import { Timeline } from './Timeline'
 import { CostCalculator } from './CostCalculator'
 import { JourneyCards } from './JourneyCards'
 import { AnswerSummary, COLLAPSIBLE, summarize } from './AnswerSummary'
+import { isSupported } from './blockVersions'
 
 // One component per block type: the same type always renders the same way.
 const REGISTRY: Record<string, ComponentType<BlockComponentProps>> = {
@@ -55,8 +56,10 @@ export function BlockRenderer({ block, onAction, locked, busy = false }: BlockRe
   useEffect(() => setEditing(false), [block.answered])
 
   const Component = REGISTRY[block.type]
-  // Unknown type (e.g. older widget bundle, newer backend): degrade to text, never crash.
-  if (!Component) return <div className="zk-block__fallback">{block.fallback_text}</div>
+  // Unknown type or a version this bundle can't render (older widget, newer backend): degrade to text, never crash.
+  if (!Component || !isSupported(block.type, block.schema_version)) {
+    return <div className="zk-block__fallback">{block.fallback_text}</div>
+  }
 
   const summary = COLLAPSIBLE.has(block.type) && !editing ? summarize(block) : null
   if (summary) return <AnswerSummary question={block.title} answer={summary} busy={busy} onEdit={() => setEditing(true)} />

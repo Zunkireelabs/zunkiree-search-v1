@@ -13,7 +13,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Callable
 
-from app.schemas.ui_blocks import BlockValidationError, UIBlock, build_block
+from app.schemas.ui_blocks import BlockValidationError, UIBlock, build_block, is_current, upgrade_stored_block
 from app.services.education_catalog import Catalog, CountryRecord, check_eligibility, score_countries
 from app.services.education_profile import (
     FIELD_LABELS, apply_updates, missing_slots, profile_hash, profile_rows, snapshot,
@@ -117,6 +117,10 @@ def _cached(profile: dict, spec: IntentSpec, key: str, build: Callable[[], UIBlo
     shown = profile.setdefault("shown", {})
     h = profile_hash(profile, spec.input_fields)
     prior = shown.get(cache_key)
+    if prior:
+        # A block cached at an older UI version is upgraded if possible, otherwise treated as a miss and rebuilt.
+        upgraded = upgrade_stored_block(prior["block"])
+        prior = {**prior, "block": upgraded} if is_current(upgraded) else None
 
     if prior and prior["hash"] == h:
         return UIBlock.model_validate(prior["block"])

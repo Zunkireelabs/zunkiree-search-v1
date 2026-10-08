@@ -41,11 +41,12 @@ describe('BlockRenderer: unknown types', () => {
     expect(out).not.toContain('<section')
   })
 
-  it('currently ignores schema_version: a known type at a future version still renders as the known type', () => {
-    // Documents today's behavior. Versioned rendering is a later step and will change this test.
+  it('shows the fallback text for a known type at a version this widget cannot render', () => {
+    // Versioned rendering (Step 5B): an older bundle must not mis-render a newer block.
     const out = html(block('stepper', SAMPLES.stepper, { schema_version: 99 }))
-    expect(out).toContain('zk-block--stepper')
-    expect(out).not.toContain('zk-block__fallback')
+    expect(out).toContain('zk-block__fallback')
+    expect(out).toContain('FALLBACK TEXT')
+    expect(out).not.toContain('zk-block--stepper')
   })
 })
 

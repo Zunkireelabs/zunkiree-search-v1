@@ -8,10 +8,11 @@ look (one component per type), so the same type always renders the same way.
 Every block carries `fallback_text` so channels that can't render UI (voice,
 Instagram, Orca adapters) get a clean text version.
 """
+import copy
 import hashlib
 import json
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Callable
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
@@ -226,6 +227,9 @@ class UISpec:
     allowed_actions: tuple[str, ...] = ()
     collapsible: bool = False        # input block that folds into a one-line answer once answered
     dims_when_locked: bool = False   # looks "used up" once superseded or answered
+    # from-version -> function turning that version's `data` into the next version's. Needed when `version` is bumped so
+    # blocks stored at an older version (history, caches) still render; see upgrade_stored_block.
+    upgraders: dict[int, Callable[[dict], dict]] = field(default_factory=dict)
 
 
 UI_TYPES: dict[str, UISpec] = {s.type: s for s in [
@@ -257,6 +261,44 @@ UI_TYPES: dict[str, UISpec] = {s.type: s for s in [
 
 # Derived view kept for existing callers: type -> data model.
 DATA_MODELS: dict[str, type[BaseModel]] = {t: s.data_model for t, s in UI_TYPES.items()}
+
+
+def _version_of(block: dict) -> int | None:
+    version = block.get("schema_version", 1)   # blocks stored before versions existed are v1
+    return version if isinstance(version, int) and not isinstance(version, bool) else None
+
+
+def _spec_of(block: dict) -> UISpec | None:
+    block_type = block.get("type")
+    return UI_TYPES.get(block_type) if isinstance(block_type, str) else None
+
+
+def is_current(block: dict) -> bool:
+    """True when a stored block is a registered type at the registry's current version."""
+    spec = _spec_of(block)
+    return spec is not None and _version_of(block) == spec.version
+
+
+def upgrade_stored_block(block: dict) -> dict:
+    """A block stored at an older version, brought up to the current version through the registry's upgraders.
+
+    Returns the block unchanged when it is already current, of an unknown type, NEWER than this backend, or cannot be
+    upgraded (a step is missing, an upgrader raises, or the result fails the current schema). The caller then rebuilds
+    it or the widget shows its `fallback_text`. Never mutates its input; keeps `block_id` so taps still resolve."""
+    spec, version = _spec_of(block), _version_of(block)
+    if spec is None or version is None or version >= spec.version:
+        return block
+    data = copy.deepcopy(block.get("data") or {})
+    try:
+        for from_version in range(version, spec.version):
+            step = spec.upgraders.get(from_version)
+            if step is None:
+                return block
+            data = step(data)
+        clean = spec.data_model.model_validate(data).model_dump(exclude_none=True)
+    except Exception:
+        return block
+    return {**block, "data": clean, "schema_version": spec.version}
 
 
 class BlockAction(BaseModel):
