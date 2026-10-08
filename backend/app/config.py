@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     # the lane's 2-socket DB budget and CPU doing Stella work that belongs to
     # the main prod API container. One lane, one job. See P2 brief §4 B2.
     enable_inbound_dispatcher: bool = True
+    # Run Base.metadata.create_all() at startup. Default on = unchanged behavior. Stage and prod share one
+    # Supabase DB, so with this on a new model auto-creates its table there without migration review.
+    # Set AUTO_CREATE_TABLES=false once schema changes are migration-only.
+    auto_create_tables: bool = True
     # P4 B2: background pre-warm of the clinic org cache + one OpenAI
     # warm-up call at container start (see clinic_prewarm.py). Additive,
     # config-level rollback (vision §8.12) — default on, off flips the lane

@@ -40,8 +40,11 @@ async def lifespan(app: FastAPI):
     # Startup
     print("Starting Zunkiree Search API...")
     try:
-        await init_db()
-        print("Database initialized.")
+        if settings.auto_create_tables:
+            await init_db()
+            print("Database initialized.")
+        else:
+            print("AUTO_CREATE_TABLES=false: skipping create_all (schema is migration-managed).")
     except Exception as e:
         print(f"Warning: Database initialization failed: {e}")
         print("App will continue without database init - tables may already exist.")
