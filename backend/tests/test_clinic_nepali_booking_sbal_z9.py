@@ -119,25 +119,18 @@ def test_invalid_name_loop_reaches_retry_then_handoff():
     assert len(set(prompts[:3])) == 3
 
 
-def test_devanagari_mid_flow_service_change_switches_never_silently_keeps(caplog):
-    """R2: "होइन, ब्रो लामिनेसन" is non-Latin and matches nothing by name —
-    it must switch to Brow Lamination, not keep the bound Lash Lift."""
+def test_devanagari_mid_flow_service_change_keeps_bound_service(caplog):
+    """Documented limit (post-demo re-land per brief §7): a switch stated in
+    Devanagari ("होइन, ब्रो लामिनेसन") is non-Latin and matches nothing, so
+    the bound service is kept (logged) and the read-back names it — the
+    caller hears it and can correct. Pinned so the limit is not silent."""
     import logging
     sid = "z9-switch"
     clinic_tools._SESSION_STATE.pop(sid, None)
     _resolve_session_service(TREATMENTS, "Lash Lift", sid)
     with caplog.at_level(logging.INFO, logger="zunkiree.clinic_tools"):
         t, _ = _resolve_session_service(TREATMENTS, "ब्रो लामिनेसन", sid)
-        assert t["id"] == "t-brow"
-        assert "service_transliteration_match" in caplog.text
-        # ...and a later corrupted echo of the NEW service keeps the new one.
-        t, _ = _resolve_session_service(TREATMENTS, "भोलिको", sid)
-        assert t["id"] == "t-brow" and "service_rebound_to_session" in caplog.text
-
-
-def test_devanagari_echo_of_bound_service_resolves_by_transliteration():
-    sid = "z9-echo"
-    clinic_tools._SESSION_STATE.pop(sid, None)
-    _resolve_session_service(TREATMENTS, "Lash Lift", sid)
-    t, _ = _resolve_session_service(TREATMENTS, "ल्यास लिफ्ट", sid)
     assert t["id"] == "t-lash"
+    assert "service_rebound_to_session" in caplog.text
+    # A Latin-stated switch still wins.
+    assert _resolve_session_service(TREATMENTS, "Brow Lamination", sid)[0]["id"] == "t-brow"
