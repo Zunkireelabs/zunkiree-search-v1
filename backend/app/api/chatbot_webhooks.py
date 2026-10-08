@@ -872,9 +872,13 @@ async def _handle_incoming_message(
                     )
             elif ui and ui.get("slots"):
                 try:
+                    # SBAL-Z8 F3: the chip prompt follows the conversation's
+                    # language (clinic_agent.py sets slots_prompt alongside
+                    # slots); "Pick a time:" only as a fallback for a `ui`
+                    # shape that predates this field.
                     await client.send_chips(
                         platform=platform, page_id=send_page_id, access_token=access_token,
-                        recipient_id=sender_id, text="Pick a time:",
+                        recipient_id=sender_id, text=ui.get("slots_prompt") or "Pick a time:",
                         chips=ui["slots"][:13],
                     )
                 except Exception as e:

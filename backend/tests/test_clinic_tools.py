@@ -169,6 +169,58 @@ async def test_prepare_booking_refuses_empty_session_id(monkeypatch):
     assert result["error"] == "MISSING_SESSION"
 
 
+# SBAL-Z8 F1: the agent (clinic_agent.py) builds a deterministic "what's
+# your name and phone" ask from these fields instead of letting the model
+# narrate a false "I can book..." claim — needs service_name/date/time on
+# the error itself, not just prepare_booking's fully-resolved success
+# shape. Both backend types resolve a treatment the same way before
+# reaching the missing-details check, so both get the same fields.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("backend_type", ["clinicmd", "zennly"])
+async def test_prepare_booking_missing_phone_carries_resolved_fields(monkeypatch, backend_type):
+    async def fake_resolve_org(db, customer):
+        return ORG_ID, [BRANCH], backend_type
+
+    monkeypatch.setattr(clinic_tools, "_resolve_org", fake_resolve_org)
+    client = FakeClient()
+    monkeypatch.setattr(clinic_tools, "get_clinicmd_client", lambda: client)
+    monkeypatch.setattr(clinic_tools, "get_zennly_client", lambda: client)
+    customer = _make_customer()
+
+    result = await clinic_tools._prepare_booking(
+        db=AsyncMock(), customer=customer, session_id="s1", current_turn=1,
+        service="Teeth Cleaning", date="2026-10-01", time="10:00",
+        full_name="Jane", phone="",
+    )
+    assert result["error"] == "INVALID_PHONE"
+    assert result["service_name"] == "Teeth Cleaning"
+    assert result["date"] == "2026-10-01"
+    assert result["time"] == "10:00"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("backend_type", ["clinicmd", "zennly"])
+async def test_prepare_booking_missing_name_carries_resolved_fields(monkeypatch, backend_type):
+    async def fake_resolve_org(db, customer):
+        return ORG_ID, [BRANCH], backend_type
+
+    monkeypatch.setattr(clinic_tools, "_resolve_org", fake_resolve_org)
+    client = FakeClient()
+    monkeypatch.setattr(clinic_tools, "get_clinicmd_client", lambda: client)
+    monkeypatch.setattr(clinic_tools, "get_zennly_client", lambda: client)
+    customer = _make_customer()
+
+    result = await clinic_tools._prepare_booking(
+        db=AsyncMock(), customer=customer, session_id="s1", current_turn=1,
+        service="Teeth Cleaning", date="2026-10-01", time="10:00",
+        full_name="", phone="9841234567",
+    )
+    assert result["error"] == "INVALID_NAME"
+    assert result["service_name"] == "Teeth Cleaning"
+    assert result["date"] == "2026-10-01"
+    assert result["time"] == "10:00"
+
+
 # --- service/branch resolution (list-position id hallucination guard) ---
 
 @pytest.mark.asyncio
