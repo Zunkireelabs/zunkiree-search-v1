@@ -14,6 +14,7 @@ a throwaway copy of the profile), so nothing is offered that can't be delivered.
 """
 from app.schemas.ui_blocks import UIBlock, build_block
 from app.services.education_catalog import Catalog
+from app.services.education_followup import COUNTRY_INTENTS
 from app.services.education_tools import execute_education_tool, tool_for_intent
 
 MAX_CHIPS = 3
@@ -85,6 +86,22 @@ def _country_id(catalog: Catalog, value) -> str | None:
         return value
     found = catalog.find_in_text(str(value or ""))
     return found[0] if found else None
+
+
+def normalized_args(intent: str, raw: dict, catalog: Catalog) -> dict:
+    """Arguments as catalog ids. A tool called by the LLM passes names and aliases ("Australia", "UK"); the saved state and
+    the buttons need ids. Anything that doesn't resolve is dropped."""
+    if intent in COUNTRY_INTENTS:
+        country = _country_id(catalog, raw.get("country"))
+        return {"country": country} if country else {}
+    if intent == "compare":
+        ids: list[str] = []
+        for value in raw.get("countries") or []:
+            cid = _country_id(catalog, value)
+            if cid and cid not in ids:
+                ids.append(cid)
+        return {"countries": ids[:3]}
+    return {}
 
 
 def _candidates(intent: str, args: dict, primary: UIBlock, catalog: Catalog) -> list[str]:

@@ -26,17 +26,17 @@ from app.models.widget_config import WidgetConfig
 from app.schemas.ui_blocks import UIBlock
 from app.services.clinic_agent import _LANGUAGE_DIRECTIVES  # reuse the SAME strings dental-city ships
 from app.services.education_catalog import Catalog, get_catalog
-from app.services.education_compositions import chip_intent, compose, counselor_block
+from app.services.education_compositions import chip_intent, compose, counselor_block, normalized_args
 from app.services.education_actions import validate_block_action
-from app.services.education_followup import record_ui_state, resolve_country_switch, resolve_refinement
-from app.services.education_kb_blocks import PENDING_LABELS, SHAPE_TO_BLOCK, classify_shape, kb_block
+from app.services.education_followup import RESULT_INTENTS, record_ui_state, resolve_country_switch, resolve_refinement
+from app.services.education_kb_blocks import PENDING_LABELS, SHAPE_TO_BLOCK, classify_shape, kb_block, looks_like_question
 from app.services.education_leadins import KB_FOUND, KB_MISS, leadin_for
 from app.services.education_memory import DbEducationMemory
 from app.services.education_profile import (
     FIELD_LABELS, apply_block_action, display_value, merge_profiles, missing_slots, progress, set_field,
 )
 from app.services.education_tools import EDUCATION_TOOLS, ToolOutcome, execute_education_tool, tool_for_intent
-from app.services.education_ui_registry import country_goal, detect_intent, journey_intent
+from app.services.education_ui_registry import TOOL_TO_INTENT, country_goal, detect_intent, journey_intent
 from app.services.language_detection import detect_language
 from app.services.openai_client import get_openai_client
 from app.services.query import get_query_service
@@ -263,6 +263,9 @@ class EducationAgentService:
         # Knowledge-base lookup: for free-form questions and for "How to apply"; never for card turns or taps.
         context = "(not needed for this turn)"
         kb_miss = False
+        if intent is None and block_action is None and shape_request is None:
+            logger.info("[EDU] no_rule_match chars=%d words=%d lang=%s question_like=%s", len(question), len(question.split()),
+                        detect_language(question), looks_like_question(question))
         if intent is None and (block_action is None or shape_request):
             query_text = shape_request["query"] if shape_request else question
             shape = shape_request["shape"] if shape_request else await classify_shape(self.client, self.model, question)
@@ -327,6 +330,8 @@ class EducationAgentService:
         full_answer = templated or ""
         if templated:
             yield {"type": "token", "data": templated}
+        loop_templated: str | None = None
+        card_in_loop = False   # only the FIRST result card an LLM-called tool shows in a turn is composed and remembered
         for _ in range(0 if templated else MAX_TOOL_ITERATIONS):
             await db.commit()  # release the pooler connection before each LLM round-trip
 
@@ -372,10 +377,31 @@ class EducationAgentService:
                 result = execute_education_tool(tool_name, tool_args, profile, catalog)
                 yield {"type": "tool_call", "name": tool_name, "status": "done"}
 
+                tool_message = result.message
                 if result.block and all(b.block_id != result.block.block_id for b in shown):
-                    shown.append(result.block)
-                    yield {"type": "ui_block", "block": result.block.model_dump()}
-                messages.append({"role": "tool", "tool_call_id": call["id"], "content": result.message})
+                    card_intent = TOOL_TO_INTENT.get(tool_name)
+                    if card_intent in RESULT_INTENTS and not card_in_loop:
+                        # Same treatment as a card the rules chose: companions, remembered state, a sentence from the card.
+                        card_in_loop = True
+                        card_args = normalized_args(card_intent, tool_args, catalog)
+                        record_ui_state(profile, card_intent, card_args)
+                        blocks = compose(card_intent, card_args, result.block, profile, catalog) if settings.education_compositions else [result.block]
+                        if len(blocks) > 1:
+                            tool_message += (" Related blocks and next-step buttons appear with it; "
+                                             "do not list, repeat or describe them.")
+                        if can_template:
+                            loop_templated = leadin_for(card_intent, card_args, result.block, catalog, brand_name)
+                    else:
+                        blocks = [result.block]
+                    for block in blocks:
+                        shown.append(block)
+                        yield {"type": "ui_block", "block": block.model_dump()}
+                messages.append({"role": "tool", "tool_call_id": call["id"], "content": tool_message})
+            if loop_templated and not current_text.strip():
+                # the card is on screen with its sentence written by code: no further LLM round trip is needed
+                full_answer = loop_templated
+                yield {"type": "token", "data": loop_templated}
+                break
             full_answer = current_text
 
         if not full_answer and shown:
