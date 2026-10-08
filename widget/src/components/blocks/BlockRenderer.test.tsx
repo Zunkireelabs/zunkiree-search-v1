@@ -6,8 +6,11 @@ import type { UIBlock } from './types'
 // Server-rendered to static HTML, so these tests need no DOM library. Clicking "Edit" and watching the
 // card reopen is therefore not covered here.
 
+// The version of each type the backend currently emits (everything else is still v1).
+const CURRENT_VERSION: Record<string, number> = { match_cards: 2, eligibility_meter: 2 }
+
 function block(type: string, data: Record<string, unknown>, extra: Partial<UIBlock> = {}): UIBlock {
-  return { block_id: `${type}-test`, type, schema_version: 1, title: 'A title', data, fallback_text: 'FALLBACK TEXT', ...extra }
+  return { block_id: `${type}-test`, type, schema_version: CURRENT_VERSION[type] ?? 1, title: 'A title', data, fallback_text: 'FALLBACK TEXT', ...extra }
 }
 
 function html(b: UIBlock, props: { locked?: boolean; busy?: boolean } = {}): string {
@@ -19,10 +22,10 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   choice_cards: { field: 'countries', multi: true, options: [{ id: 'uk', label: 'U.K.' }, { id: 'au', label: 'Australia' }], selected: [] },
   quick_chips: { chips: [{ id: 'a', label: 'Chip A' }] },
   range_slider: { field: 'budget', min: 10000, max: 50000, step: 1000, value: 25000, unit: '$' },
-  match_cards: { items: [{ id: 'uk', label: 'U.K.', score: 80, reasons: ['Fits your budget'] }] },
+  match_cards: { items: [{ id: 'uk', label: 'U.K.', tier: 'strong', tier_label: 'Strong fit', reasons: [{ status: 'pass', text: 'Fits your budget' }] }] },
   info_card: { heading: 'U.K. quick facts', rows: [{ label: 'Intakes', value: 'September' }] },
   comparison_table: { columns: [{ id: 'uk', label: 'U.K.' }, { id: 'au', label: 'Australia' }], rows: [{ label: 'Tuition', values: ['1', '2'] }] },
-  eligibility_meter: { score: 50, verdict: 'You meet some requirements', checks: [{ label: 'English score', ok: true, detail: '6.5 vs 6 minimum' }] },
+  eligibility_meter: { verdict: 'You meet some requirements', checks: [{ label: 'English score', ok: true, detail: '6.5 vs 6 minimum' }] },
   profile_summary: { rows: [{ label: 'Budget', value: '$30,000 / year' }], missing: [] },
   lead_form: { fields: [{ id: 'name', label: 'Full name', type: 'text', required: true }] },
   stepper: { steps: [{ title: 'Step one' }, { title: 'Step two' }] },

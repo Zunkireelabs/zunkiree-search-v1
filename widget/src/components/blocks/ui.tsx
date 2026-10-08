@@ -9,22 +9,6 @@ export function CheckIcon({ size = 12 }: { size?: number }) {
   )
 }
 
-// Animated score ring (matches and eligibility).
-export function Ring({ value, size = 56, stroke = 6 }: { value: number; size?: number; stroke?: number }) {
-  const r = (size - stroke) / 2
-  const len = 2 * Math.PI * r
-  const style = { '--len': len, '--off': len * (1 - value / 100) } as CSSProperties
-  return (
-    <div className="zk-ring" style={{ width: size, height: size }}>
-      <svg width={size} height={size} style={style} aria-hidden="true">
-        <circle className="zk-ring__bg" cx={size / 2} cy={size / 2} r={r} strokeWidth={stroke} />
-        <circle className="zk-ring__fg" cx={size / 2} cy={size / 2} r={r} strokeWidth={stroke} />
-      </svg>
-      <span className="zk-ring__num" style={{ fontSize: size * 0.3 }} aria-label={`${value} percent`}>{value}<small>%</small></span>
-    </div>
-  )
-}
-
 // Eases a displayed number towards its target (totals that count up/down as sliders move).
 export function useCountUp(target: number, ms = 320): number {
   const [shown, setShown] = useState(target)

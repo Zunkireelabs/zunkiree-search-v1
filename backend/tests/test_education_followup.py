@@ -113,7 +113,7 @@ def test_an_intake_month_the_catalog_does_not_offer_is_ignored(usd):
 def test_ui_state_records_intent_args_type_and_version():
     p = new_profile()
     record_ui_state(p, "eligibility", {"country": "uk", "goal": "eligibility"})
-    assert p["ui_state"] == {"intent": "eligibility", "args": {"country": "uk"}, "ui": {"type": "eligibility_meter", "version": 1}}
+    assert p["ui_state"] == {"intent": "eligibility", "args": {"country": "uk"}, "ui": {"type": "eligibility_meter", "version": 2}}
 
 
 def test_input_cards_never_replace_what_is_on_screen():
@@ -127,7 +127,7 @@ def test_input_cards_never_replace_what_is_on_screen():
 async def test_ui_state_survives_a_memory_round_trip():
     memory = InMemoryEducationMemory()
     await memory.save_profile(None, "s1", _on_screen("recommend_country", budget=30000))
-    assert (await memory.load_profile(None, "s1"))["ui_state"]["ui"] == {"type": "match_cards", "version": 1}
+    assert (await memory.load_profile(None, "s1"))["ui_state"]["ui"] == {"type": "match_cards", "version": 2}
 
 
 def test_a_profile_saved_before_ui_state_existed_still_works(usd):

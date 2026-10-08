@@ -1,12 +1,16 @@
 import type { BlockComponentProps, EligibilityData } from './types'
-import { CheckIcon, Ring, idx } from './ui'
+import { CheckIcon, idx } from './ui'
 
+// A verdict and the individual checks behind it. No percentage: it would read as a chance of success.
 export function EligibilityMeter({ block }: BlockComponentProps<EligibilityData>) {
-  const { score, verdict, checks } = block.data
+  const { verdict, checks } = block.data
+  const allMet = checks.every(c => c.ok)
   return (
     <div>
       <div className="zk-elig__top">
-        <Ring value={score} size={76} stroke={8} />
+        <span className={`zk-elig__badge ${allMet ? 'zk-elig__badge--ok' : 'zk-elig__badge--some'}`} aria-hidden="true">
+          {allMet ? <CheckIcon size={16} /> : '!'}
+        </span>
         <div className="zk-elig__verdict">{verdict}</div>
       </div>
       <ul className="zk-elig__checks">

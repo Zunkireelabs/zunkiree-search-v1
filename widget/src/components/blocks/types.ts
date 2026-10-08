@@ -45,11 +45,15 @@ export interface ChoiceOption { id: string; label: string; icon?: string; hint?:
 export interface ChoiceCardsData { multi: boolean; options: ChoiceOption[]; selected?: string[]; field: string }
 export interface QuickChipsData { chips: { id: string; label: string }[] }
 export interface RangeSliderData { field: string; min: number; max: number; step: number; value: number; unit: string }
-export interface MatchItem { id: string; label: string; icon?: string; score: number; reasons: string[] }
+export type FitTier = 'strong' | 'good' | 'possible' | 'needs_review'
+export type ReasonStatus = 'pass' | 'partial' | 'fail' | 'info'
+export interface MatchReason { text: string; status: ReasonStatus }
+// A fit tier describes how the student's own details line up with the catalog. It is never a chance of admission.
+export interface MatchItem { id: string; label: string; icon?: string; tier: FitTier; tier_label: string; reasons: MatchReason[] }
 export interface MatchCardsData { items: MatchItem[] }
 export interface InfoCardData { icon?: string; heading: string; rows: { label: string; value: string }[] }
 export interface ComparisonData { columns: { id: string; label: string; icon?: string }[]; rows: { label: string; values: string[] }[] }
-export interface EligibilityData { score: number; verdict: string; checks: { label: string; ok: boolean; detail: string }[] }
+export interface EligibilityData { verdict: string; checks: { label: string; ok: boolean; detail: string }[] }
 export interface ProfileSummaryData { welcome_back?: boolean; rows: { label: string; value: string }[]; missing?: string[] }
 export interface LeadFormData { fields: { id: string; label: string; type: 'text' | 'email' | 'tel'; required: boolean; value?: string }[] }
 export interface StepperData { steps: { title: string; detail?: string }[] }

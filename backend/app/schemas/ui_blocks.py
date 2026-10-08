@@ -12,9 +12,9 @@ import copy
 import hashlib
 import json
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 SCHEMA_VERSION = 1
 
@@ -65,12 +65,19 @@ class RangeSliderData(BaseModel):
         return self
 
 
+class MatchReason(BaseModel):
+    text: str
+    status: Literal["pass", "partial", "fail", "info"]
+
+
 class MatchItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")   # a v1-shaped item (with a percentage score) must not slip through
     id: str
     label: str
     icon: str | None = None
-    score: int = Field(ge=0, le=100)
-    reasons: list[str] = []
+    tier: Literal["strong", "good", "possible", "needs_review"]
+    tier_label: str
+    reasons: list[MatchReason] = []
 
 
 class MatchCardsData(BaseModel):
@@ -118,7 +125,7 @@ class EligibilityCheck(BaseModel):
 
 
 class EligibilityData(BaseModel):
-    score: int = Field(ge=0, le=100)
+    model_config = ConfigDict(extra="forbid")
     verdict: str
     checks: list[EligibilityCheck] = Field(min_length=1)
 
@@ -243,14 +250,15 @@ UI_TYPES: dict[str, UISpec] = {s.type: s for s in [
            LeadFormData, allowed_actions=("submit",), collapsible=True, dims_when_locked=True),
     UISpec("quick_chips", "Row of tappable suggestion chips.", "Offer quick follow-up topics. Chip ids are data-defined, so no fixed actions. No backend tool emits it yet.",
            QuickChipsData, dims_when_locked=True),
-    UISpec("match_cards", "Ranked destination matches with reasons.", "Answer which countries fit the student's profile.",
-           MatchCardsData, allowed_actions=("explore",), dims_when_locked=True),
+    UISpec("match_cards", "Destinations grouped by how well they fit what the student told us, each with its reasons.",
+           "Answer which countries fit the student's profile. A fit tier is not a chance of admission or of a visa.",
+           MatchCardsData, version=2, allowed_actions=("explore",), dims_when_locked=True),
     UISpec("profile_summary", "What we know about the student.", "Show or confirm the saved profile.",
            ProfileSummaryData, allowed_actions=("edit",), dims_when_locked=True),
     UISpec("info_card", "Heading with label/value rows.", "Quick facts about one country.", InfoCardData),
     UISpec("comparison_table", "Side-by-side table of 2-3 columns.", "Compare countries.", ComparisonData),
     UISpec("eligibility_meter", "Pass/fail checks against entry requirements.", "Check the student's scores against one country.",
-           EligibilityData),
+           EligibilityData, version=2),
     UISpec("cost_calculator", "Adjustable cost parts with a live total.", "Estimate yearly cost for one country.",
            CostCalculatorData, allowed_actions=("set_value",)),
     UISpec("stepper", "Ordered steps.", "A process taken from the knowledge base.", StepperData),

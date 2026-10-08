@@ -51,16 +51,17 @@ const FLOW: { say: string; block: UIBlock }[] = [
   ] } } },
   { say: 'Great! Which countries are you interested in?', block: { ...base, block_id: 'b1', type: 'choice_cards', title: 'Destination countries', subtitle: 'Pick one or more', fallback_text: 'Which countries are you interested in?', data: { field: 'countries', multi: true, options: COUNTRIES } } },
   { say: 'What is your budget per year (tuition + living)?', block: { ...base, block_id: 'b2', type: 'range_slider', title: 'Yearly budget', fallback_text: 'What is your yearly budget?', data: { field: 'budget', min: 10000, max: 60000, step: 1000, value: 25000, unit: '$' } } },
-  { say: 'Here are the countries that match your profile.', block: { ...base, block_id: 'b3', type: 'match_cards', title: 'Countries that match your profile', fallback_text: 'Best matches: Australia 92%, U.K. 85%, Canada 78%.', data: { items: [
-    { id: 'au', label: 'Australia', icon: '🇦🇺', score: 92, reasons: ['Fits your $25k budget', 'Post-study work visa up to 3 years', 'Feb & July intakes'] },
-    { id: 'uk', label: 'U.K.', icon: '🇬🇧', score: 85, reasons: ['1-year master’s programs', 'IELTS 6.5 accepted'] },
-    { id: 'ca', label: 'Canada', icon: '🇨🇦', score: 78, reasons: ['Work while studying', 'Slightly above your budget'] },
+  { say: 'Here is how the countries line up with what you told me.', block: { ...base, schema_version: 2, block_id: 'b3', type: 'match_cards', title: 'Countries that match your profile', fallback_text: 'Fit with what you told us: Australia (Strong fit), U.K. (Good fit), Canada (Possible fit), U.S.A. (Needs review).', data: { items: [
+    { id: 'au', label: 'Australia', icon: '🇦🇺', tier: 'strong', tier_label: 'Strong fit', reasons: [{ status: 'pass', text: 'Fits your $40,000 budget' }, { status: 'pass', text: 'English score meets the 6 minimum' }, { status: 'pass', text: 'Has a February intake' }, { status: 'info', text: 'Post-study work: 2–4 years' }] },
+    { id: 'uk', label: 'U.K.', icon: '🇬🇧', tier: 'good', tier_label: 'Good fit', reasons: [{ status: 'partial', text: 'Within your budget for most options ($27,000–$45,000/yr)' }, { status: 'pass', text: 'English score meets the 6 minimum' }] },
+    { id: 'ca', label: 'Canada', icon: '🇨🇦', tier: 'possible', tier_label: 'Possible fit', reasons: [{ status: 'partial', text: 'Within your budget for most options ($21,000–$40,000/yr)' }, { status: 'pass', text: 'English score meets the 6 minimum' }, { status: 'partial', text: 'No September intake listed (offers January)' }] },
+    { id: 'us', label: 'U.S.A.', icon: '🇺🇸', tier: 'needs_review', tier_label: 'Needs review', reasons: [{ status: 'fail', text: 'Above your budget (from $30,000/yr)' }, { status: 'fail', text: 'English score is below the 6.5 minimum' }] },
   ] } } },
   { say: 'UK vs Australia, side by side:', block: { ...base, block_id: 'b4', type: 'comparison_table', title: 'U.K. vs Australia', fallback_text: 'Comparison of UK and Australia.', data: { columns: [{ id: 'uk', label: 'U.K.', icon: '🇬🇧' }, { id: 'au', label: 'Australia', icon: '🇦🇺' }], rows: [
     { label: 'Tuition / year', values: ['£15,000', 'A$30,000'] }, { label: 'Living / year', values: ['£12,000', 'A$24,000'] },
     { label: 'Intakes', values: ['Sep, Jan', 'Feb, Jul'] }, { label: 'Work visa', values: ['2 years', '2–3 years'] },
   ] } } },
-  { say: 'Let me check your eligibility for Australia.', block: { ...base, block_id: 'b5', type: 'eligibility_meter', title: 'Australia eligibility', fallback_text: 'You meet most requirements for Australia.', data: { score: 80, verdict: 'You meet most requirements', checks: [
+  { say: 'Let me check your eligibility for Australia.', block: { ...base, block_id: 'b5', schema_version: 2, type: 'eligibility_meter', title: 'Australia eligibility', fallback_text: 'You meet some requirements for Australia.', data: { verdict: 'You meet most requirements', checks: [
     { label: 'English (IELTS 6.5)', ok: true, detail: 'Meets the 6.5 minimum' },
     { label: 'Academic score', ok: true, detail: '72% — above the 60% cutoff' },
     { label: 'Funds', ok: false, detail: 'Proof of A$29,710 living costs needed' },

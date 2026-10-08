@@ -24,11 +24,9 @@ logger = logging.getLogger("zunkiree.education_catalog")
 
 CATALOG_DIR = Path(__file__).resolve().parent.parent / "data" / "education_catalogs"
 
-# Criteria weights for country matching. Only criteria that BOTH the profile and
-# the catalog can evaluate count, so missing data never fakes a score.
-W_BUDGET = 40
-W_ENGLISH = 30
-W_ACADEMIC = 30
+# Fit tiers, from what the student told us and what the catalog states. No weights and no percentages.
+TIER_ORDER = ("strong", "good", "possible", "needs_review")
+TIER_LABELS = {"strong": "Strong fit", "good": "Good fit", "possible": "Possible fit", "needs_review": "Needs review"}
 
 
 class CountryRecord(BaseModel):
@@ -139,67 +137,79 @@ def _fmt(currency: str, n: int) -> str:
     return format_money(n, currency)
 
 
-def score_countries(profile: dict, catalog: Catalog) -> list[dict]:
+def _tier(passed: int, partial: int, failed: int) -> str:
+    """The tier is a statement about which of the student's own details line up with the catalog's. It is NOT a chance of
+    admission or of a visa. Any failed check -> needs review; otherwise two or more checks that all pass -> strong; at most
+    one partial -> good; more -> possible."""
+    if failed:
+        return "needs_review"
+    if not partial and passed >= 2:
+        return "strong"
+    if partial <= 1:
+        return "good"
+    return "possible"
+
+
+def fit_countries(profile: dict, catalog: Catalog) -> list[dict]:
     """
-    Deterministic country matching. Pure function of (profile, catalog): the same
-    inputs always produce the same items in the same order (score desc, then id).
+    Deterministic country fit. Pure function of (profile, catalog): the same inputs always give the same items in the
+    same order (tier, then more passed checks, then id). Each check is pass / partial / fail, or skipped when the profile
+    or the catalog doesn't have the data, so missing data never fakes a result. A country with no budget, English or
+    academic check to run is left out (an intake alone is not enough to say anything).
     """
     cur = catalog.currency
     budget = profile.get("budget")
     english = profile.get("english_score")
     academic = profile.get("academic_score")
-    intake = (profile.get("intake") or "").lower()
+    intake = profile.get("intake") or ""
     items = []
 
     for c in catalog.countries:
-        earned = possible = 0.0
-        reasons: list[str] = []
+        reasons: list[dict] = []
+        hard = 0  # budget / English / academic checks that could be run
 
         if budget is not None and c.yearly_min is not None and c.yearly_max is not None:
-            possible += W_BUDGET
+            hard += 1
             if budget >= c.yearly_max:
-                earned += W_BUDGET
-                reasons.append(f"Fits your {_fmt(cur, budget)} budget")
+                reasons.append({"status": "pass", "text": f"Fits your {_fmt(cur, budget)} budget"})
             elif budget >= c.yearly_min:
-                span = max(c.yearly_max - c.yearly_min, 1)
-                earned += W_BUDGET * (0.6 + 0.4 * (budget - c.yearly_min) / span)
-                reasons.append(f"Within your budget for most options ({_fmt(cur, c.yearly_min)}–{_fmt(cur, c.yearly_max)}/yr)")
+                reasons.append({"status": "partial", "text":
+                                f"Within your budget for most options ({_fmt(cur, c.yearly_min)}–{_fmt(cur, c.yearly_max)}/yr)"})
             else:
-                earned += W_BUDGET * max(0.0, 0.4 * budget / c.yearly_min)
-                reasons.append(f"Above your budget (from {_fmt(cur, c.yearly_min)}/yr)")
+                reasons.append({"status": "fail", "text": f"Above your budget (from {_fmt(cur, c.yearly_min)}/yr)"})
 
         if english is not None and c.ielts_min is not None:
-            possible += W_ENGLISH
-            if english >= c.ielts_min:
-                earned += W_ENGLISH
-                reasons.append(f"English score meets the {c.ielts_min:g} minimum")
-            else:
-                earned += W_ENGLISH * max(0.0, 1 - (c.ielts_min - english) / c.ielts_min * 2)
-                reasons.append(f"English score is below the {c.ielts_min:g} minimum")
+            hard += 1
+            ok = english >= c.ielts_min
+            reasons.append({"status": "pass" if ok else "fail", "text":
+                            f"English score {'meets' if ok else 'is below'} the {c.ielts_min:g} minimum"})
 
         if academic is not None and c.academic_min_percent is not None:
-            possible += W_ACADEMIC
-            if academic >= c.academic_min_percent:
-                earned += W_ACADEMIC
-                reasons.append(f"Academic score meets the {c.academic_min_percent:g}% minimum")
-            else:
-                earned += W_ACADEMIC * max(0.0, 1 - (c.academic_min_percent - academic) / c.academic_min_percent * 2)
-                reasons.append(f"Academic score is below the {c.academic_min_percent:g}% minimum")
+            hard += 1
+            ok = academic >= c.academic_min_percent
+            reasons.append({"status": "pass" if ok else "fail", "text":
+                            f"Academic score {'meets' if ok else 'is below'} the {c.academic_min_percent:g}% minimum"})
 
-        if not possible:
+        if not hard:
             continue  # nothing we can honestly evaluate for this country
 
-        if intake and any(intake == i.lower() for i in c.intakes):
-            reasons.append(f"Has a {profile['intake']} intake")
+        if intake and c.intakes:
+            if intake.lower() in (i.lower() for i in c.intakes):
+                reasons.append({"status": "pass", "text": f"Has a {intake} intake"})
+            else:
+                reasons.append({"status": "partial", "text": f"No {intake} intake listed (offers {', '.join(c.intakes)})"})
+
+        counts = {k: sum(1 for r in reasons if r["status"] == k) for k in ("pass", "partial", "fail")}
+        tier = _tier(counts["pass"], counts["partial"], counts["fail"])
         if c.post_study_visa:
-            reasons.append(f"Post-study work: {c.post_study_visa}")
+            reasons.append({"status": "info", "text": f"Post-study work: {c.post_study_visa}"})
 
-        items.append({
-            "id": c.id, "label": c.label, "icon": c.icon,
-            "score": round(earned / possible * 100), "reasons": reasons[:3],
-        })
+        items.append({"id": c.id, "label": c.label, "icon": c.icon, "tier": tier, "tier_label": TIER_LABELS[tier],
+                      "reasons": reasons, "_passed": counts["pass"]})
 
-    items.sort(key=lambda i: (-i["score"], i["id"]))
+    items.sort(key=lambda i: (TIER_ORDER.index(i["tier"]), -i["_passed"], i["id"]))
+    for i in items:
+        del i["_passed"]
     return items
 
 
@@ -220,9 +230,8 @@ def check_eligibility(profile: dict, country: CountryRecord) -> dict | None:
         return None
 
     passed = sum(1 for c in checks if c["ok"])
-    score = round(passed / len(checks) * 100)
     verdict = ("You meet the requirements we can check" if passed == len(checks)
                else "You meet some requirements" if passed else "You don't meet the minimums yet")
     if country.funds_required:
         checks.append({"label": "Proof of funds", "ok": False, "detail": country.funds_required})
-    return {"score": score, "verdict": verdict, "checks": checks}
+    return {"verdict": verdict, "checks": checks}

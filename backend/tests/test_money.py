@@ -137,7 +137,7 @@ def test_profile_budget_is_written_in_the_catalog_currency():
 def test_match_reasons_mention_the_budget_in_npr():
     profile = {"budget": 5_000_000}
     items = execute_education_tool("show_country_matches", {}, profile, _npr_catalog()).block.data["items"]
-    assert any("NPR 50,00,000" in r for r in items[0]["reasons"])
+    assert any("NPR 50,00,000" in r["text"] for r in items[0]["reasons"])
 
 
 def test_usd_output_is_unchanged_from_before():

@@ -261,7 +261,7 @@
   "eligibility_uk": {
     "actions": [],
     "answered": null,
-    "block_id": "eligibility_meter-0f50f19ac4",
+    "block_id": "eligibility_meter-9a90cd23c8",
     "changed_because": null,
     "data": {
       "checks": [
@@ -276,11 +276,10 @@
           "ok": true
         }
       ],
-      "score": 100,
       "verdict": "You meet the requirements we can check"
     },
-    "fallback_text": "U.K.: You meet the requirements we can check (100%).",
-    "schema_version": 1,
+    "fallback_text": "U.K.: You meet the requirements we can check.",
+    "schema_version": 2,
     "sources": [],
     "subtitle": null,
     "title": "U.K. eligibility",
@@ -482,7 +481,7 @@
   "matches": {
     "actions": [],
     "answered": null,
-    "block_id": "match_cards-4bfe8cc79f",
+    "block_id": "match_cards-d3a362c77c",
     "changed_because": null,
     "data": {
       "items": [
@@ -491,37 +490,76 @@
           "id": "uk",
           "label": "U.K.",
           "reasons": [
-            "Fits your $40,000 budget",
-            "English score meets the 6.5 minimum",
-            "Academic score meets the 60% minimum"
+            {
+              "status": "pass",
+              "text": "Fits your $40,000 budget"
+            },
+            {
+              "status": "pass",
+              "text": "English score meets the 6.5 minimum"
+            },
+            {
+              "status": "pass",
+              "text": "Academic score meets the 60% minimum"
+            },
+            {
+              "status": "pass",
+              "text": "Has a September intake"
+            },
+            {
+              "status": "info",
+              "text": "Post-study work: 2 years"
+            }
           ],
-          "score": 100
+          "tier": "strong",
+          "tier_label": "Strong fit"
         },
         {
           "icon": "CA",
           "id": "ca",
           "label": "Canada",
           "reasons": [
-            "Within your budget for most options ($27,000\u2013$45,000/yr)",
-            "English score meets the 6 minimum"
+            {
+              "status": "partial",
+              "text": "Within your budget for most options ($27,000\u2013$45,000/yr)"
+            },
+            {
+              "status": "pass",
+              "text": "English score meets the 6 minimum"
+            }
           ],
-          "score": 94
+          "tier": "good",
+          "tier_label": "Good fit"
         },
         {
           "icon": "AU",
           "id": "au",
           "label": "Australia",
           "reasons": [
-            "Within your budget for most options ($38,000\u2013$59,000/yr)",
-            "English score meets the 6 minimum",
-            "Academic score meets the 55% minimum"
+            {
+              "status": "partial",
+              "text": "Within your budget for most options ($38,000\u2013$59,000/yr)"
+            },
+            {
+              "status": "pass",
+              "text": "English score meets the 6 minimum"
+            },
+            {
+              "status": "pass",
+              "text": "Academic score meets the 55% minimum"
+            },
+            {
+              "status": "partial",
+              "text": "No September intake listed (offers February, July)"
+            }
           ],
-          "score": 86
+          "tier": "possible",
+          "tier_label": "Possible fit"
         }
       ]
     },
-    "fallback_text": "Best matches: U.K. 100%, Canada 94%, Australia 86%.",
-    "schema_version": 1,
+    "fallback_text": "Fit with what you told us: U.K. (Strong fit), Canada (Good fit), Australia (Possible fit).",
+    "schema_version": 2,
     "sources": [],
     "subtitle": null,
     "title": "Countries that match your profile",

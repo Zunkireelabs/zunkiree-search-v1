@@ -71,7 +71,7 @@ def test_every_registered_type_is_documented_and_versioned():
     for t, s in UI_TYPES.items():
         assert s.type == t
         assert s.description.strip() and s.when_to_use.strip(), t
-        assert s.version == 1, t
+        assert s.version >= 1, t
 
 
 def test_built_blocks_carry_the_registry_version():

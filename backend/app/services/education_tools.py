@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from app.schemas.ui_blocks import BlockValidationError, UIBlock, build_block, is_current, upgrade_stored_block
-from app.services.education_catalog import Catalog, CountryRecord, check_eligibility, score_countries
+from app.services.education_catalog import Catalog, CountryRecord, check_eligibility, fit_countries
 from app.services.education_profile import (
     FIELD_LABELS, apply_updates, missing_slots, profile_hash, profile_rows, snapshot,
 )
@@ -244,7 +244,7 @@ def _show_budget_slider(args: dict, profile: dict, catalog: Catalog) -> ToolOutc
 
 def _show_country_matches(args: dict, profile: dict, catalog: Catalog) -> ToolOutcome:
     spec = INTENTS["recommend_country"]
-    items = score_countries(profile, catalog)
+    items = fit_countries(profile, catalog)
     if not items:
         needed = [FIELD_LABELS[f].lower() for f in ("budget", "english_score", "academic_score") if not profile.get(f)]
         return _no_block("Can't rank countries yet; missing: " + (", ".join(needed) or "catalog data")
@@ -253,11 +253,13 @@ def _show_country_matches(args: dict, profile: dict, catalog: Catalog) -> ToolOu
     def build():
         return build_block(
             spec.block_type, {"items": items}, title=spec.title,
-            fallback_text="Best matches: " + ", ".join(f"{i['label']} {i['score']}%" for i in items) + ".",
+            fallback_text="Fit with what you told us: " + ", ".join(f"{i['label']} ({i['tier_label']})" for i in items) + ".",
         )
 
     block = _cached(profile, spec, "all", build)
-    return _shown(block, "Top match: " + f"{items[0]['label']} ({items[0]['score']}%).")
+    return _shown(block, f"First is {items[0]['label']} ({items[0]['tier_label']}). The tiers describe how the student's own details "
+                         "line up with the catalog; never call anything 'best', never give percentages, and never imply a "
+                         "chance of admission or of a visa.")
 
 
 def _facts_rows(c: CountryRecord, cur: str) -> list[dict]:
@@ -346,7 +348,7 @@ def _check_eligibility(args: dict, profile: dict, catalog: Catalog) -> ToolOutco
     def build():
         return build_block(
             spec.block_type, result, title=spec.title.format(country=country.label),
-            fallback_text=f"{country.label}: {result['verdict']} ({result['score']}%).",
+            fallback_text=f"{country.label}: {result['verdict']}.",
         )
 
     block = _cached(profile, spec, country.id, build)

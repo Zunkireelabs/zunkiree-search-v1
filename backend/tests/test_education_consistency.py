@@ -4,7 +4,7 @@ changed profile -> same block type with an explanation, no data -> no invented c
 import pytest
 
 from app.schemas.ui_blocks import BlockValidationError, build_block
-from app.services.education_catalog import Catalog, CountryRecord, score_countries
+from app.services.education_catalog import TIER_ORDER, Catalog, CountryRecord, fit_countries
 from app.services.education_profile import apply_block_action, apply_updates, new_profile
 from app.services.education_tools import execute_education_tool
 from app.services.education_ui_registry import INTENTS, TOOL_TO_INTENT, detect_intent
@@ -117,15 +117,15 @@ def test_note_shows_once_then_block_is_stable(catalog, profile):
     assert again.data == changed.data
 
 
-def test_scoring_is_deterministic_and_stably_ordered(catalog, profile):
-    runs = [score_countries(profile, catalog) for _ in range(5)]
+def test_fit_is_deterministic_and_stably_ordered(catalog, profile):
+    runs = [fit_countries(profile, catalog) for _ in range(5)]
     assert all(r == runs[0] for r in runs)
-    scores = [i["score"] for i in runs[0]]
-    assert scores == sorted(scores, reverse=True)
+    ranks = [TIER_ORDER.index(i["tier"]) for i in runs[0]]
+    assert ranks == sorted(ranks)                      # strongest tier first
 
     # ties break by id, not by input order
     tie = Catalog(site_id="t", countries=list(reversed(make_catalog().countries)))
-    tied = [i["id"] for i in score_countries({"budget": 10**6}, tie)]  # everyone scores 100
+    tied = [i["id"] for i in fit_countries({"budget": 10**6}, tie)]  # everyone fits equally well
     assert tied == sorted(tied)
 
 
@@ -180,7 +180,7 @@ def test_invalid_blocks_are_rejected():
         build_block("comparison_table", {"columns": [{"id": "a", "label": "A"}, {"id": "b", "label": "B"}],
                                          "rows": [{"label": "x", "values": ["only one"]}]}, fallback_text="x")
     with pytest.raises(BlockValidationError):
-        build_block("match_cards", {"items": [{"id": "a", "label": "A", "score": 140}]}, fallback_text="x")
+        build_block("match_cards", {"items": [{"id": "a", "label": "A", "tier": "excellent", "tier_label": "x"}]}, fallback_text="x")
 
 
 def test_identical_content_gets_identical_block_id():
