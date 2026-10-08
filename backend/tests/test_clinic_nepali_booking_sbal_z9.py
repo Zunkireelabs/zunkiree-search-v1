@@ -68,7 +68,8 @@ def test_ambiguous_latin_string_not_swallowed_by_bound():
 def test_no_bound_service_behaves_like_before():
     sid = "z9-none"
     clinic_tools._SESSION_STATE.pop(sid, None)
-    assert _resolve_session_service(TREATMENTS, "ल्यास लिफ्ट", sid) == (None, [])
+    assert _resolve_session_service(TREATMENTS, "भोलिको", sid) == (None, [])
+    assert _resolve_session_service(TREATMENTS, "Lash Lift", sid)[0]["id"] == "t-lash"
 
 
 INFO = {"error": "INVALID_PHONE", "service_name": "Lash Lift", "date": "2026-10-09", "time": "10:00"}
