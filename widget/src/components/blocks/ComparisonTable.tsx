@@ -1,14 +1,18 @@
 import type { BlockComponentProps, ComparisonData } from './types'
 
+// Wide comparisons scroll sideways inside their own box: the row labels stay in view, the box can be scrolled with the
+// keyboard (it is focusable and labelled), and the table has a caption for screen readers.
 export function ComparisonTable({ block }: BlockComponentProps<ComparisonData>) {
   const { columns, rows } = block.data
+  const name = block.title || 'Comparison'
   return (
-    <div className="zk-compare">
+    <div className="zk-compare" role="region" aria-label={`${name}, scrollable`} tabIndex={0}>
       <table>
+        <caption className="zk-sr-only">{name}</caption>
         <thead>
           <tr>
-            <th />
-            {columns.map(c => <th key={c.id}>{c.icon} {c.label}</th>)}
+            <th scope="col"><span className="zk-sr-only">Detail</span></th>
+            {columns.map(c => <th key={c.id} scope="col">{c.icon} {c.label}</th>)}
           </tr>
         </thead>
         <tbody>

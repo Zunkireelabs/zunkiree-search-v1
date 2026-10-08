@@ -18,6 +18,7 @@ import { CostCalculator } from './CostCalculator'
 import { JourneyCards } from './JourneyCards'
 import { AnswerSummary, COLLAPSIBLE, summarize } from './AnswerSummary'
 import { isSupported } from './blockVersions'
+import { BlockErrorBoundary } from './BlockErrorBoundary'
 
 // One component per block type: the same type always renders the same way.
 const REGISTRY: Record<string, ComponentType<BlockComponentProps>> = {
@@ -50,7 +51,15 @@ interface BlockRendererProps {
   busy?: boolean
 }
 
-export function BlockRenderer({ block, onAction, locked, busy = false }: BlockRendererProps) {
+export function BlockRenderer(props: BlockRendererProps) {
+  return (
+    <BlockErrorBoundary resetKey={props.block.block_id} fallbackText={props.block.fallback_text}>
+      <BlockView {...props} />
+    </BlockErrorBoundary>
+  )
+}
+
+function BlockView({ block, onAction, locked, busy = false }: BlockRendererProps) {
   const [editing, setEditing] = useState(false)
   // A fresh answer (including the one just submitted from "Edit") closes the editor.
   useEffect(() => setEditing(false), [block.answered])

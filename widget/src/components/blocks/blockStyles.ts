@@ -14,8 +14,8 @@ export const blockStyles = (c: string) => `
     --zk-faint: #94a3b8;
     --zk-line: #e2e8f0;
     --zk-bg: #f8fafc;
-    --zk-ok: #16a34a;
-    --zk-warn: #d97706;
+    --zk-ok: #15803d;      /* 5.0:1 on white (WCAG AA); was #16a34a at 3.3:1 */
+    --zk-warn: #b45309;    /* 5.0:1 on white; was #d97706 at 3.2:1 */
     --zk-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 28px -12px rgba(15, 23, 42, 0.14);
     --zk-ease: cubic-bezier(0.22, 1, 0.36, 1);
   }
@@ -148,12 +148,22 @@ export const blockStyles = (c: string) => `
   .zk-info__missing { margin-top: 10px; padding: 8px 10px; font-size: 12px; color: var(--zk-muted); background: var(--zk-bg); border-radius: 10px; }
 
   /* ---- comparison ---- */
-  .zk-compare { overflow-x: auto; margin: 0 -4px; padding: 0 4px; }
+  .zk-compare {
+    overflow-x: auto; margin: 0 -4px; padding: 0 4px; border-radius: 10px; background-color: #fff;
+    /* soft shadows appear on the edge that has more to scroll to (the two fades hide them once scrolled to that end) */
+    background-image: linear-gradient(to right, #fff 30%, rgba(255, 255, 255, 0)), linear-gradient(to left, #fff 30%, rgba(255, 255, 255, 0)),
+      radial-gradient(farthest-side at 0 50%, rgba(15, 23, 42, 0.16), rgba(15, 23, 42, 0)), radial-gradient(farthest-side at 100% 50%, rgba(15, 23, 42, 0.16), rgba(15, 23, 42, 0));
+    background-position: 0 0, 100% 0, 0 0, 100% 0; background-repeat: no-repeat; background-size: 36px 100%, 36px 100%, 12px 100%, 12px 100%;
+    background-attachment: local, local, scroll, scroll;
+  }
+  .zk-compare:focus-visible { outline: 2px solid var(--zk-accent); outline-offset: 2px; }
   .zk-compare table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; }
   .zk-compare th, .zk-compare td { padding: 10px 8px; text-align: left; border-top: 1px solid #f1f5f9; }
   .zk-compare thead th { padding-bottom: 12px; border-top: 0; font-size: 13px; font-weight: 650; color: var(--zk-ink); }
   .zk-compare thead th:not(:first-child) { text-align: center; }
   .zk-compare tbody th { font-weight: 500; color: var(--zk-muted); white-space: nowrap; }
+  .zk-compare tbody th, .zk-compare thead th:first-child { position: sticky; left: 0; z-index: 1; background: #fff; }
+  .zk-compare td, .zk-compare thead th:not(:first-child) { min-width: 96px; }
   .zk-compare td { font-weight: 600; color: var(--zk-ink); text-align: center; }
   .zk-compare tbody tr:nth-child(odd) td, .zk-compare tbody tr:nth-child(odd) th { background: var(--zk-bg); }
   .zk-compare tbody tr:nth-child(odd) th { border-radius: 10px 0 0 10px; }
@@ -286,6 +296,14 @@ export const blockStyles = (c: string) => `
   .zk-mobile .zk-block { padding: 14px; border-radius: 16px; }
   .zk-mobile .zk-choice-grid { grid-template-columns: repeat(2, 1fr); }
   .zk-mobile .zk-choice, .zk-mobile .zk-tile, .zk-mobile .zk-check, .zk-mobile .zk-acc__head, .zk-mobile .zk-block__cta { min-height: 48px; }
+  /* every tappable control is at least 44px tall on phones and on any touch (coarse-pointer) device */
+  .zk-mobile .zk-block__chips .zk-chip, .zk-mobile .zk-match__more, .zk-mobile .zk-answer__edit { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+  @media (pointer: coarse) {
+    .zk-block__chips .zk-chip, .zk-match__more, .zk-answer__edit { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+    .zk-choice, .zk-tile, .zk-check, .zk-acc__head, .zk-block__cta { min-height: 44px; }
+  }
+  /* text for screen readers only */
+  .zk-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
   .zk-mobile .zk-message--rich.zk-message-assistant { padding-left: 38px; }
   /* phones: cards use the full width under the avatar instead of sitting indented beside it */
   .zk-mobile .zk-message--rich > .zk-block, .zk-mobile .zk-message--rich > .zk-skel, .zk-mobile .zk-message--rich > .zk-answer { margin-left: -38px; }

@@ -6,6 +6,7 @@ import { RoomGrid } from './RoomGrid'
 import { BlockRenderer } from './blocks/BlockRenderer'
 import { BlockSkeleton } from './blocks/BlockSkeleton'
 import { ProfileProgress } from './blocks/ProfileProgress'
+import { BlockAnnouncer } from './blocks/BlockAnnouncer'
 import type { ProfileProgressData } from './blocks/ProfileProgress'
 import type { UIBlock, OnBlockAction } from './blocks/types'
 import { FeedbackButtons } from './FeedbackButtons'
@@ -292,6 +293,7 @@ export function DockedPanel({
       {/* Conversation Area */}
       <div className="zk-docked__messages" ref={messagesContainerRef}>
         <div className="zk-docked__messages-inner">
+          {websiteType === 'education' && <BlockAnnouncer messages={messages} busy={isLoading} />}
           {messages.map(message => (
             <div key={message.id} className={`zk-message zk-message-${message.role}${websiteType === 'education' ? ' zk-message--rich' : ''}`}>
               <div className="zk-message-content">
