@@ -263,6 +263,12 @@ _LANGUAGE_DIRECTIVES = {
 # heuristic, since every pattern it must catch is one this same codebase
 # generates and therefore fully known.
 _SLOT_PICK_PATTERN = re.compile(r"^book .+ on .+ at .+$", re.IGNORECASE)
+# Review on #131: a slot pick isn't only a chip tap — a visitor can just as
+# well TYPE the time they want ("12:30", "12:30 ma", "10:30 baje") right
+# after a slot list. Matched alongside _SLOT_PICK_PATTERN wherever "this
+# turn picked a slot" is decided (turn_is_slot_pick below), so the no-
+# reoffer-chips fix doesn't depend on how the pick arrived.
+_TYPED_TIME_PICK_PATTERN = re.compile(r"^\d{1,2}:\d{2}\s*(am|pm|ma|baje)?\.?$", re.IGNORECASE)
 _SYNTHETIC_PAYLOAD_PATTERNS = [
     _SLOT_PICK_PATTERN,
     re.compile(r"^book room .+$", re.IGNORECASE),
@@ -301,11 +307,14 @@ def _is_synthetic_or_neutral_text(text: str) -> bool:
 
 # SBAL-Z8 F3: the IG slot-chip prompt (chatbot_webhooks.py) was a hardcoded
 # English "Pick a time:" regardless of the conversation's language.
+# Review on #131: mixed_ne_en is Latin-script code-switching — those
+# visitors type romanized, not Devanagari, so it maps to ne_romanized here
+# (and in _MISSING_DETAILS_PROMPT_BY_LANG below), not ne_devanagari.
 _PICK_A_TIME_LABEL_BY_LANG = {
     "ne_devanagari": "समय छान्नुहोस्:",
-    "ne_romanized": "Time chan-nuhos:",
+    "ne_romanized": "Samaya chhannuhos:",
     "en": "Pick a time:",
-    "mixed_ne_en": "समय छान्नुहोस्:",
+    "mixed_ne_en": "Samaya chhannuhos:",
 }
 
 # SBAL-Z8 F1: prepare_booking resolved the service/date/time but failed on
@@ -316,7 +325,7 @@ _MISSING_DETAILS_PROMPT_BY_LANG = {
     "en": "Great — {weekday}, {day} {month} at {time} for {service}. What's your full name and phone number?",
     "ne_romanized": "Sahi cha — {weekday}, {day} {month} {time} baje {service} ko lagi. Tapaiko pura naam ra phone number pathaunus?",
     "ne_devanagari": "ठिक छ — {weekday}, {day} {month} {time} बजे {service} को लागि। तपाईंको पूरा नाम र फोन नम्बर दिनुहोस्?",
-    "mixed_ne_en": "ठिक छ — {weekday}, {day} {month} {time} बजे {service} को लागि। तपाईंको पूरा नाम र फोन नम्बर दिनुहोस्?",
+    "mixed_ne_en": "Sahi cha — {weekday}, {day} {month} {time} baje {service} ko lagi. Tapaiko pura naam ra phone number pathaunus?",
 }
 
 # --- No false booking claims (CLINIC-BOOKING-TRUTH-BRIEF F1) ---
@@ -1136,15 +1145,20 @@ class ClinicAgentService:
         force_availability_check = bool(
             _AVAILABILITY_SIGNAL.search(question) or _mentions_time_or_date(question, now_npt_dt)
         )
-        # SBAL-Z8 F1 (addendum): a slot-pick postback ("Book X on D at T")
-        # forces this same check_availability re-verification above — but
-        # the visitor already picked a time; re-offering slot chips this
-        # turn is the loop from the addendum repro (pick 12:30 -> asked
-        # for name/phone + chips anyway; pick 10:30 -> same). This holds
-        # regardless of whether the model goes on to call prepare_booking
-        # this turn or just asks for the details itself in its own text —
-        # either way, slot chips are never this turn's own open question.
-        turn_is_slot_pick = bool(_SLOT_PICK_PATTERN.match(question.strip()))
+        # SBAL-Z8 F1 (addendum + review on #131): a slot pick — a chip's
+        # "Book X on D at T" postback OR a typed time ("12:30", "12:30 ma",
+        # "10:30 baje") — forces this same check_availability re-
+        # verification above, but the visitor already picked a time;
+        # re-offering slot chips this turn is the loop from the addendum
+        # repro (pick 12:30 -> asked for name/phone + chips anyway; pick
+        # 10:30 -> same). This holds regardless of whether the model goes
+        # on to call prepare_booking this turn or just asks for the
+        # details itself in its own text — either way, slot chips are
+        # never this turn's own open question.
+        stripped_question = question.strip()
+        turn_is_slot_pick = bool(
+            _SLOT_PICK_PATTERN.match(stripped_question) or _TYPED_TIME_PICK_PATTERN.match(stripped_question)
+        )
 
         # PR #64 review (MINOR): `session_id or "anonymous"` made every
         # session without an id share ONE anchor — visitor A's date leaking
