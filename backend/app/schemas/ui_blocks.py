@@ -10,6 +10,7 @@ Instagram, Orca adapters) get a clean text version.
 """
 import hashlib
 import json
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
@@ -210,23 +211,52 @@ class JourneyCardsData(BaseModel):
     tiles: list[JourneyTile] = Field(min_length=2)
 
 
-DATA_MODELS: dict[str, type[BaseModel]] = {
-    "stepper": StepperData,
-    "accordion": AccordionData,
-    "checklist": ChecklistData,
-    "timeline": TimelineData,
-    "cost_calculator": CostCalculatorData,
-    "journey_cards": JourneyCardsData,
-    "choice_cards": ChoiceCardsData,
-    "quick_chips": QuickChipsData,
-    "range_slider": RangeSliderData,
-    "match_cards": MatchCardsData,
-    "info_card": InfoCardData,
-    "comparison_table": ComparisonData,
-    "eligibility_meter": EligibilityData,
-    "profile_summary": ProfileSummaryData,
-    "lead_form": LeadFormData,
-}
+@dataclass(frozen=True)
+class UISpec:
+    """One registered UI type: the single place that says what it is and how it behaves.
+
+    `collapsible` / `dims_when_locked` mirror the widget's COLLAPSIBLE / DIM_WHEN_LOCKED sets and
+    `allowed_actions` records the action ids the widget emits; tests keep the widget in sync.
+    `allowed_actions` is declarative for now (not enforced yet)."""
+    type: str
+    description: str
+    when_to_use: str
+    data_model: type[BaseModel]
+    version: int = 1
+    allowed_actions: tuple[str, ...] = ()
+    collapsible: bool = False        # input block that folds into a one-line answer once answered
+    dims_when_locked: bool = False   # looks "used up" once superseded or answered
+
+
+UI_TYPES: dict[str, UISpec] = {s.type: s for s in [
+    UISpec("choice_cards", "Pick one or more options from cards.", "Collect a profile answer such as countries, study level or intake.",
+           ChoiceCardsData, allowed_actions=("select",), collapsible=True, dims_when_locked=True),
+    UISpec("range_slider", "Pick a number on a slider.", "Collect a numeric answer such as a yearly budget.",
+           RangeSliderData, allowed_actions=("set_value",), collapsible=True, dims_when_locked=True),
+    UISpec("journey_cards", "Welcome tiles that start a guided journey.", "Open the conversation or offer the next step.",
+           JourneyCardsData, allowed_actions=("start",), collapsible=True, dims_when_locked=True),
+    UISpec("lead_form", "Short contact form.", "Let the student ask for a counselor.",
+           LeadFormData, allowed_actions=("submit",), collapsible=True, dims_when_locked=True),
+    UISpec("quick_chips", "Row of tappable suggestion chips.", "Offer quick follow-up topics. Chip ids are data-defined, so no fixed actions. No backend tool emits it yet.",
+           QuickChipsData, dims_when_locked=True),
+    UISpec("match_cards", "Ranked destination matches with reasons.", "Answer which countries fit the student's profile.",
+           MatchCardsData, allowed_actions=("explore",), dims_when_locked=True),
+    UISpec("profile_summary", "What we know about the student.", "Show or confirm the saved profile.",
+           ProfileSummaryData, allowed_actions=("edit",), dims_when_locked=True),
+    UISpec("info_card", "Heading with label/value rows.", "Quick facts about one country.", InfoCardData),
+    UISpec("comparison_table", "Side-by-side table of 2-3 columns.", "Compare countries.", ComparisonData),
+    UISpec("eligibility_meter", "Pass/fail checks against entry requirements.", "Check the student's scores against one country.",
+           EligibilityData),
+    UISpec("cost_calculator", "Adjustable cost parts with a live total.", "Estimate yearly cost for one country.",
+           CostCalculatorData, allowed_actions=("set_value",)),
+    UISpec("stepper", "Ordered steps.", "A process taken from the knowledge base.", StepperData),
+    UISpec("checklist", "Things to prepare.", "Documents or requirements taken from the knowledge base.", ChecklistData),
+    UISpec("timeline", "Dated events.", "Dates and deadlines taken from the knowledge base.", TimelineData),
+    UISpec("accordion", "Expandable items with a summary.", "Services or options taken from the knowledge base.", AccordionData),
+]}
+
+# Derived view kept for existing callers: type -> data model.
+DATA_MODELS: dict[str, type[BaseModel]] = {t: s.data_model for t, s in UI_TYPES.items()}
 
 
 class BlockAction(BaseModel):
@@ -283,6 +313,7 @@ def build_block(
         return UIBlock(
             block_id=_block_id(block_type, clean),
             type=block_type,
+            schema_version=UI_TYPES[block_type].version,
             title=title,
             subtitle=subtitle,
             data=clean,

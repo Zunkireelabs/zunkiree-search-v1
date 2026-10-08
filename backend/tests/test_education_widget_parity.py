@@ -37,3 +37,44 @@ def test_widget_has_no_component_for_a_type_the_backend_cannot_emit():
 def test_collapsible_types_are_real_block_types():
     assert _collapsible_types(), "could not read COLLAPSIBLE from AnswerSummary.tsx (format changed?)"
     assert _collapsible_types() <= set(DATA_MODELS)
+
+
+# ---- UI registry (UI_TYPES) <-> widget ----
+
+from app.schemas.ui_blocks import UI_TYPES  # noqa: E402
+
+
+def _dim_when_locked_types() -> set[str]:
+    src = (BLOCKS_DIR / "BlockRenderer.tsx").read_text()
+    return set(re.findall(r"'([a-z_]+)'", src[src.index("DIM_WHEN_LOCKED = new Set(["):].split("])")[0]))
+
+
+def test_registry_and_derived_schema_map_agree():
+    assert set(UI_TYPES) == set(DATA_MODELS)
+    assert all(DATA_MODELS[t] is s.data_model for t, s in UI_TYPES.items())
+
+
+def test_registry_types_equal_widget_renderer_types():
+    assert set(UI_TYPES) == _renderer_types()
+
+
+def test_registry_collapsible_flags_equal_widget_collapsible_set():
+    assert {t for t, s in UI_TYPES.items() if s.collapsible} == _collapsible_types()
+
+
+def test_registry_dim_flags_equal_widget_dim_when_locked_set():
+    assert _dim_when_locked_types(), "could not read DIM_WHEN_LOCKED from BlockRenderer.tsx (format changed?)"
+    assert {t for t, s in UI_TYPES.items() if s.dims_when_locked} == _dim_when_locked_types()
+
+
+def test_every_registered_type_is_documented_and_versioned():
+    for t, s in UI_TYPES.items():
+        assert s.type == t
+        assert s.description.strip() and s.when_to_use.strip(), t
+        assert s.version == 1, t
+
+
+def test_built_blocks_carry_the_registry_version():
+    from app.schemas.ui_blocks import build_block
+    block = build_block("quick_chips", {"chips": [{"id": "a", "label": "A"}]}, fallback_text="A")
+    assert block.schema_version == UI_TYPES["quick_chips"].version
