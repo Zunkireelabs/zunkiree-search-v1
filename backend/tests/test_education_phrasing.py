@@ -1,14 +1,8 @@
-"""Phrasing-consistency baseline for the education agent's deterministic intent routing.
+"""Phrasing-consistency suite for the education agent's deterministic intent routing.
 
-Different wordings of the same question must resolve to the same intent and therefore the same
-UI block type. This file pins what holds TODAY and documents what does not:
-
-  - plain cases   = phrasings that resolve correctly now (regression guard)
-  - xfail(strict) = phrasings that do NOT resolve correctly now. They document known gaps. strict=True
-                    means the test fails the moment a gap is fixed, which forces the marker to be removed.
-
-No behavior is fixed here. The intent layer is a later step.
-"""
+Different wordings of the same question must resolve to the same intent and therefore the same UI block type.
+Negative controls guard the other direction: look-alike questions that are NOT catalog intents must stay unrouted
+(they go to the knowledge base / LLM path), so widening a rule never swallows an unrelated question."""
 import copy
 
 import pytest
@@ -18,12 +12,7 @@ from app.services.education_tools import execute_education_tool, tool_for_intent
 from app.services.education_ui_registry import INTENTS, detect_intent
 from tests.test_education_consistency import make_catalog
 
-# Becomes "recommend_country" when the intent layer lands; keep the rename to this one line.
-RECOMMEND_COUNTRY = "country_matches"
-
-
-def gap(question: str, reason: str):
-    return pytest.param(question, marks=pytest.mark.xfail(strict=True, reason=reason), id=question)
+RECOMMEND_COUNTRY = "recommend_country"
 
 
 @pytest.fixture
@@ -39,29 +28,25 @@ def _profile() -> dict:
 
 # ---- recommend a country ----
 
-RECOMMEND_OK = [
+RECOMMEND_PHRASINGS = [
     "What's the best country for me?",
     "Which country should I study in?",
     "Where should I go for my master's?",
+    "Which destination fits my profile?",
     "What country would you recommend?",
     "Where should I study?",
     "Which country is right for me",
+    "Suggest a country for me",
+    "Which destination suits me?",
+    "Recommend a country",
+    "Can you recommend a destination for my master's?",
+    "What destinations suit my budget?",
+    "Which countries match my profile?",
 ]
 
 
-@pytest.mark.parametrize("question", RECOMMEND_OK)
+@pytest.mark.parametrize("question", RECOMMEND_PHRASINGS)
 def test_recommend_country_phrasings_resolve_to_one_intent(catalog, question):
-    assert detect_intent(question, catalog, {}) == (RECOMMEND_COUNTRY, {})
-
-
-@pytest.mark.parametrize("question", [
-    gap("Which destination fits my profile?",
-        "KNOWN GAP: 'my profile' wins over 'destination', so this shows the profile summary instead of recommendations"),
-    gap("Suggest a country for me", "KNOWN GAP: no rule matches, falls through to the LLM"),
-    gap("Which destination suits me?", "KNOWN GAP: no rule matches, falls through to the LLM"),
-    gap("Recommend a country", "KNOWN GAP: no rule matches, falls through to the LLM"),
-])
-def test_recommend_country_known_gaps(catalog, question):
     assert detect_intent(question, catalog, {}) == (RECOMMEND_COUNTRY, {})
 
 
@@ -69,8 +54,8 @@ def test_recommend_country_known_gaps(catalog, question):
     "WHICH COUNTRY SHOULD I STUDY IN",
     "  which country should i study in  ",
     "Which country should I study in??",
-    gap("which   country   should i study in",
-        "KNOWN GAP: runs of spaces inside the sentence are not collapsed, so 'which countr' no longer matches"),
+    "which   country   should i study in",
+    "Which\tcountry\nshould I study in?",
 ])
 def test_case_spacing_and_punctuation_do_not_change_the_intent(catalog, variant):
     assert detect_intent(variant, catalog, {}) == detect_intent("Which country should I study in?", catalog, {})
@@ -79,7 +64,7 @@ def test_case_spacing_and_punctuation_do_not_change_the_intent(catalog, variant)
 def test_same_state_different_wording_gives_the_identical_block(catalog):
     """Same meaning + same state -> same UI type and the same block (content-addressed id)."""
     blocks = []
-    for question in RECOMMEND_OK:
+    for question in RECOMMEND_PHRASINGS:
         intent, args = detect_intent(question, catalog, {})
         outcome = execute_education_tool(tool_for_intent(intent), dict(args), copy.deepcopy(_profile()), catalog)
         assert outcome.block is not None, question
@@ -89,21 +74,21 @@ def test_same_state_different_wording_gives_the_identical_block(catalog):
     assert len({b.title for b in blocks}) == 1
 
 
+def test_a_known_profile_does_not_change_which_intent_a_question_resolves_to(catalog):
+    for question in RECOMMEND_PHRASINGS:
+        assert detect_intent(question, catalog, _profile()) == (RECOMMEND_COUNTRY, {}), question
+
+
 # ---- other core intents ----
 
 @pytest.mark.parametrize("question", [
     "Compare UK and Australia",
     "UK or Australia, which is better?",
     "Australia versus Canada",
+    "how does the UK stack up against Canada",
+    "What's the difference between the UK and Australia?",
 ])
 def test_compare_phrasings(catalog, question):
-    assert detect_intent(question, catalog, {})[0] == "compare"
-
-
-@pytest.mark.parametrize("question", [
-    gap("how does the UK stack up against Canada", "KNOWN GAP: no compare keyword, falls through to the LLM"),
-])
-def test_compare_known_gaps(catalog, question):
     assert detect_intent(question, catalog, {})[0] == "compare"
 
 
@@ -130,24 +115,29 @@ def test_cost_phrasings(catalog, question):
 @pytest.mark.parametrize("question", [
     "Tell me about the UK",
     "UK quick facts",
+    "What's Australia like?",
+    "What is Canada like?",
 ])
 def test_country_facts_phrasings(catalog, question):
     assert detect_intent(question, catalog, {})[0] == "country_facts"
 
 
-@pytest.mark.parametrize("question", [
-    gap("What's Australia like?", "KNOWN GAP: no facts keyword, falls through to the LLM"),
-])
-def test_country_facts_known_gaps(catalog, question):
-    assert detect_intent(question, catalog, {})[0] == "country_facts"
-
-
-# ---- negative controls: these must NOT be claimed by a catalog rule ----
+# ---- negative controls: look-alikes that must NOT be claimed by a catalog rule ----
 
 @pytest.mark.parametrize("question", [
-    "What's the process to apply?",       # knowledge-base shape, not a catalog card
-    "Do I need a visa?",                  # single fact, stays plain text
-    "What is the capital of France?",     # off-topic
+    "What's the process to apply?",          # knowledge-base shape, not a catalog card
+    "Do I need a visa?",                     # single fact, stays plain text
+    "What is the capital of France?",        # off-topic
+    "Can you recommend a good restaurant?",  # 'recommend' without a country/destination
+    "Suggest a movie for me",
+    "What's the weather like?",              # 'like' without a country
+    "What is life like in Nepal?",           # a country we don't list
+    "Is Admizz free?",
+    "How much does Admizz charge?",          # about the company, not study costs
+    "Can I apply through Admizz?",
+    "What's the difference between a bachelor's and a master's?",   # 'difference' without two countries
+    "What's your recommendation process like?",
+    "Which documents do I need?",
 ])
 def test_questions_that_are_not_catalog_intents_are_left_alone(catalog, question):
     assert detect_intent(question, catalog, {}) is None

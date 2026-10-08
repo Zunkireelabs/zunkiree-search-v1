@@ -238,7 +238,7 @@ def _show_budget_slider(args: dict, profile: dict, catalog: Catalog) -> ToolOutc
 
 
 def _show_country_matches(args: dict, profile: dict, catalog: Catalog) -> ToolOutcome:
-    spec = INTENTS["country_matches"]
+    spec = INTENTS["recommend_country"]
     items = score_countries(profile, catalog)
     if not items:
         needed = [FIELD_LABELS[f].lower() for f in ("budget", "english_score", "academic_score") if not profile.get(f)]

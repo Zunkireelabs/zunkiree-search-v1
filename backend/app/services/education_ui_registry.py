@@ -27,7 +27,7 @@ class IntentSpec:
 
 
 INTENTS: dict[str, IntentSpec] = {s.intent: s for s in [
-    IntentSpec("country_matches", "show_country_matches", "match_cards",
+    IntentSpec("recommend_country", "show_country_matches", "match_cards",
                "Countries that match your profile",
                ("budget", "english_score", "academic_score", "intake")),
     IntentSpec("country_facts", "show_country_facts", "info_card", "{country} quick facts"),
@@ -77,9 +77,12 @@ def _rx(*patterns: str) -> re.Pattern:
     return re.compile("|".join(patterns), re.I)
 
 
-_COMPARE = _rx(r"\bvs\.?\b", r"\bversus\b", r"\bcompare\b", r"\bcomparison\b", r"\bor\b.+\bwhich\b", r"\bbetter\b")
+_COMPARE = _rx(r"\bvs\.?\b", r"\bversus\b", r"\bcompare\b", r"\bcomparison\b", r"\bor\b.+\bwhich\b", r"\bbetter\b",
+               r"stack up", r"\bagainst\b", r"difference between")
 _MATCHES = _rx(r"which countr", r"what countr", r"best countr", r"suitable countr", r"countries? (for|that|suit|fit|match)",
-               r"where (should|can|do) i (study|go)", r"fit my profile", r"match my profile", r"applicable")
+               r"where (should|can|do) i (study|go)", r"fit my profile", r"match my profile", r"applicable",
+               r"\b(which|what) destinations?\b", r"\bdestinations? (for|that|suit|fit|match)",
+               r"\b(recommend|suggest)\w*\b.{0,25}\b(countr|destination)")
 _ELIGIBILITY_STRICT = _rx(r"eligib", r"\bqualify\b", r"\bchances?\b")
 _ELIGIBILITY_BROAD = _rx(r"eligib", r"\bqualify\b", r"\bchances?\b", r"can i (get|apply|study)", r"meet the requirement")
 _COST = _rx(r"\bcost\b", r"\bfees?\b", r"\bbudget\b", r"how much", r"afford", r"\bexpens", r"tuition")
@@ -88,7 +91,8 @@ _PROFILE = _rx(r"my profile", r"about me", r"what do you know", r"my details", r
 _COUNSELOR = _rx(r"counsel+or", r"talk to (a |an )?(person|human|someone|agent)", r"call me", r"contact me",
                  r"speak (to|with)", r"book (a )?(session|consult|appointment)", r"apply now", r"help me apply")
 _START = _rx(r"study abroad", r"want to study", r"get started", r"^start$", r"help me (choose|find|pick)")
-_FACTS = _rx(r"tell me (more )?about", r"\babout\b", r"info(rmation)? (on|about)", r"quick facts", r"explore")
+_FACTS = _rx(r"tell me (more )?about", r"\babout\b", r"info(rmation)? (on|about)", r"quick facts", r"explore",
+             r"what(?:'s| is| are)\s+.{0,30}\blike\b")
 _GREETING = _rx(r"^(hi+|hello+|hey+|hola|namaste|namaskar|greetings|good (morning|afternoon|evening))\b[\s!.,?]*$")
 
 
@@ -132,7 +136,7 @@ def detect_intent(question: str, catalog: Catalog, profile: dict | None = None) 
     Deterministic question -> (intent, args), or None to continue to the knowledge-base shapes / the LLM.
     Order matters: more specific intents first.
     """
-    q = question.strip()
+    q = " ".join(question.split())  # trim and collapse runs of whitespace so spacing never changes the intent
     mentioned = catalog.find_in_text(q)
 
     if _GREETING.match(q):
@@ -141,7 +145,7 @@ def detect_intent(question: str, catalog: Catalog, profile: dict | None = None) 
         return "lead_form", {}
     # "which countries fit my profile" contains "my profile": the matches rule must win.
     if _MATCHES.search(q):
-        return "country_matches", {}
+        return "recommend_country", {}
     if _PROFILE.search(q):
         return "profile", {}
     if len(mentioned) >= 2 and _COMPARE.search(q):

@@ -39,10 +39,10 @@ def profile():
 # ---- question -> intent map ----
 
 @pytest.mark.parametrize("question,intent", [
-    ("Which countries fit my profile?", "country_matches"),   # contains "my profile": must NOT be 'profile'
-    ("which country is applicable for my profile", "country_matches"),
-    ("What countries suit me?", "country_matches"),
-    ("best countries for me", "country_matches"),
+    ("Which countries fit my profile?", "recommend_country"),   # contains "my profile": must NOT be 'profile'
+    ("which country is applicable for my profile", "recommend_country"),
+    ("What countries suit me?", "recommend_country"),
+    ("best countries for me", "recommend_country"),
     ("What do you know about me", "profile"),
     ("show my profile", "profile"),
     ("UK vs Australia?", "compare"),
