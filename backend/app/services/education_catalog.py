@@ -9,14 +9,16 @@ agent says it doesn't have that detail and offers a counselor instead.
 Source today: a JSON file per site at app/data/education_catalogs/<site_id>.json
 (imported from the tenant's own data). A DB-backed loader replaces this later
 behind the same `get_catalog()` call. All money values are in one currency per
-catalog (`currency` is the display symbol).
+catalog (`currency` is its ISO code; a legacy symbol such as "$" is normalised to "USD" on load).
 """
 import json
 import logging
 import re
 from pathlib import Path
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
+
+from app.services.money import format_money, normalize_currency
 
 logger = logging.getLogger("zunkiree.education_catalog")
 
@@ -61,13 +63,18 @@ class CountryRecord(BaseModel):
 
 class Catalog(BaseModel):
     site_id: str
-    currency: str = "$"
+    currency: str = "USD"
     status: str = "verified"
     countries: list[CountryRecord] = Field(default_factory=list)
     # Budget slider bounds. Optional: derived from country costs when absent.
     budget_min: int | None = None
     budget_max: int | None = None
     budget_step: int = 1000
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def _iso_currency(cls, value):
+        return normalize_currency(value) if isinstance(value, str) else value
 
     def get(self, country_id: str) -> CountryRecord | None:
         return next((c for c in self.countries if c.id == country_id), None)
@@ -129,7 +136,7 @@ def get_catalog(site_id: str) -> Catalog:
 
 
 def _fmt(currency: str, n: int) -> str:
-    return f"{currency}{n:,}"
+    return format_money(n, currency)
 
 
 def score_countries(profile: dict, catalog: Catalog) -> list[dict]:

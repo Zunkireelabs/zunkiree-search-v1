@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from app.schemas.ui_blocks import UI_TYPES
 from app.services.education_catalog import Catalog
 from app.services.education_ui_registry import INTENTS
+from app.services.money import CURRENCY_ALIASES, normalize_currency
 
 MAX_FOLLOWUP_WORDS = 12
 
@@ -30,9 +31,7 @@ COUNTRY_INTENTS = ("eligibility", "cost_calculator", "country_facts")
 _UNIT_FACTOR = {"lakh": 1e5, "lakhs": 1e5, "lac": 1e5, "lacs": 1e5, "l": 1e5, "crore": 1e7, "crores": 1e7, "cr": 1e7,
                 "k": 1e3, "m": 1e6, "million": 1e6}
 _SOUTH_ASIAN_UNITS = {"lakh", "lakhs", "lac", "lacs", "l", "crore", "crores", "cr"}
-_CURRENCY = {"$": "USD", "usd": "USD", "us$": "USD", "£": "GBP", "gbp": "GBP", "€": "EUR", "eur": "EUR", "a$": "AUD",
-             "aud": "AUD", "c$": "CAD", "cad": "CAD", "npr": "NPR", "nrs": "NPR", "nr": "NPR", "₹": "INR", "inr": "INR",
-             "rs": "RS"}  # "Rs" is used for both NPR and INR
+_CURRENCY = {**CURRENCY_ALIASES, "rs": "RS"}  # "Rs" is used for both NPR and INR, so it only exists in this parser
 
 _CUR = r"(?:us\$|a\$|c\$|npr|nrs?|inr|usd|gbp|eur|aud|cad|rs|[$£€₹])"
 _NUM = r"\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?"
@@ -72,7 +71,7 @@ def parse_amount(text: str) -> Amount | None:
 
 
 def catalog_currency_code(symbol: str) -> str:
-    return _CURRENCY.get(symbol.strip().lower(), symbol.strip().upper())
+    return normalize_currency(symbol)
 
 
 def _currency_ok(amount: Amount, catalog_code: str) -> bool:

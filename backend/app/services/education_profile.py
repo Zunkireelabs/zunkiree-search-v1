@@ -15,6 +15,8 @@ import json
 import logging
 from typing import Any
 
+from app.services.money import format_money
+
 logger = logging.getLogger("zunkiree.education_profile")
 
 # field -> kind. Anything not listed here is rejected.
@@ -142,7 +144,7 @@ def display_value(field: str, value: Any, currency: str = "$") -> str:
     if isinstance(value, list):
         return ", ".join(value)
     if field == "budget":
-        return f"{currency}{int(value):,} / year"
+        return f"{format_money(int(value), currency)} / year"
     return str(value)
 
 

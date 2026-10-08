@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { BlockComponentProps, CostCalculatorData } from './types'
 import { fillPct, useCountUp } from './ui'
+import { formatMoney } from './money'
 
 // Live calculator: drag any part and the bar and total move. The sliders always work;
 // only "use as my budget" talks to the chat, so it hides on older (locked) blocks.
@@ -9,7 +10,7 @@ export function CostCalculator({ block, onAction, locked }: BlockComponentProps<
   const [values, setValues] = useState<Record<string, number>>(() => Object.fromEntries(parts.map(p => [p.id, p.value])))
   const total = parts.reduce((sum, p) => sum + values[p.id], 0)
   const shown = useCountUp(total)
-  const fmt = (n: number) => `${currency}${Math.round(n).toLocaleString()}`
+  const fmt = (n: number) => formatMoney(n, currency)
   const shades = ['var(--zk-accent)', 'color-mix(in srgb, var(--zk-accent) 45%, #fff)', 'color-mix(in srgb, var(--zk-accent) 22%, #fff)']
 
   return (

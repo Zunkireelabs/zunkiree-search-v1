@@ -1,5 +1,6 @@
 import type { UIBlock } from './types'
 import { CheckIcon } from './ui'
+import { formatMoney } from './money'
 
 // Input blocks collapse into a one-line summary once answered; "Edit" reopens them.
 export const COLLAPSIBLE = new Set(['choice_cards', 'range_slider', 'journey_cards', 'lead_form'])
@@ -14,7 +15,7 @@ export function summarize(block: UIBlock): string | null {
       return labels.join(', ') || null
     }
     case 'range_slider':
-      return `${block.data.unit}${Math.round(Number(a.value)).toLocaleString()} / year`
+      return `${formatMoney(Number(a.value), block.data.unit)} / year`
     case 'journey_cards':
       return (block.data.tiles as { id: string; title: string }[]).find(t => t.id === a.journey)?.title ?? null
     case 'lead_form':

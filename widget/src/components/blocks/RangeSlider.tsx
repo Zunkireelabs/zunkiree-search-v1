@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import type { BlockComponentProps, RangeSliderData } from './types'
 import { fillPct, useCountUp } from './ui'
+import { formatMoney } from './money'
 
 export function RangeSlider({ block, onAction, locked }: BlockComponentProps<RangeSliderData>) {
   const { field, min, max, step, unit } = block.data
   const [value, setValue] = useState(block.data.value)
   const shown = useCountUp(value, 180)
-  const fmt = (n: number) => `${unit}${Math.round(n).toLocaleString()}`
+  const fmt = (n: number) => formatMoney(n, unit)
 
   return (
     <div>

@@ -18,6 +18,7 @@ from app.services.education_catalog import Catalog, CountryRecord, check_eligibi
 from app.services.education_profile import (
     FIELD_LABELS, apply_updates, missing_slots, profile_hash, profile_rows, snapshot,
 )
+from app.services.money import format_money_range
 from app.services.education_ui_registry import (
     CHOICE_QUESTIONS, INTENTS, JOURNEY, STUDY_LEVELS, TOOL_TO_INTENT, IntentSpec,
 )
@@ -89,7 +90,7 @@ def _shown(block: UIBlock, summary: str) -> ToolOutcome:
 def _money(cur: str, lo: int | None, hi: int | None) -> str | None:
     if lo is None or hi is None:
         return None
-    return f"{cur}{lo:,}" if lo == hi else f"{cur}{lo:,}–{cur}{hi:,}"
+    return format_money_range(lo, hi, cur)
 
 
 def _resolve(catalog: Catalog, value: str) -> str | None:

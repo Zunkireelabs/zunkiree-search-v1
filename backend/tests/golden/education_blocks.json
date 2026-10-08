@@ -2,14 +2,14 @@
   "budget": {
     "actions": [],
     "answered": null,
-    "block_id": "range_slider-2b882b7437",
+    "block_id": "range_slider-4b72d37c7f",
     "changed_because": null,
     "data": {
       "field": "budget",
       "max": 59000.0,
       "min": 25000.0,
       "step": 1000.0,
-      "unit": "$",
+      "unit": "USD",
       "value": 40000.0
     },
     "fallback_text": "What is your budget per year (tuition + living)?",
@@ -226,11 +226,11 @@
   "cost_au": {
     "actions": [],
     "answered": null,
-    "block_id": "cost_calculator-feb7e2ecb3",
+    "block_id": "cost_calculator-9ebd49b04f",
     "changed_because": null,
     "data": {
       "country_id": "au",
-      "currency": "$",
+      "currency": "USD",
       "note": "Typical ranges: your total depends on the university and city.",
       "parts": [
         {
