@@ -155,13 +155,32 @@ async def test_an_input_card_chosen_by_the_llm_stays_a_single_card_and_leaves_th
 
 
 @pytest.mark.asyncio
-async def test_two_result_cards_in_one_turn_compose_only_the_first():
-    agent = make_agent([[_tool_chunk("show_country_matches", {}), second_tool("compare_countries", {"countries": ["Canada", "U.K."]})]])
+async def test_several_result_cards_in_one_reply_are_shown_plain_and_the_last_is_remembered():
+    """Found live: 'Is UK cheaper than Canada?' made the LLM show two cards; buttons landed between them."""
+    agent = make_agent([[_tool_chunk("show_country_matches", {}), second_tool("compare_countries", {"countries": ["Canada", "U.K."]})],
+                        [_chunk("Both views are above.")]])
     seed(agent, **FULL)
     events = await run(agent, "I'd like both views")
-    assert kinds(events) == ["profile_summary", "match_cards", "quick_chips", "comparison_table"]
-    assert kinds(events).count("quick_chips") == 1 and state(agent)["intent"] == "recommend_country"
-    assert len(agent.client.calls) == 1
+    assert kinds(events) == ["match_cards", "comparison_table"]                      # no profile summary, no buttons in the middle
+    assert state(agent)["intent"] == "compare" and state(agent)["args"] == {"countries": ["ca", "uk"]}
+    assert text_of(events) == "Both views are above." and len(agent.client.calls) == 2   # the LLM, not a one-card sentence
+
+
+@pytest.mark.asyncio
+async def test_two_countries_facts_in_one_reply_do_not_get_buttons_between_them():
+    agent = make_agent([[_tool_chunk("show_country_facts", {"country": "UK"}), second_tool("show_country_facts", {"country": "Canada"})],
+                        [_chunk("Here are both.")]])
+    seed(agent, **FULL)
+    events = await run(agent, "A look at both UK and Canada please")
+    assert kinds(events) == ["info_card", "info_card"] and state(agent)["args"] == {"country": "ca"}
+
+
+@pytest.mark.asyncio
+async def test_a_card_plus_an_input_card_in_one_reply_still_composes_the_result_card():
+    agent = make_agent([[_tool_chunk("show_country_matches", {}), second_tool("show_budget_slider", {})], [_chunk("Set it below.")]])
+    seed(agent, **FULL)
+    events = await run(agent, "I'd like matches and a spending limit slider")
+    assert kinds(events) == ["profile_summary", "match_cards", "quick_chips", "range_slider"]
 
 
 @pytest.mark.asyncio

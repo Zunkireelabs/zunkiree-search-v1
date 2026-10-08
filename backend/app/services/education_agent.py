@@ -28,6 +28,7 @@ from app.services.clinic_agent import _LANGUAGE_DIRECTIVES  # reuse the SAME str
 from app.services.education_catalog import Catalog, get_catalog
 from app.services.education_compositions import chip_intent, compose, counselor_block, normalized_args
 from app.services.education_actions import validate_block_action
+from app.services.education_grounding import build_support, check_answer
 from app.services.education_followup import RESULT_INTENTS, record_ui_state, resolve_country_switch, resolve_refinement
 from app.services.education_kb_blocks import PENDING_LABELS, SHAPE_TO_BLOCK, classify_shape, kb_block, looks_like_question
 from app.services.education_leadins import KB_FOUND, KB_MISS, leadin_for
@@ -262,6 +263,7 @@ class EducationAgentService:
 
         # Knowledge-base lookup: for free-form questions and for "How to apply"; never for card turns or taps.
         context = "(not needed for this turn)"
+        chunks: list[dict] = []   # knowledge-base text retrieved this turn; also what a free-text answer may rest on
         kb_miss = False
         if intent is None and block_action is None and shape_request is None:
             logger.info("[EDU] no_rule_match chars=%d words=%d lang=%s question_like=%s", len(question), len(question.split()),
@@ -330,6 +332,7 @@ class EducationAgentService:
         full_answer = templated or ""
         if templated:
             yield {"type": "token", "data": templated}
+        grounding_on = settings.education_grounding_check and detect_language(question) == "en"
         loop_templated: str | None = None
         card_in_loop = False   # only the FIRST result card an LLM-called tool shows in a turn is composed and remembered
         for _ in range(0 if templated else MAX_TOOL_ITERATIONS):
@@ -346,7 +349,8 @@ class EducationAgentService:
                 delta = chunk.choices[0].delta
                 if delta.content:
                     current_text += delta.content
-                    yield {"type": "token", "data": delta.content}
+                    if not grounding_on:
+                        yield {"type": "token", "data": delta.content}
                 for tc in delta.tool_calls or []:
                     slot = tool_calls_data.setdefault(tc.index, {"id": "", "name": "", "arguments": ""})
                     if tc.id:
@@ -356,8 +360,25 @@ class EducationAgentService:
                     if tc.function and tc.function.arguments:
                         slot["arguments"] += tc.function.arguments
 
+            final_text = current_text
+            if grounding_on and current_text.strip():
+                checked = check_answer(
+                    current_text,
+                    build_support(chunks, catalog, profile, [b.fallback_text for b in shown], question),
+                    catalog, brand_name)
+                final_text = checked.text
+                if checked.dropped:
+                    logger.info("[EDU] grounding dropped=%d kept=%d kinds=%s", checked.dropped, checked.kept, sorted(set(checked.reasons)))
+                if checked.empty:
+                    final_text = KB_MISS   # nothing in the reply could be backed: the honest answer, with the counselor button
+                    if settings.education_compositions and not any(b.type == "quick_chips" for b in shown):
+                        counselor = counselor_block(catalog)
+                        shown.append(counselor)
+                        yield {"type": "ui_block", "block": counselor.model_dump()}
+                yield {"type": "token", "data": final_text}
+
             if not tool_calls_data:
-                full_answer = current_text
+                full_answer = final_text
                 break
 
             calls = [{"id": tool_calls_data[i]["id"], "type": "function",
@@ -365,6 +386,9 @@ class EducationAgentService:
                      for i in sorted(tool_calls_data)]
             messages.append({"role": "assistant", "content": current_text or None, "tool_calls": calls})
 
+            # Several result cards in one reply (e.g. two countries' facts): show them plain. Buttons or a one-line sentence about
+            # just one of them would sit in the middle of the others and describe only part of what is on screen.
+            several_cards = sum(1 for c in calls if TOOL_TO_INTENT.get(c["function"]["name"]) in RESULT_INTENTS) > 1
             for call in calls:
                 tool_name = call["function"]["name"]
                 try:
@@ -380,7 +404,10 @@ class EducationAgentService:
                 tool_message = result.message
                 if result.block and all(b.block_id != result.block.block_id for b in shown):
                     card_intent = TOOL_TO_INTENT.get(tool_name)
-                    if card_intent in RESULT_INTENTS and not card_in_loop:
+                    if card_intent in RESULT_INTENTS and several_cards:
+                        record_ui_state(profile, card_intent, normalized_args(card_intent, tool_args, catalog))  # the last one stays remembered
+                        blocks = [result.block]
+                    elif card_intent in RESULT_INTENTS and not card_in_loop:
                         # Same treatment as a card the rules chose: companions, remembered state, a sentence from the card.
                         card_in_loop = True
                         card_args = normalized_args(card_intent, tool_args, catalog)
@@ -402,7 +429,7 @@ class EducationAgentService:
                 full_answer = loop_templated
                 yield {"type": "token", "data": loop_templated}
                 break
-            full_answer = current_text
+            full_answer = final_text
 
         if not full_answer and shown:
             full_answer = next((b.title for b in reversed(shown) if b.title), "")

@@ -78,7 +78,8 @@ def _rx(*patterns: str) -> re.Pattern:
 
 
 _COMPARE = _rx(r"\bvs\.?\b", r"\bversus\b", r"\bcompare\b", r"\bcomparison\b", r"\bor\b.+\bwhich\b", r"\bbetter\b",
-               r"stack up", r"\bagainst\b", r"difference between")
+               r"stack up", r"\bagainst\b", r"difference between",
+               r"\bcheap\w*", r"\bmore (expensive|affordable)\b", r"\bless expensive\b")   # a cost comparison is the comparison card
 _MATCHES = _rx(r"which countr", r"what countr", r"best countr", r"suitable countr", r"countries? (for|that|suit|fit|match)",
                r"where (should|can|do) i (study|go)", r"fit my profile", r"match my profile", r"applicable",
                r"\b(which|what) destinations?\b", r"\bdestinations? (for|that|suit|fit|match)",
@@ -143,13 +144,14 @@ def detect_intent(question: str, catalog: Catalog, profile: dict | None = None) 
         return "welcome", {}
     if _COUNSELOR.search(q):
         return "lead_form", {}
+    # Two countries named and compared ("which has cheaper tuition, UK or Canada?") is a comparison, even though it also says "which country".
+    if len(mentioned) >= 2 and _COMPARE.search(q):
+        return "compare", {"countries": mentioned[:3]}
     # "which countries fit my profile" contains "my profile": the matches rule must win.
     if _MATCHES.search(q):
         return "recommend_country", {}
     if _PROFILE.search(q):
         return "profile", {}
-    if len(mentioned) >= 2 and _COMPARE.search(q):
-        return "compare", {"countries": mentioned[:3]}
     if (_ELIGIBILITY_BROAD if len(mentioned) == 1 else _ELIGIBILITY_STRICT).search(q):
         goal = country_goal("eligibility", mentioned, profile, catalog)
         if goal:

@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     # Education agent: the one-line sentence that introduces a card is written by code from the card itself (English
     # only; see education_leadins.py) instead of by the LLM, which sometimes contradicted the card. Off = LLM-written.
     education_template_leadins: bool = True
+    # Education agent: check the plain text the LLM writes (English only) and drop sentences that make a risky claim nothing we
+    # hold backs, or that offer universities/programs we have no data for (see education_grounding.py). The reply is sent
+    # once checked instead of word by word. Off = streamed unchecked.
+    education_grounding_check: bool = True
     # P4 B2: background pre-warm of the clinic org cache + one OpenAI
     # warm-up call at container start (see clinic_prewarm.py). Additive,
     # config-level rollback (vision §8.12) — default on, off flips the lane
