@@ -1,0 +1,651 @@
+{
+  "budget": {
+    "actions": [],
+    "answered": null,
+    "block_id": "range_slider-2b882b7437",
+    "changed_because": null,
+    "data": {
+      "field": "budget",
+      "max": 59000.0,
+      "min": 25000.0,
+      "step": 1000.0,
+      "unit": "$",
+      "value": 40000.0
+    },
+    "fallback_text": "What is your budget per year (tuition + living)?",
+    "schema_version": 1,
+    "sources": [],
+    "subtitle": null,
+    "title": "Your yearly budget (tuition + living)",
+    "type": "range_slider"
+  },
+  "choice_countries": {
+    "actions": [],
+    "answered": null,
+    "block_id": "choice_cards-f65cba9ab3",
+    "changed_because": null,
+    "data": {
+      "field": "countries",
+      "multi": true,
+      "options": [
+        {
+          "icon": "UK",
+          "id": "uk",
+          "label": "U.K."
+        },
+        {
+          "icon": "AU",
+          "id": "au",
+          "label": "Australia"
+        },
+        {
+          "icon": "CA",
+          "id": "ca",
+          "label": "Canada"
+        }
+      ],
+      "selected": [
+        "au",
+        "uk"
+      ]
+    },
+    "fallback_text": "Which countries are you interested in? Options: U.K., Australia, Canada.",
+    "schema_version": 1,
+    "sources": [],
+    "subtitle": "Pick one or more",
+    "title": "Which countries are you interested in?",
+    "type": "choice_cards"
+  },
+  "choice_country_one": {
+    "actions": [],
+    "answered": null,
+    "block_id": "choice_cards-d16ef3d1f3",
+    "changed_because": null,
+    "data": {
+      "field": "focus_country",
+      "multi": false,
+      "options": [
+        {
+          "icon": "UK",
+          "id": "uk",
+          "label": "U.K."
+        },
+        {
+          "icon": "AU",
+          "id": "au",
+          "label": "Australia"
+        },
+        {
+          "icon": "CA",
+          "id": "ca",
+          "label": "Canada"
+        }
+      ],
+      "selected": []
+    },
+    "fallback_text": "Which country do you want to look at? Options: U.K., Australia, Canada.",
+    "schema_version": 1,
+    "sources": [],
+    "subtitle": null,
+    "title": "Which country do you want to look at?",
+    "type": "choice_cards"
+  },
+  "choice_intake": {
+    "actions": [],
+    "answered": null,
+    "block_id": "choice_cards-cd054dc5b0",
+    "changed_because": null,
+    "data": {
+      "field": "intake",
+      "multi": false,
+      "options": [
+        {
+          "id": "September",
+          "label": "September"
+        },
+        {
+          "id": "February",
+          "label": "February"
+        },
+        {
+          "id": "July",
+          "label": "July"
+        }
+      ],
+      "selected": [
+        "September"
+      ]
+    },
+    "fallback_text": "When do you want to start? Options: September, February, July.",
+    "schema_version": 1,
+    "sources": [],
+    "subtitle": null,
+    "title": "When do you want to start?",
+    "type": "choice_cards"
+  },
+  "choice_study_level": {
+    "actions": [],
+    "answered": null,
+    "block_id": "choice_cards-3d5bdd7ff6",
+    "changed_because": null,
+    "data": {
+      "field": "study_level",
+      "multi": false,
+      "options": [
+        {
+          "id": "foundation",
+          "label": "Foundation"
+        },
+        {
+          "id": "bachelor",
+          "label": "Bachelor's"
+        },
+        {
+          "id": "master",
+          "label": "Master's"
+        },
+        {
+          "id": "phd",
+          "label": "PhD"
+        }
+      ],
+      "selected": [
+        "master"
+      ]
+    },
+    "fallback_text": "What level do you want to study? Options: Foundation, Bachelor's, Master's, PhD.",
+    "schema_version": 1,
+    "sources": [],
+    "subtitle": null,
+    "title": "What level do you want to study?",
+    "type": "choice_cards"
+  },
+  "compare_uk_au": {
+    "actions": [],
+    "answered": null,
+    "block_id": "comparison_table-ddc4ead2ac",
+    "changed_because": null,
+    "data": {
+      "columns": [
+        {
+          "icon": "UK",
+          "id": "uk",
+          "label": "U.K."
+        },
+        {
+          "icon": "AU",
+          "id": "au",
+          "label": "Australia"
+        }
+      ],
+      "rows": [
+        {
+          "label": "Tuition / year",
+          "values": [
+            "$15,000\u2013$25,000",
+            "$20,000\u2013$35,000"
+          ]
+        },
+        {
+          "label": "Living / year",
+          "values": [
+            "$10,000\u2013$14,000",
+            "$18,000\u2013$24,000"
+          ]
+        },
+        {
+          "label": "Intakes",
+          "values": [
+            "September",
+            "February, July"
+          ]
+        },
+        {
+          "label": "English requirement",
+          "values": [
+            "IELTS 6.5",
+            "IELTS 6"
+          ]
+        },
+        {
+          "label": "Post-study visa",
+          "values": [
+            "2 years",
+            "\u2014"
+          ]
+        }
+      ]
+    },
+    "fallback_text": "Comparison: U.K. vs Australia. Tuition / year: $15,000\u2013$25,000 | $20,000\u2013$35,000. Living / year: $10,000\u2013$14,000 | $18,000\u2013$24,000. Intakes: September | February, July. English requirement: IELTS 6.5 | IELTS 6. Post-study visa: 2 years | \u2014.",
+    "schema_version": 1,
+    "sources": [],
+    "subtitle": null,
+    "title": "U.K. vs Australia",
+    "type": "comparison_table"
+  },
+  "cost_au": {
+    "actions": [],
+    "answered": null,
+    "block_id": "cost_calculator-feb7e2ecb3",
+    "changed_because": null,
+    "data": {
+      "country_id": "au",
+      "currency": "$",
+      "note": "Typical ranges: your total depends on the university and city.",
+      "parts": [
+        {
+          "id": "tuition",
+          "label": "Tuition / year",
+          "max": 35000.0,
+          "min": 20000.0,
+          "step": 500.0,
+          "value": 27500.0
+        },
+        {
+          "id": "living",
+          "label": "Living / year",
+          "max": 24000.0,
+          "min": 18000.0,
+          "step": 500.0,
+          "value": 21000.0
+        }
+      ]
+    },
+    "fallback_text": "Australia yearly cost: tuition / year $20,000\u2013$35,000, living / year $18,000\u2013$24,000.",
+    "schema_version": 1,
+    "sources": [],
+    "subtitle": null,
+    "title": "Australia cost calculator",
+    "type": "cost_calculator"
+  },
+  "eligibility_uk": {
+    "actions": [],
+    "answered": null,
+    "block_id": "eligibility_meter-0f50f19ac4",
+    "changed_because": null,
+    "data": {
+      "checks": [
+        {
+          "detail": "6.5 vs 6.5 minimum",
+          "label": "English score",
+          "ok": true
+        },
+        {
+          "detail": "70% vs 60% minimum",
+          "label": "Academic score",
+          "ok": true
+        }
+      ],
+      "score": 100,
+      "verdict": "You meet the requirements we can check"
+    },
+    "fallback_text": "U.K.: You meet the requirements we can check (100%).",
+    "schema_version": 1,
+    "sources": [],
+    "subtitle": null,
+    "title": "U.K. eligibility",
+    "type": "eligibility_meter"
+  },
+  "facts_uk": {
+    "actions": [],
+    "answered": null,
+    "block_id": "info_card-bb6b9db865",
+    "changed_because": null,
+    "data": {
+      "heading": "U.K. quick facts",
+      "icon": "UK",
+      "rows": [
+        {
+          "label": "Tuition / year",
+          "value": "$15,000\u2013$25,000"
+        },
+        {
+          "label": "Living / year",
+          "value": "$10,000\u2013$14,000"
+        },
+        {
+          "label": "Intakes",
+          "value": "September"
+        },
+        {
+          "label": "English requirement",
+          "value": "IELTS 6.5"
+        },
+        {
+          "label": "Academic requirement",
+          "value": "60%"
+        },
+        {
+          "label": "Post-study visa",
+          "value": "2 years"
+        }
+      ]
+    },
+    "fallback_text": "U.K.: Tuition / year $15,000\u2013$25,000; Living / year $10,000\u2013$14,000; Intakes September; English requirement IELTS 6.5; Academic requirement 60%; Post-study visa 2 years.",
+    "schema_version": 1,
+    "sources": [],
+    "subtitle": null,
+    "title": "U.K. quick facts",
+    "type": "info_card"
+  },
+  "kb_checklist": {
+    "actions": [],
+    "answered": null,
+    "block_id": "checklist-14ec1cc91f",
+    "changed_because": null,
+    "data": {
+      "items": [
+        {
+          "label": "Application form"
+        },
+        {
+          "label": "Academic transcripts",
+          "note": "official copies"
+        },
+        {
+          "label": "Test scores"
+        }
+      ]
+    },
+    "fallback_text": "Admission documents: Application form; Academic transcripts; Test scores.",
+    "schema_version": 1,
+    "sources": [
+      "Requirements"
+    ],
+    "subtitle": null,
+    "title": "Admission documents",
+    "type": "checklist"
+  },
+  "kb_offerings": {
+    "actions": [],
+    "answered": null,
+    "block_id": "accordion-0040c8ac45",
+    "changed_because": null,
+    "data": {
+      "items": [
+        {
+          "detail": "We offer counselling sessions.",
+          "summary": "one to one",
+          "title": "Counselling sessions"
+        },
+        {
+          "detail": "Scholarship guidance for students.",
+          "summary": "funding help",
+          "title": "Scholarship guidance"
+        }
+      ]
+    },
+    "fallback_text": "What we offer: Counselling sessions; Scholarship guidance.",
+    "schema_version": 1,
+    "sources": [
+      "Services"
+    ],
+    "subtitle": null,
+    "title": "What we offer",
+    "type": "accordion"
+  },
+  "kb_process": {
+    "actions": [],
+    "answered": null,
+    "block_id": "stepper-d7613f6706",
+    "changed_because": null,
+    "data": {
+      "steps": [
+        {
+          "detail": "Start with a consultation.",
+          "title": "Book a consultation"
+        },
+        {
+          "title": "Discuss your options"
+        },
+        {
+          "title": "Application documents"
+        },
+        {
+          "title": "Visa support"
+        }
+      ]
+    },
+    "fallback_text": "Applying through us: Book a consultation; Discuss your options; Application documents; Visa support.",
+    "schema_version": 1,
+    "sources": [
+      "Process FAQ"
+    ],
+    "subtitle": null,
+    "title": "Applying through us",
+    "type": "stepper"
+  },
+  "kb_timeline": {
+    "actions": [],
+    "answered": null,
+    "block_id": "timeline-b5eefb46a6",
+    "changed_because": null,
+    "data": {
+      "events": [
+        {
+          "title": "Applications open",
+          "when": "January"
+        },
+        {
+          "title": "Applications close",
+          "when": "March"
+        },
+        {
+          "title": "Offers are sent",
+          "when": "April"
+        }
+      ]
+    },
+    "fallback_text": "Key dates: Applications open; Applications close; Offers are sent.",
+    "schema_version": 1,
+    "sources": [
+      "Requirements"
+    ],
+    "subtitle": null,
+    "title": "Key dates",
+    "type": "timeline"
+  },
+  "lead_form": {
+    "actions": [],
+    "answered": null,
+    "block_id": "lead_form-e9582af5a6",
+    "changed_because": null,
+    "data": {
+      "fields": [
+        {
+          "id": "name",
+          "label": "Full name",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "id": "email",
+          "label": "Email",
+          "required": true,
+          "type": "email"
+        },
+        {
+          "id": "phone",
+          "label": "Phone",
+          "required": true,
+          "type": "tel"
+        }
+      ]
+    },
+    "fallback_text": "Please share your name, email and phone so a counselor can contact you.",
+    "schema_version": 1,
+    "sources": [],
+    "subtitle": "A counselor will follow up with you",
+    "title": "Talk to a counselor",
+    "type": "lead_form"
+  },
+  "matches": {
+    "actions": [],
+    "answered": null,
+    "block_id": "match_cards-4bfe8cc79f",
+    "changed_because": null,
+    "data": {
+      "items": [
+        {
+          "icon": "UK",
+          "id": "uk",
+          "label": "U.K.",
+          "reasons": [
+            "Fits your $40,000 budget",
+            "English score meets the 6.5 minimum",
+            "Academic score meets the 60% minimum"
+          ],
+          "score": 100
+        },
+        {
+          "icon": "CA",
+          "id": "ca",
+          "label": "Canada",
+          "reasons": [
+            "Within your budget for most options ($27,000\u2013$45,000/yr)",
+            "English score meets the 6 minimum"
+          ],
+          "score": 94
+        },
+        {
+          "icon": "AU",
+          "id": "au",
+          "label": "Australia",
+          "reasons": [
+            "Within your budget for most options ($38,000\u2013$59,000/yr)",
+            "English score meets the 6 minimum",
+            "Academic score meets the 55% minimum"
+          ],
+          "score": 86
+        }
+      ]
+    },
+    "fallback_text": "Best matches: U.K. 100%, Canada 94%, Australia 86%.",
+    "schema_version": 1,
+    "sources": [],
+    "subtitle": null,
+    "title": "Countries that match your profile",
+    "type": "match_cards"
+  },
+  "profile": {
+    "actions": [
+      {
+        "id": "edit",
+        "label": "Update my details"
+      }
+    ],
+    "answered": null,
+    "block_id": "profile_summary-d766730ee6",
+    "changed_because": null,
+    "data": {
+      "missing": [],
+      "rows": [
+        {
+          "label": "Countries",
+          "value": "Australia, U.K."
+        },
+        {
+          "label": "Study level",
+          "value": "master"
+        },
+        {
+          "label": "Field of study",
+          "value": "Business"
+        },
+        {
+          "label": "Budget",
+          "value": "$40,000 / year"
+        },
+        {
+          "label": "Intake",
+          "value": "September"
+        },
+        {
+          "label": "English test",
+          "value": "IELTS"
+        },
+        {
+          "label": "English score",
+          "value": "6.5"
+        },
+        {
+          "label": "Academic score",
+          "value": "70"
+        }
+      ],
+      "welcome_back": false
+    },
+    "fallback_text": "What I know: Countries: Australia, U.K.; Study level: master; Field of study: Business; Budget: $40,000 / year; Intake: September; English test: IELTS; English score: 6.5; Academic score: 70.",
+    "schema_version": 1,
+    "sources": [],
+    "subtitle": null,
+    "title": "What I know about you",
+    "type": "profile_summary"
+  },
+  "quick_chips": {
+    "actions": [],
+    "answered": null,
+    "block_id": "quick_chips-53e6f8d09d",
+    "changed_because": null,
+    "data": {
+      "chips": [
+        {
+          "id": "a",
+          "label": "Chip A"
+        }
+      ]
+    },
+    "fallback_text": "Chip A",
+    "schema_version": 1,
+    "sources": [],
+    "subtitle": null,
+    "title": null,
+    "type": "quick_chips"
+  },
+  "welcome": {
+    "actions": [],
+    "answered": null,
+    "block_id": "journey_cards-daf269ad8d",
+    "changed_because": null,
+    "data": {
+      "tiles": [
+        {
+          "description": "Match countries to your budget and scores",
+          "icon": "\ud83c\udf0d",
+          "id": "find",
+          "title": "Find the right country"
+        },
+        {
+          "description": "See if you meet a country's requirements",
+          "icon": "\ud83c\udf93",
+          "id": "eligibility",
+          "title": "Check my eligibility"
+        },
+        {
+          "description": "Tuition and living costs in a live calculator",
+          "icon": "\ud83d\udcb0",
+          "id": "costs",
+          "title": "Estimate my costs"
+        },
+        {
+          "description": "The application process, step by step",
+          "icon": "\ud83d\udcdd",
+          "id": "apply",
+          "title": "How to apply"
+        },
+        {
+          "description": "Get personal help from our team",
+          "icon": "\ud83d\udcac",
+          "id": "counselor",
+          "title": "Talk to a counselor"
+        }
+      ]
+    },
+    "fallback_text": "I can help you: find the right country, check my eligibility, estimate my costs, how to apply, talk to a counselor.",
+    "schema_version": 1,
+    "sources": [],
+    "subtitle": null,
+    "title": "How can I help you today?",
+    "type": "journey_cards"
+  }
+}
