@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     # Education agent: show a result card together with its companions (profile summary, next-step buttons) as a fixed
     # composition per intent (education_compositions.py). Off = the single card only. On by default.
     education_compositions: bool = True
+    # Education agent: the one-line sentence that introduces a card is written by code from the card itself (English
+    # only; see education_leadins.py) instead of by the LLM, which sometimes contradicted the card. Off = LLM-written.
+    education_template_leadins: bool = True
     # P4 B2: background pre-warm of the clinic org cache + one OpenAI
     # warm-up call at container start (see clinic_prewarm.py). Additive,
     # config-level rollback (vision §8.12) — default on, off flips the lane

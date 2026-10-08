@@ -30,6 +30,7 @@ from app.services.education_compositions import chip_intent, compose, counselor_
 from app.services.education_actions import validate_block_action
 from app.services.education_followup import record_ui_state, resolve_country_switch, resolve_refinement
 from app.services.education_kb_blocks import PENDING_LABELS, SHAPE_TO_BLOCK, classify_shape, kb_block
+from app.services.education_leadins import KB_FOUND, KB_MISS, leadin_for
 from app.services.education_memory import DbEducationMemory
 from app.services.education_profile import (
     FIELD_LABELS, apply_block_action, display_value, merge_profiles, missing_slots, progress, set_field,
@@ -216,6 +217,8 @@ class EducationAgentService:
 
         shown: list[UIBlock] = []
         outcome: ToolOutcome | None = None
+        templated: str | None = None   # the card's lead-in when code can write it (English only), else the LLM does
+        can_template = settings.education_template_leadins and detect_language(question) == "en"
         # A short follow-up on the card on screen is resolved in code and re-runs the SAME intent, so the student gets
         # the same UI with new data: an explicit "what about Canada?" first (the keyword rules would read it as plain
         # facts), then a refinement such as "only under $30k" once the keyword rules have declined the message.
@@ -254,6 +257,8 @@ class EducationAgentService:
                 for block in blocks:
                     shown.append(block)
                     yield {"type": "ui_block", "block": block.model_dump()}
+                if can_template:
+                    templated = leadin_for(intent[0], args, outcome.block, catalog, brand_name)
 
         # Knowledge-base lookup: for free-form questions and for "How to apply"; never for card turns or taps.
         context = "(not needed for this turn)"
@@ -278,6 +283,8 @@ class EducationAgentService:
                 if block:
                     shown.append(block)
                     yield {"type": "ui_block", "block": block.model_dump()}
+                    if can_template:
+                        templated = KB_FOUND
                     outcome = ToolOutcome(block, (
                         f"The student now sees '{block.title}' right below your reply, built from the knowledge base. "
                         "Write ONE short, natural sentence introducing it (like 'Here's how it works:'). "
@@ -288,6 +295,8 @@ class EducationAgentService:
                         counselor = counselor_block(catalog)
                         shown.append(counselor)
                         yield {"type": "ui_block", "block": counselor.model_dump()}
+                        if can_template:
+                            templated = KB_MISS   # the counselor button is on screen, so the sentence can point to it
 
         system_prompt = EDUCATION_SYSTEM_PROMPT.format(
             brand_name=brand_name,
@@ -315,8 +324,10 @@ class EducationAgentService:
         # If nothing could be shown (missing data), keep tools so it can follow the tool's instruction.
         tools = None if (outcome is not None and outcome.block) else EDUCATION_TOOLS
 
-        full_answer = ""
-        for _ in range(MAX_TOOL_ITERATIONS):
+        full_answer = templated or ""
+        if templated:
+            yield {"type": "token", "data": templated}
+        for _ in range(0 if templated else MAX_TOOL_ITERATIONS):
             await db.commit()  # release the pooler connection before each LLM round-trip
 
             kwargs = {"tools": tools} if tools else {}

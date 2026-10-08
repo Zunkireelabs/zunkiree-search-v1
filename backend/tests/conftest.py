@@ -37,3 +37,16 @@ def _legacy_agent_tests_show_single_blocks(request, monkeypatch):
     if request.node.fspath.basename in _LEGACY_SINGLE_BLOCK_MODULES:
         from app.services import education_agent
         monkeypatch.setattr(education_agent.settings, "education_compositions", False)
+
+# Card lead-ins are written by code (education_leadins.py), so a card turn makes no LLM call. These tests script the LLM's
+# lead-in and inspect its call, so they run with templated lead-ins off. New tests cover the templated turns explicitly
+# (see tests/test_education_leadins.py).
+_LEGACY_LLM_LEADIN_MODULES = {"test_education_agent.py", "test_education_followup.py", "test_education_compositions.py"}
+
+
+@pytest.fixture(autouse=True)
+def _legacy_agent_tests_use_llm_leadins(request, monkeypatch):
+    if request.node.fspath.basename in _LEGACY_LLM_LEADIN_MODULES:
+        from app.services import education_agent
+        monkeypatch.setattr(education_agent.settings, "education_template_leadins", False)
+
