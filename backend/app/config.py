@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     # something that block offered (see education_actions.py). A rejected tap is dropped and the turn continues as
     # plain typed text. On by default; the switch exists for emergency rollback.
     education_validate_block_actions: bool = True
+    # Education agent: show a result card together with its companions (profile summary, next-step buttons) as a fixed
+    # composition per intent (education_compositions.py). Off = the single card only. On by default.
+    education_compositions: bool = True
     # P4 B2: background pre-warm of the clinic org cache + one OpenAI
     # warm-up call at container start (see clinic_prewarm.py). Additive,
     # config-level rollback (vision §8.12) — default on, off flips the lane

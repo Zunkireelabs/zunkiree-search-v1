@@ -26,6 +26,7 @@ from app.models.widget_config import WidgetConfig
 from app.schemas.ui_blocks import UIBlock
 from app.services.clinic_agent import _LANGUAGE_DIRECTIVES  # reuse the SAME strings dental-city ships
 from app.services.education_catalog import Catalog, get_catalog
+from app.services.education_compositions import chip_intent, compose, counselor_block
 from app.services.education_actions import validate_block_action
 from app.services.education_followup import record_ui_state, resolve_country_switch, resolve_refinement
 from app.services.education_kb_blocks import PENDING_LABELS, SHAPE_TO_BLOCK, classify_shape, kb_block
@@ -144,6 +145,8 @@ def _turn_intent(question: str, block_action: dict | None, catalog: Catalog, pro
     if block_action:
         action_id = block_action.get("actionId")
         values = block_action.get("values") or {}
+        if block_action.get("blockType") == "quick_chips":
+            return chip_intent(str(action_id), catalog)   # a next-step button: a closed id -> intent, or nothing
         if action_id == "start":
             return journey_intent(values.get("journey", ""), profile, catalog)
         if action_id == "explore":
@@ -243,9 +246,14 @@ class EducationAgentService:
             outcome = execute_education_tool(name, args, profile, catalog)
             yield {"type": "tool_call", "name": name, "status": "done"}
             if outcome.block:
-                shown.append(outcome.block)
                 record_ui_state(profile, intent[0], args)
-                yield {"type": "ui_block", "block": outcome.block.model_dump()}
+                blocks = compose(intent[0], args, outcome.block, profile, catalog) if settings.education_compositions else [outcome.block]
+                if len(blocks) > 1:
+                    outcome = ToolOutcome(outcome.block, outcome.message + " Related blocks and next-step buttons appear with it; "
+                                          "do not list, repeat or describe them.")
+                for block in blocks:
+                    shown.append(block)
+                    yield {"type": "ui_block", "block": block.model_dump()}
 
         # Knowledge-base lookup: for free-form questions and for "How to apply"; never for card turns or taps.
         context = "(not needed for this turn)"
@@ -276,6 +284,10 @@ class EducationAgentService:
                         "Do not repeat its contents and do not say 'component', 'interactive' or 'guide'."))
                 else:
                     kb_miss = True
+                    if settings.education_compositions:
+                        counselor = counselor_block(catalog)
+                        shown.append(counselor)
+                        yield {"type": "ui_block", "block": counselor.model_dump()}
 
         system_prompt = EDUCATION_SYSTEM_PROMPT.format(
             brand_name=brand_name,
@@ -356,7 +368,7 @@ class EducationAgentService:
             full_answer = current_text
 
         if not full_answer and shown:
-            full_answer = shown[-1].title or ""
+            full_answer = next((b.title for b in reversed(shown) if b.title), "")
 
         # Persist the turn: profile (incl. the shown-blocks cache) and the transcript with its blocks.
         await memory.save_profile(customer_id, session_id, profile)

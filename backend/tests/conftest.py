@@ -19,9 +19,21 @@ os.environ.setdefault("BACKEND_CREDENTIALS_ENCRYPTION_KEY", Fernet.generate_key(
 # New tests turn it on explicitly (see tests/test_education_actions.py).
 _LEGACY_UNVALIDATED_TAP_MODULES = {"test_education_agent.py", "test_education_followup.py"}
 
+# Compositions show a result card with its companions (profile summary, next-step buttons). These older tests assert a
+# turn shows exactly one block ("[card] = blocks_of(...)"), so they run with compositions off. New tests cover the
+# composed turns explicitly (see tests/test_education_compositions.py).
+_LEGACY_SINGLE_BLOCK_MODULES = {"test_education_agent.py", "test_education_followup.py"}
+
 
 @pytest.fixture(autouse=True)
 def _legacy_agent_tests_skip_tap_validation(request, monkeypatch):
     if request.node.fspath.basename in _LEGACY_UNVALIDATED_TAP_MODULES:
         from app.services import education_agent
         monkeypatch.setattr(education_agent.settings, "education_validate_block_actions", False)
+
+
+@pytest.fixture(autouse=True)
+def _legacy_agent_tests_show_single_blocks(request, monkeypatch):
+    if request.node.fspath.basename in _LEGACY_SINGLE_BLOCK_MODULES:
+        from app.services import education_agent
+        monkeypatch.setattr(education_agent.settings, "education_compositions", False)
