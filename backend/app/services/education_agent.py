@@ -26,6 +26,7 @@ from app.models.widget_config import WidgetConfig
 from app.schemas.ui_blocks import UIBlock
 from app.services.clinic_agent import _LANGUAGE_DIRECTIVES  # reuse the SAME strings dental-city ships
 from app.services.education_catalog import Catalog, get_catalog
+from app.services.education_followup import record_ui_state, resolve_country_switch, resolve_refinement
 from app.services.education_kb_blocks import PENDING_LABELS, SHAPE_TO_BLOCK, classify_shape, kb_block
 from app.services.education_memory import DbEducationMemory
 from app.services.education_profile import (
@@ -204,7 +205,19 @@ class EducationAgentService:
 
         shown: list[UIBlock] = []
         outcome: ToolOutcome | None = None
-        intent = _turn_intent(question, block_action, catalog, profile)
+        # A short follow-up on the card on screen is resolved in code and re-runs the SAME intent, so the student gets
+        # the same UI with new data: an explicit "what about Canada?" first (the keyword rules would read it as plain
+        # facts), then a refinement such as "only under $30k" once the keyword rules have declined the message.
+        followup = resolve_country_switch(question, profile, catalog) if block_action is None else None
+        intent = (followup.intent, followup.args) if followup else _turn_intent(question, block_action, catalog, profile)
+        if intent is None and block_action is None:
+            followup = resolve_refinement(question, profile, catalog)
+            if followup:
+                intent = (followup.intent, followup.args)
+        source = "followup" if followup else "rule"
+        if followup:
+            for field_name, value in followup.updates.items():
+                set_field(profile, field_name, value)
 
         # A tapped journey tile can ask for a knowledge-base answer ("How to apply") instead of a catalog card.
         shape_request: dict | None = None
@@ -213,7 +226,7 @@ class EducationAgentService:
 
         if intent:
             name, args = tool_for_intent(intent[0]), dict(intent[1])
-            logger.info("[EDU] intent=%s tool=%s args=%s", intent[0], name, args)
+            logger.info("[EDU] intent=%s source=%s tool=%s args=%s", intent[0], source, name, args)
             if goal := args.pop("goal", None):
                 profile["goal"] = goal  # remembered so the next tap (which country?) continues the same goal
             if args.get("country"):
@@ -223,6 +236,7 @@ class EducationAgentService:
             yield {"type": "tool_call", "name": name, "status": "done"}
             if outcome.block:
                 shown.append(outcome.block)
+                record_ui_state(profile, intent[0], args)
                 yield {"type": "ui_block", "block": outcome.block.model_dump()}
 
         # Knowledge-base lookup: for free-form questions and for "How to apply"; never for card turns or taps.
