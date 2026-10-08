@@ -15,9 +15,11 @@ import json
 import logging
 import re
 from pathlib import Path
+from typing import Protocol
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
+from app.services.education_catalog_models import Course, University
 from app.services.money import format_money, normalize_currency
 
 logger = logging.getLogger("zunkiree.education_catalog")
@@ -64,6 +66,9 @@ class Catalog(BaseModel):
     currency: str = "USD"
     status: str = "verified"
     countries: list[CountryRecord] = Field(default_factory=list)
+    # Empty until a real source supplies them; nothing in the repository ships universities or courses.
+    universities: list[University] = Field(default_factory=list)
+    courses: list[Course] = Field(default_factory=list)
     # Budget slider bounds. Optional: derived from country costs when absent.
     budget_min: int | None = None
     budget_max: int | None = None
@@ -73,6 +78,42 @@ class Catalog(BaseModel):
     @classmethod
     def _iso_currency(cls, value):
         return normalize_currency(value) if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def _references_resolve(self):
+        """A catalog is internally consistent or it is rejected whole: no university in an unknown country, no course
+        at an unknown university, no duplicate ids. (An invalid catalog loads as empty, so the agent answers from the
+        knowledge base only instead of showing half-wrong records.)"""
+        for kind, records in (("country", self.countries), ("university", self.universities), ("course", self.courses)):
+            ids = [r.id for r in records]
+            if len(ids) != len(set(ids)):
+                raise ValueError(f"duplicate {kind} ids")
+        country_ids = {c.id for c in self.countries}
+        for u in self.universities:
+            if u.country_id not in country_ids:
+                raise ValueError(f"university '{u.id}' is in unknown country '{u.country_id}'")
+        university_ids = {u.id for u in self.universities}
+        for course in self.courses:
+            if course.university_id not in university_ids:
+                raise ValueError(f"course '{course.id}' is at unknown university '{course.university_id}'")
+        return self
+
+    @property
+    def is_placeholder(self) -> bool:
+        """True for sample data that the tenant has not verified."""
+        return self.status != "verified"
+
+    def get_university(self, university_id: str) -> University | None:
+        return next((u for u in self.universities if u.id == university_id), None)
+
+    def universities_in(self, country_id: str) -> list[University]:
+        return [u for u in self.universities if u.country_id == country_id]
+
+    def get_course(self, course_id: str) -> Course | None:
+        return next((c for c in self.courses if c.id == course_id), None)
+
+    def courses_at(self, university_id: str) -> list[Course]:
+        return [c for c in self.courses if c.university_id == university_id]
 
     def get(self, country_id: str) -> CountryRecord | None:
         return next((c for c in self.countries if c.id == country_id), None)
@@ -120,13 +161,44 @@ def load_catalog_file(path: Path) -> Catalog | None:
     return catalog
 
 
+class CatalogProvider(Protocol):
+    """A source of tenant catalogs: a JSON file today, a database or an API later. Return None when the tenant has none."""
+
+    def load(self, site_id: str) -> Catalog | None: ...
+
+
+class JsonFileCatalogProvider:
+    """One <site_id>.json per tenant in a directory (today's source)."""
+
+    def __init__(self, directory: Path = CATALOG_DIR):
+        self.directory = directory
+
+    def load(self, site_id: str) -> Catalog | None:
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", site_id or ""):
+            return None  # never build a file path from anything but a plain id
+        path = self.directory / f"{site_id}.json"
+        return load_catalog_file(path) if path.is_file() else None
+
+
+_providers: list[CatalogProvider] = [JsonFileCatalogProvider()]
+
+
+def set_catalog_providers(providers: list[CatalogProvider]) -> None:
+    """Replace the catalog sources (first one with a catalog for the tenant wins)."""
+    global _providers
+    _providers = list(providers)
+
+
 def get_catalog(site_id: str) -> Catalog:
     """The tenant's catalog, or an empty one (agent then answers from the knowledge base only)."""
     if site_id in _registry:
         return _registry[site_id]
-    path = CATALOG_DIR / f"{site_id}.json"
-    if path.is_file():
-        catalog = load_catalog_file(path)
+    for provider in _providers:
+        try:
+            catalog = provider.load(site_id)
+        except Exception:  # a failing source must never take the chat down
+            logger.exception("education catalog provider %s failed for %s", type(provider).__name__, site_id)
+            continue
         if catalog:
             _registry[site_id] = catalog
             return catalog
