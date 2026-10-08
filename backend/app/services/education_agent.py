@@ -26,6 +26,7 @@ from app.models.widget_config import WidgetConfig
 from app.schemas.ui_blocks import UIBlock
 from app.services.clinic_agent import _LANGUAGE_DIRECTIVES  # reuse the SAME strings dental-city ships
 from app.services.education_catalog import Catalog, get_catalog
+from app.services.education_actions import validate_block_action
 from app.services.education_followup import record_ui_state, resolve_country_switch, resolve_refinement
 from app.services.education_kb_blocks import PENDING_LABELS, SHAPE_TO_BLOCK, classify_shape, kb_block
 from app.services.education_memory import DbEducationMemory
@@ -190,6 +191,13 @@ class EducationAgentService:
         memory = self.memory_for(db)
         profile = await memory.load_profile(customer_id, session_id)
         history, seen_titles = await memory.load_history(customer_id, session_id)
+
+        if block_action and settings.education_validate_block_actions:
+            origin = await memory.find_block(customer_id, session_id, str(block_action.get("blockId") or ""))
+            if reason := validate_block_action(block_action, origin):
+                logger.warning("[EDU] rejected block_action reason=%s block=%s action=%s",
+                               reason, str(block_action.get("blockId"))[:40], str(block_action.get("actionId"))[:20])
+                block_action = None  # degrade to the typed text; nothing from the tap is applied
 
         changed = apply_block_action(profile, block_action)
         if "contact" in changed:

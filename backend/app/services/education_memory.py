@@ -19,6 +19,7 @@ from app.services.education_profile import new_profile
 
 HISTORY_FOR_LLM = 10
 HISTORY_FOR_WIDGET = 50
+BLOCK_LOOKUP_WINDOW = HISTORY_FOR_WIDGET   # a tap can only come from a block the widget can show
 
 
 def shown_titles(messages: list[dict]) -> list[str]:
@@ -84,6 +85,16 @@ class DbEducationMemory:
                 return True
         return False
 
+    async def find_block(self, customer_id: uuid.UUID, session_id: str, block_id: str,
+                         limit: int = BLOCK_LOOKUP_WINDOW) -> dict | None:
+        """The most recent block with this id shown in this session (assistant messages only), or None."""
+        for row in reversed(await self._recent(customer_id, session_id, limit)):
+            if row.role == "assistant":
+                for b in row.blocks:
+                    if b.get("block_id") == block_id:
+                        return b
+        return None
+
     async def _recent(self, customer_id: uuid.UUID, session_id: str, limit: int) -> list[WidgetMessage]:
         rows = (await self.db.execute(
             select(WidgetMessage)
@@ -136,6 +147,14 @@ class InMemoryEducationMemory:
                 msg["blocks"] = [{**b, "answered": values} if b.get("block_id") == block_id else b for b in msg["blocks"]]
                 return True
         return False
+
+    async def find_block(self, customer_id, session_id, block_id, limit: int = BLOCK_LOOKUP_WINDOW) -> dict | None:
+        for msg in reversed(self.messages[(customer_id, session_id)][-limit:]):
+            if msg["role"] == "assistant":
+                for b in msg["blocks"]:
+                    if b.get("block_id") == block_id:
+                        return b
+        return None
 
     async def load_history(self, customer_id, session_id, limit: int = HISTORY_FOR_LLM):
         rows = self.messages[(customer_id, session_id)][-limit:]

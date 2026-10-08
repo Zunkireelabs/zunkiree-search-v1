@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     # Supabase DB, so with this on a new model auto-creates its table there without migration review.
     # Set AUTO_CREATE_TABLES=false once schema changes are migration-only.
     auto_create_tables: bool = True
+    # Education agent: accept a tapped UI action only if it points at a block shown in this session and asks for
+    # something that block offered (see education_actions.py). A rejected tap is dropped and the turn continues as
+    # plain typed text. On by default; the switch exists for emergency rollback.
+    education_validate_block_actions: bool = True
     # P4 B2: background pre-warm of the clinic org cache + one OpenAI
     # warm-up call at container start (see clinic_prewarm.py). Additive,
     # config-level rollback (vision §8.12) — default on, off flips the lane
