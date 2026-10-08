@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-from openai import NOT_GIVEN, APIConnectionError
+from openai import APIConnectionError
 
 from app.models.customer import Customer
 from app.services.clinic_agent import ClinicAgentService
@@ -107,41 +107,80 @@ async def test_timeout_twice_on_chat_channel_raises_after_one_retry():
 
 
 @pytest.mark.asyncio
-async def test_timeout_on_voice_channel_never_retries():
+async def test_voice_timeout_retries_once_on_fallback_model_and_recovers():
+    """SBAL-Z11 V1: a stalled first attempt on voice retries once."""
     service = _service()
     service.client = AsyncMock()
-    service.client.chat.completions.create = AsyncMock(side_effect=[_timeout_error()])
+    calls = []
 
-    with pytest.raises(APIConnectionError):
-        await _run(service, channel="voice")
+    def _record(**kwargs):
+        calls.append({"model": kwargs["model"], "timeout": kwargs.get("timeout")})
+        if len(calls) == 1:
+            raise _timeout_error()
+        return _ok_stream("We open at nine.")
 
-    assert service.client.chat.completions.create.call_count == 1
+    service.client.chat.completions.create = AsyncMock(side_effect=_record)
+    events = await _run(service, channel="voice")
+
+    assert calls == [
+        {"model": service.model, "timeout": 6.0},
+        {"model": service.fallback_model, "timeout": 6.0},
+    ]
+    assert "We open at nine." in "".join(e["data"] for e in events if e.get("type") == "token")
 
 
 @pytest.mark.asyncio
-async def test_chat_channel_uses_8s_per_call_timeout_voice_uses_client_default():
-    """
-    Review on #126 follow-up: the retry only fits inside IG's 20s lane
-    timeout and Orca's 25s widget-run budget if each attempt is shorter
-    than the "chat" client profile's default 15s. Non-voice channels pass
-    an explicit 8s per-call `timeout` kwarg; voice passes none (NOT_GIVEN),
-    keeping the client's own 15s/0-retry default — `timeout=None` would
-    instead mean "no timeout at all" to the SDK.
-    """
-    captured_timeouts = []
+async def test_voice_both_attempts_fail_speaks_language_matched_line_not_silence(caplog):
+    service = _service()
+    service.client = AsyncMock()
+    service.client.chat.completions.create = AsyncMock(side_effect=[_timeout_error(), _timeout_error()])
 
-    def _record(**kwargs):
-        captured_timeouts.append(kwargs.get("timeout"))
-        return _ok_stream("Here are our services.")
+    with caplog.at_level("INFO", logger="zunkiree.clinic_agent"):
+        events = await _run(service, channel="voice")
 
-    for channel in ("chat", "voice"):
-        service = _service()
-        service.client = AsyncMock()
-        service.client.chat.completions.create = AsyncMock(side_effect=_record)
-        await _run(service, channel=channel)
+    assert service.client.chat.completions.create.call_count == 2
+    done = [e for e in events if e.get("type") == "done"][0]
+    assert done["answer"].strip()
+    tokens = "".join(e["data"] for e in events if e.get("type") == "token")
+    assert tokens == done["answer"]
+    log = "\n".join(r.message for r in caplog.records)
+    assert "llm_call_timeout_retry" in log and "timed_out_model=" in log
+    assert "llm_voice_both_attempts_failed" in log
+    assert f"model={service.fallback_model}" in log
 
-    assert captured_timeouts[0] == 8.0
-    assert captured_timeouts[1] is NOT_GIVEN
+
+@pytest.mark.asyncio
+async def test_voice_failure_line_matches_devanagari():
+    service = _service()
+    service.client = AsyncMock()
+    service.client.chat.completions.create = AsyncMock(side_effect=[_timeout_error(), _timeout_error()])
+    customer = _make_customer()
+    events = []
+    with patch("app.services.query.get_query_service") as mock_gqs:
+        mock_gqs.return_value._retrieve_and_rank = AsyncMock(return_value={"chunks_for_llm": []})
+        async for e in service.process_agent_stream(
+            db=_mock_db(), site_id="dental-city", session_id="s-dev",
+            question="तपाईहरूसँग कुन कुन सर्भिसेस छ?", customer_id=customer.id,
+            customer=customer, config=None, brand_name="Dental City", channel="voice",
+        ):
+            events.append(e)
+    done = [e for e in events if e.get("type") == "done"][0]
+    assert any("\u0900" <= ch <= "\u097f" for ch in done["answer"])
+
+
+def test_catalog_translit_net_rewrites_lash_corpse():
+    from app.services.clinic_agent import _fix_catalog_translit
+    assert "लाश" not in _fix_catalog_translit("ब्राउ शेपिंग · लाश लिफ्ट · क्लासिक लाश एक्स्टेन्सन")
+    assert _fix_catalog_translit("लाश लिफ्ट").startswith("Lash Lift")
+    assert _fix_catalog_translit("नमस्ते") == "नमस्ते"
+
+
+def test_exact_service_match_picks_one_else_keeps_list():
+    from app.services.clinic_agent import _exact_service_match
+    svcs = [{"name": "Brow Lamination"}, {"name": "Brow Lamination Removal"}, {"name": "Lash Lift"}]
+    assert _exact_service_match(svcs, "brow lamination") == [{"name": "Brow Lamination"}]
+    assert _exact_service_match(svcs, "Brow") == svcs
+    assert _exact_service_match(svcs, None) == svcs
 
 
 @pytest.mark.asyncio
@@ -170,20 +209,6 @@ async def test_retry_uses_fallback_model_and_6s_timeout_not_same_model():
     assert calls[0] == {"model": service.model, "timeout": 8.0}
     assert calls[1] == {"model": service.fallback_model, "timeout": 6.0}
     assert service.fallback_model != service.model
-
-
-@pytest.mark.asyncio
-async def test_voice_never_uses_fallback_model():
-    service = _service()
-    service.client = AsyncMock()
-    service.client.chat.completions.create = AsyncMock(side_effect=_timeout_error())
-
-    with pytest.raises(APIConnectionError):
-        await _run(service, channel="voice")
-
-    kwargs = service.client.chat.completions.create.call_args.kwargs
-    assert kwargs["model"] == service.model
-    assert kwargs["timeout"] is NOT_GIVEN
 
 
 @pytest.mark.asyncio
@@ -249,3 +274,26 @@ async def test_timeout_then_retry_finishes_under_20s_with_mocked_clock():
     # under the ~14s worst case of an 8s timeout + 6s retry), well under
     # IG's 20s lane timeout / Orca's 25s widget-run budget.
     assert clock.now < 20.0
+
+
+@pytest.mark.asyncio
+async def test_voice_worst_case_stall_turn_under_16s_with_mocked_clock():
+    """Stall (6s) -> retry succeeds (3.7s): well under 16s, budgeted against
+    ElevenLabs' observed ~18s hang-up."""
+    service = _service()
+    service.client = AsyncMock()
+    clock = _FakeMonotonicClock()
+    n = {"i": 0}
+
+    def _side_effect(**kwargs):
+        n["i"] += 1
+        if n["i"] == 1:
+            clock.advance(6.0)
+            raise _timeout_error()
+        clock.advance(3.7)
+        return _ok_stream("We open at nine.")
+
+    service.client.chat.completions.create = AsyncMock(side_effect=_side_effect)
+    with patch("time.monotonic", clock):
+        await _run(service, channel="voice")
+    assert clock.now < 16.0
