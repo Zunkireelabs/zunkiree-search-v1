@@ -1028,9 +1028,34 @@ _BOOKING_SIGNAL = re.compile(
     r"\b(?:book\w*|appointment\w*|schedule\w*|reschedule\w*|cancel\w*|confirm\w*|avail\w*|"
     r"slot\w*|price\w*|cost\w*|npr|rs\.?\s*\d|service\w*|treatment\w*|how\s+much|kati|"
     r"\d{1,2}\s*(?:am|pm)|baje)\b"
-    r"|बुक|मिलाउ|उपलब्ध|मूल्य|मुल्य|शुल्क|सेवा|भेट|बजे|गर्दिनोस्|गर्नुहोस्",
+    r"|बुक|मिलाउ|उपलब्ध|मूल्य|मुल्य|शुल्क|सेवा|सर्(?:भ|व)िस|भेट|बजे|गर्दिनोस्|गर्नुहोस्",
     re.IGNORECASE,
 )
+# SBAL-Z12 F2: on voice there is no card rendering — the model must speak the
+# list_services result as prose. sbal has 53 services; reciting them hit
+# finish_reason=length (~4.5 s of generation, inside the vendor's TTFT
+# ceiling) and is unusable on a call anyway. Cap what the MODEL sees, only on
+# voice; widget/IG tool results are untouched.
+_VOICE_SERVICES_CAP = 8
+
+
+def _cap_services_for_voice(result: dict) -> dict:
+    services = result.get("services")
+    if result.get("blocked") or not isinstance(services, list) or len(services) <= _VOICE_SERVICES_CAP:
+        return result
+    return {
+        **result,
+        "services": services[:_VOICE_SERVICES_CAP],
+        "truncated": True,
+        "total_services": len(services),
+        "note": (
+            f"Voice call: only the first {_VOICE_SERVICES_CAP} of {len(services)} services are "
+            "shown. Name a few of them briefly, say there are more, and offer to name more or "
+            "to help book a specific one. Do not read out the whole list."
+        ),
+    }
+
+
 _PHONE_LIKE_IN_QUESTION = re.compile(r"\d{7,}")
 _EMAIL_LIKE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 
@@ -2184,10 +2209,14 @@ class ClinicAgentService:
                             if result.get("confirmed_pending"):
                                 turn_confirmed = (result["confirmed_pending"], booking["booking_number"])
 
+                    model_result = result
+                    if tool_name == "list_services" and channel == "voice":
+                        model_result = _cap_services_for_voice(result)
+
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc["id"],
-                        "content": json.dumps(result),
+                        "content": json.dumps(model_result),
                     })
 
                 if turn_confirmed is not None:
