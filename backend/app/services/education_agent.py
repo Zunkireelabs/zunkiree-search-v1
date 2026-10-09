@@ -31,7 +31,7 @@ from app.services.education_actions import validate_block_action
 from app.services.education_grounding import build_support, check_answer
 from app.services.education_followup import RESULT_INTENTS, record_ui_state, resolve_country_switch, resolve_refinement
 from app.services.education_kb_blocks import PENDING_LABELS, SHAPE_TO_BLOCK, classify_shape, kb_block, looks_like_question
-from app.services.education_leadins import KB_FOUND, KB_MISS, leadin_for
+from app.services.education_leadins import KB_FOUND, KB_MISS, NEEDS_DETAILS, leadin_for
 from app.services.education_memory import DbEducationMemory
 from app.services.education_profile import (
     FIELD_LABELS, apply_block_action, display_value, merge_profiles, missing_slots, progress, set_field,
@@ -117,6 +117,15 @@ _SLOT_CARD: dict[str, tuple[str, dict]] = {
     "budget": ("budget", {}),
     "intake": ("choice", {"kind": "intake"}),
 }
+
+
+def _ask_for_budget(profile: dict, catalog: Catalog) -> ToolOutcome | None:
+    """Countries can't be ranked yet. Ask the one useful thing (the yearly budget) with the slider, instead of leaving the
+    reply to the LLM. None when the budget is already known (asking again would loop) or the catalog has no costs to slide over."""
+    if profile.get("budget"):
+        return None
+    ask = execute_education_tool("show_budget_slider", {}, profile, catalog)
+    return ask if ask.block else None
 
 
 _ACK = re.compile(r"^(ok(ay)?|yes|yeah|yep|sure|alright|continue|next|go ahead|let'?s go|proceed)[\s.!]*$", re.I)
@@ -249,7 +258,18 @@ class EducationAgentService:
             yield {"type": "tool_call", "name": name, "status": "running"}
             outcome = execute_education_tool(name, args, profile, catalog)
             yield {"type": "tool_call", "name": name, "status": "done"}
-            if outcome.block:
+            needs_details = False
+            if outcome.block is None and intent[0] == "recommend_country" and settings.education_template_leadins:
+                if ask := _ask_for_budget(profile, catalog):
+                    needs_details = True
+                    outcome = ToolOutcome(ask.block, ask.message + " It appears because countries can't be ranked until you know "
+                                          "their budget: say that in one short sentence and do not suggest any country.")
+            if outcome.block and needs_details:
+                shown.append(outcome.block)
+                yield {"type": "ui_block", "block": outcome.block.model_dump()}
+                if can_template:
+                    templated = NEEDS_DETAILS
+            elif outcome.block:
                 record_ui_state(profile, intent[0], args)
                 blocks = compose(intent[0], args, outcome.block, profile, catalog) if settings.education_compositions else [outcome.block]
                 if len(blocks) > 1:
@@ -400,11 +420,21 @@ class EducationAgentService:
                 yield {"type": "tool_call", "name": tool_name, "status": "running"}
                 result = execute_education_tool(tool_name, tool_args, profile, catalog)
                 yield {"type": "tool_call", "name": tool_name, "status": "done"}
+                asked_for_details = False
+                if (result.block is None and TOOL_TO_INTENT.get(tool_name) == "recommend_country"
+                        and settings.education_template_leadins and (ask := _ask_for_budget(profile, catalog))):
+                    asked_for_details = True
+                    result = ToolOutcome(ask.block, "The student now sees a yearly-budget slider because countries can't be ranked "
+                                         "until you know their budget. Say that in one short sentence; do not suggest any country.")
 
                 tool_message = result.message
                 if result.block and all(b.block_id != result.block.block_id for b in shown):
                     card_intent = TOOL_TO_INTENT.get(tool_name)
-                    if card_intent in RESULT_INTENTS and several_cards:
+                    if asked_for_details:
+                        blocks = [result.block]
+                        if can_template:
+                            loop_templated = NEEDS_DETAILS
+                    elif card_intent in RESULT_INTENTS and several_cards:
                         record_ui_state(profile, card_intent, normalized_args(card_intent, tool_args, catalog))  # the last one stays remembered
                         blocks = [result.block]
                     elif card_intent in RESULT_INTENTS and not card_in_loop:

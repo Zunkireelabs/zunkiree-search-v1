@@ -18,6 +18,8 @@ from app.services.education_catalog import Catalog
 # Introducing an answer built from the tenant's own knowledge base, and the honest "not there" reply.
 KB_FOUND = "Here's what I found in our materials."
 KB_MISS = "I don't have that detail yet. A counselor can help you with it."
+# "Which country is best for me?" before we know anything we can rank on: say why we ask, then ask the one useful thing.
+NEEDS_DETAILS = "To suggest countries I need a few details about you. Let's start with your yearly budget."
 
 _CHOICE = {
     "countries": "Let's start with where you'd like to study.",
