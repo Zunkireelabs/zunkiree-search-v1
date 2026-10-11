@@ -23,7 +23,14 @@ from app.models.widget_config import WidgetConfig
 from app.services.clinic_tools import (
     build_clinic_tools,
     bump_missing_asks,
+    clear_missing_details,
     execute_clinic_tool,
+    fold_spoken_phone_in_text,
+    get_missing_details,
+    set_missing_asks,
+    set_missing_details,
+    to_e164,
+    phone_is_plausible,
     get_awaiting_confirmation,
     get_readback_lang,
     get_sticky_language,
@@ -475,6 +482,49 @@ def _slot_parts(pending: dict, lang: str) -> tuple[str, str, str]:
     if lang in ("ne_devanagari", "mixed_ne_en"):
         return weekday, str(date_obj.day).translate(_TO_DEVANAGARI_DIGITS), _MONTH_NE[date_obj.month - 1]
     return weekday, str(date_obj.day), date_obj.strftime("%B")
+
+
+# SBAL-Z10 F4: the loop breaker used to count only at prepare_booking, so a
+# model that stopped calling the tool and re-asked in its own words never
+# advanced it. These helpers let the agent count a re-ask at the point it is
+# made, whoever authored it, and escalate ask -> variant -> handoff.
+_ASK_KEYWORDS = {
+    "INVALID_PHONE": re.compile(r"phone|number|mobile|नम्बर|नंबर|फोन|मोबाइल", re.I),
+    "INVALID_NAME": re.compile(r"name|naam|नाम", re.I),
+}
+_LETTER_RE = re.compile(r"[^\W\d_]")
+
+
+def _kind_of(info: dict) -> str:
+    return "phone" if info.get("error") == "INVALID_PHONE" else "name"
+
+
+def _inbound_is_unusable_answer(info: dict, text: str) -> bool:
+    """True when the visitor's turn is shaped like an answer to the missing
+    detail but cannot satisfy it (digits that are not a plausible number for
+    a phone; no letters at all for a name). Deliberately narrow: anything
+    that merely might be a different request goes to the model, and the
+    post-hoc check on its reply counts a re-ask."""
+    text = (text or "").strip()
+    if not text:
+        return False
+    if info.get("error") == "INVALID_PHONE":
+        e164 = to_e164(text)
+        if e164 and phone_is_plausible(text, e164):
+            return False
+        ascii_text = text.translate(str.maketrans("०१२३४५६७८९", "0123456789"))
+        digits = sum(c.isdigit() for c in ascii_text)
+        words = len(re.findall(r"[^\W\d_]+", ascii_text))
+        return digits >= 3 and digits >= words
+    return not _LETTER_RE.search(text)
+
+
+def _log_missing_ask(site_id, session_id, info, source, n, handoff) -> None:
+    logger.info(
+        "[CLINIC-AGENT] missing_details_ask site_id=%s session_id=%s kind=%s "
+        "source=%s ask_n=%d handoff=%s",
+        site_id, session_id, _kind_of(info), source, n, handoff,
+    )
 
 
 def _build_missing_details_prompt(info: dict, lang: str, attempt: int = 1, contact_phone: str | None = None) -> str:
@@ -1219,6 +1269,16 @@ class ClinicAgentService:
         """
         # `question` is later rebound to the booking read-back question below; the
         # confirm gate needs the visitor's ORIGINAL words.
+        # SBAL-Z10 F5: a spoken phone number reaches the model as digits, not
+        # words (the model's own words-to-digits step is where digits were
+        # lost). Narrow by construction: only a run that folds to a plausible
+        # 9-10 digit number changes; every other turn is untouched.
+        question, _phone_folded = fold_spoken_phone_in_text(question)
+        if _phone_folded:
+            logger.info(
+                "[CLINIC-AGENT] phone_words_folded site_id=%s session_id=%s",
+                site_id, session_id,
+            )
         user_message = question
         turn_start_ts = time.monotonic()
         logger.info(
@@ -1546,7 +1606,25 @@ class ClinicAgentService:
 
         full_answer = ""
         iteration = 0
-        if turn_services_shortcut_caption:
+        # SBAL-Z10 F4: the visitor's turn looks like an answer to the missing
+        # detail but cannot satisfy it — count the ask HERE (no model, no
+        # tool call needed) and answer deterministically.
+        outstanding_missing = get_missing_details(session_id)
+        if outstanding_missing and not awaiting_confirmation and _inbound_is_unusable_answer(outstanding_missing, question):
+            gate_n = bump_missing_asks(session_id, repeat=True)
+            _log_missing_ask(site_id, session_id, outstanding_missing, "gate", gate_n, gate_n >= HANDOFF_AT_ASK)
+            full_answer = sanitize_phone_numbers(
+                _build_missing_details_prompt(
+                    outstanding_missing, detected_lang, attempt=gate_n,
+                    contact_phone=config.contact_phone if config else None,
+                ),
+                allowed_phone_digits,
+            )
+            if gate_n >= HANDOFF_AT_ASK:
+                clear_missing_details(session_id)
+            yield {"type": "token", "data": full_answer}
+            iteration = MAX_TOOL_ITERATIONS
+        elif turn_services_shortcut_caption:
             # SBAL-Z6: the service_details_match prefetch above already
             # resolved a multi-service match before the tool loop even
             # starts — same code-built-answer shortcut as
@@ -1949,6 +2027,32 @@ class ClinicAgentService:
                     remainder = remainder.lstrip(" \t")
                 if remainder:
                     yield {"type": "token", "data": remainder}
+
+                # SBAL-Z10 F4: a model-authored re-ask (iterations=1, no tool
+                # call) counts exactly like a deterministic one. A turn whose
+                # reply does not ask for the missing detail ends the streak.
+                model_missing = get_missing_details(session_id)
+                if model_missing and turn_prepared_pending is None:
+                    if _ASK_KEYWORDS[model_missing["error"]].search(full_answer or ""):
+                        model_n = bump_missing_asks(session_id, repeat=True)
+                        handoff_now = model_n >= HANDOFF_AT_ASK
+                        _log_missing_ask(site_id, session_id, model_missing, "model", model_n, handoff_now)
+                        if model_n >= 2:
+                            # the model's paraphrase never carried the how-to-answer
+                            # variant or the handoff; add the deterministic line.
+                            extra = sanitize_phone_numbers(
+                                _build_missing_details_prompt(
+                                    model_missing, detected_lang, attempt=model_n,
+                                    contact_phone=config.contact_phone if config else None,
+                                ),
+                                allowed_phone_digits,
+                            )
+                            if handoff_now:
+                                clear_missing_details(session_id)
+                            full_answer = f"{full_answer} {extra}".strip()
+                            yield {"type": "token", "data": f" {extra}"}
+                    else:
+                        set_missing_asks(session_id, 1)
                 break
 
             if tool_calls_data:
@@ -2278,6 +2382,11 @@ class ClinicAgentService:
                         or (err == "INVALID_NAME" and turn_missing_details.get("name_given"))
                     )
                     missing_ask_n = bump_missing_asks(session_id, repeat=bool(repeat))
+                    _log_missing_ask(site_id, session_id, turn_missing_details, "tool", missing_ask_n, missing_ask_n >= HANDOFF_AT_ASK)
+                    if missing_ask_n >= HANDOFF_AT_ASK:
+                        clear_missing_details(session_id)
+                    else:
+                        set_missing_details(session_id, turn_missing_details)
                     full_answer = sanitize_phone_numbers(
                         _build_missing_details_prompt(
                             turn_missing_details, detected_lang,
