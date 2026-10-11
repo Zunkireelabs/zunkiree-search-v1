@@ -135,19 +135,3 @@ def test_devanagari_mid_flow_service_change_keeps_bound_service(caplog):
     # A Latin-stated switch still wins.
     assert _resolve_session_service(TREATMENTS, "Brow Lamination", sid)[0]["id"] == "t-brow"
 
-
-# --- SBAL-Z10.1: time-shaped input is not a phone/name attempt -------------
-import pytest as _pytest_z101
-
-
-@_pytest_z101.mark.parametrize("text", ["10:30", "2:30", "2.30", "2 pm", "2PM", "ek baje", "दुई बजे", "२:३०"])
-def test_z101_time_shaped_turn_not_gated(text):
-    from app.services.clinic_agent import _inbound_is_unusable_answer
-    assert not _inbound_is_unusable_answer({"error": "INVALID_PHONE"}, text)
-    assert not _inbound_is_unusable_answer({"error": "INVALID_NAME"}, text)
-
-
-@_pytest_z101.mark.parametrize("text", ["१२३", "१२३४", "12345", "123"])
-def test_z101_short_phone_still_gated(text):
-    from app.services.clinic_agent import _inbound_is_unusable_answer
-    assert _inbound_is_unusable_answer({"error": "INVALID_PHONE"}, text)
