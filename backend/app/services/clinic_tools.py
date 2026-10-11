@@ -82,6 +82,8 @@ def _fold_digit_words(s: str) -> str | None:
                 repeat = _REPEAT_WORDS[t]
                 continue
             d = _DIGIT_WORDS.get(t)
+            if d is None and t.translate(_DEVANAGARI_TO_ASCII).isdigit():
+                d = t.translate(_DEVANAGARI_TO_ASCII)
             if d is None or (skip_ambiguous and t in _AMBIGUOUS_DIGIT_WORDS):
                 repeat = 1
                 continue
@@ -91,6 +93,73 @@ def _fold_digit_words(s: str) -> str | None:
         if 9 <= len(folded) <= 10:
             return folded
     return None
+
+
+_PHONE_TOKEN_RE = re.compile(r"[^\s,\-–—.।]+")
+
+
+def _is_phone_run_token(t: str) -> bool:
+    t = t.lower()
+    return (
+        t in _DIGIT_WORDS or t in _REPEAT_WORDS
+        or t.translate(_DEVANAGARI_TO_ASCII).isdigit()
+    )
+
+
+def fold_spoken_phone_in_text(text: str | None) -> tuple[str | None, bool]:
+    """SBAL-Z10 F5: rewrite a spoken phone number inside an inbound turn as
+    plain ASCII digits, so the model is handed digits and has nothing to
+    convert (its own words-to-digits step is where digits were lost).
+
+    Only the maximal run of digit-word / digit tokens is touched, and only
+    when it folds to a plausible 9-10 digit national number (the same rule
+    `_fold_digit_words` applies); anything else — a date, a quantity, an
+    implausible length — is returned unchanged. Never invents digits.
+    Returns (text, changed)."""
+    if not text:
+        return text, False
+    matches = list(_PHONE_TOKEN_RE.finditer(text))
+    out: list[tuple[int, int, str]] = []
+    i = 0
+    while i < len(matches):
+        if not _is_phone_run_token(matches[i].group()):
+            i += 1
+            continue
+        j = i
+        while j + 1 < len(matches) and _is_phone_run_token(matches[j + 1].group()):
+            j += 1
+        run = text[matches[i].start():matches[j].end()]
+        folded = _fold_digit_words(run)
+        if folded and run != folded:
+            out.append((matches[i].start(), matches[j].end(), folded))
+        i = j + 1
+    if not out:
+        return text, False
+    res, pos = [], 0
+    for a, b, rep in out:
+        res.append(text[pos:a])
+        res.append(rep)
+        pos = b
+    res.append(text[pos:])
+    return "".join(res), True
+
+
+MIN_NATIONAL_DIGITS = 9
+
+
+def phone_is_plausible(raw: str | None, phone_e164: str | None) -> bool:
+    """SBAL-Z10 F6: a bare number under 9 digits (or a +cc number with under
+    7 digits after a 1-3 digit country code) is not a callable number."""
+    if not phone_e164:
+        return False
+    digits = re.sub(r"\D", "", phone_e164)
+    if str(raw or "").strip().startswith("+"):
+        return len(digits) >= 10
+    fb = re.sub(r"\D", "", DEFAULT_DIAL)
+    if digits.startswith(fb):
+        # to_e164 prefixed a bare number, or the caller already said 977...
+        return len(digits) - len(fb) >= MIN_NATIONAL_DIGITS
+    return len(digits) >= MIN_NATIONAL_DIGITS
 
 
 def to_e164(raw: str | None, fallback_dial: str = DEFAULT_DIAL) -> str | None:
@@ -278,6 +347,35 @@ def bump_missing_asks(session_id: str | None, repeat: bool = True) -> int:
         n += 1
     state["missing_asks"] = n
     return n
+
+
+def set_missing_details(session_id: str | None, info: dict) -> None:
+    """SBAL-Z10 F4: remember what the agent is waiting on (INVALID_NAME /
+    INVALID_PHONE + the resolved slot) so a later turn can count a re-ask
+    even when the model never calls prepare_booking."""
+    if session_id:
+        _state(session_id)["missing_info"] = {
+            k: info.get(k) for k in ("error", "service_name", "date", "time")
+        }
+
+
+def get_missing_details(session_id: str | None) -> dict | None:
+    if not session_id:
+        return None
+    state = _SESSION_STATE.get(session_id)
+    return state.get("missing_info") if state else None
+
+
+def clear_missing_details(session_id: str | None) -> None:
+    """Handoff given or booking prepared: nothing outstanding any more."""
+    if session_id and session_id in _SESSION_STATE:
+        _SESSION_STATE[session_id]["missing_info"] = None
+        _SESSION_STATE[session_id]["missing_asks"] = 0
+
+
+def set_missing_asks(session_id: str | None, n: int) -> None:
+    if session_id:
+        _state(session_id)["missing_asks"] = n
 
 
 def get_awaiting_confirmation(session_id: str | None, current_turn: int) -> dict | None:
@@ -1047,7 +1145,8 @@ async def _prepare_booking(
         return {"error": "INVALID_DATETIME", "message": "Date must be YYYY-MM-DD and time HH:MM."}
 
     phone_e164 = to_e164(phone)
-    if not phone_e164:
+    if not phone_e164 or not phone_is_plausible(phone, phone_e164):
+        # SBAL-Z10 F6: under 9 digits is INVALID_PHONE too.
         # SBAL-Z8 F1: service/date/time are already resolved at this point
         # (treatment matched, date/time parsed) — carried back so the agent
         # can ask for just the missing details deterministically instead of
@@ -1132,6 +1231,7 @@ async def _prepare_booking(
         substituted_for = substituted_for or existing_pending.get("substituted_for")
 
     _state(session_id)["missing_asks"] = 0
+    _state(session_id)["missing_info"] = None
     pending = {
         "service_id": treatment["id"],
         "service_name": treatment["name"],
