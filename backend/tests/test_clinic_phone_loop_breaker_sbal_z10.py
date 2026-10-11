@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.models.widget_config import WidgetConfig
+from app.services.conversation import get_conversation_store
 from app.services.clinic_tools import (
     fold_spoken_phone_in_text, phone_is_plausible, reset_session_state, to_e164,
 )
@@ -152,4 +153,64 @@ async def test_off_topic_turn_does_not_advance_the_counter(caplog):
         service = _service_for_responses([_stream("We are open 9 to 5, Sunday to Friday.")])
         await _run(service, config, "when are you open", sid)
     assert len(_asks(caplog)) == 1  # only the tool's first ask
+    reset_session_state(sid)
+
+
+# --- SBAL-Z10.1: gated turns never enter the conversation store ------------
+
+def _real_store_service(responses):
+    # the z8 harness stubs conversation_store out; these tests need the real one
+    service = _service_for_responses(responses)
+    service.conversation_store = get_conversation_store()
+    return service
+
+
+# Note: _TIME_SHAPED_RE's a.?m also matches the bare word "am". Harmless today
+# (the name branch returns False for any turn with letters, and "I am Anis"
+# has no digits) — keep in mind if the name branch is ever tightened.
+@pytest.mark.parametrize("text", ["10:30", "2:30", "2.30", "2 pm", "2PM", "ek baje", "दुई बजे", "२:३०"])
+def test_z101_time_shaped_turn_not_gated(text):
+    from app.services.clinic_agent import _inbound_is_unusable_answer
+    assert not _inbound_is_unusable_answer({"error": "INVALID_PHONE"}, text)
+    assert not _inbound_is_unusable_answer({"error": "INVALID_NAME"}, text)
+
+
+@pytest.mark.parametrize("text", ["१२३", "१२३४", "12345", "123"])
+def test_z101_short_phone_still_gated(text):
+    from app.services.clinic_agent import _inbound_is_unusable_answer
+    assert _inbound_is_unusable_answer({"error": "INVALID_PHONE"}, text)
+
+
+@pytest.mark.asyncio
+async def test_z101_gated_turn_is_not_stored_but_assistant_ask_is():
+    config = _config()
+    sid = str(uuid.uuid4())
+    reset_session_state(sid)
+    args = '{"service": "Brow Lamination", "date": "2026-10-08", "time": "10:30", "full_name": "Test Demo"}'
+    with patch("app.services.clinic_agent.execute_clinic_tool", side_effect=_tool_exec_side_effect):
+        await _run(_real_store_service([_stream_tool_call("p", "prepare_booking", args)]),
+                   config, "Book Brow Lamination on 2026-10-08 at 10:30", sid)
+        service = _real_store_service([])
+        events = await _run(service, config, "१२३", sid)
+        service.client.chat.completions.create.assert_not_called()
+    answer = next(e for e in events if e["type"] == "done")["answer"]
+    msgs = get_conversation_store().get_messages(sid)
+    assert not [m for m in msgs if m["role"] == "user" and "१२३" in m["content"]]
+    assert [m for m in msgs if m["role"] == "user" and "Brow Lamination" in m["content"]]  # control: non-gated stored
+    assert [m for m in msgs if m["role"] == "assistant" and m["content"] == answer]  # the ask is kept
+    reset_session_state(sid)
+
+
+@pytest.mark.asyncio
+async def test_z101_non_gated_turn_is_stored():
+    config = _config()
+    sid = str(uuid.uuid4())
+    reset_session_state(sid)
+    args = '{"service": "Brow Lamination", "date": "2026-10-08", "time": "10:30", "full_name": "Test Demo"}'
+    with patch("app.services.clinic_agent.execute_clinic_tool", side_effect=_tool_exec_side_effect):
+        await _run(_real_store_service([_stream_tool_call("p", "prepare_booking", args)]),
+                   config, "Book Brow Lamination on 2026-10-08 at 10:30", sid)
+        await _run(_real_store_service([_stream("We are open 9 to 5.")]), config, "when are you open", sid)
+    msgs = get_conversation_store().get_messages(sid)
+    assert [m for m in msgs if m["role"] == "user" and m["content"] == "when are you open"]
     reset_session_state(sid)

@@ -134,3 +134,4 @@ def test_devanagari_mid_flow_service_change_keeps_bound_service(caplog):
     assert "service_rebound_to_session" in caplog.text
     # A Latin-stated switch still wins.
     assert _resolve_session_service(TREATMENTS, "Brow Lamination", sid)[0]["id"] == "t-brow"
+

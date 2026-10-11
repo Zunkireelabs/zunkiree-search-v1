@@ -493,6 +493,12 @@ _ASK_KEYWORDS = {
     "INVALID_NAME": re.compile(r"name|naam|नाम", re.I),
 }
 _LETTER_RE = re.compile(r"[^\W\d_]")
+# SBAL-Z10.1: a time-shaped turn ("2:30", "2 pm", "दुई बजे") is a caller
+# changing the slot, not a failed phone/name attempt — never gate or count it.
+_TIME_SHAPED_RE = re.compile(
+    r"(?<!\d)\d{1,2}[:.]\d{2}(?!\d)|\b(?:a\.?m|p\.?m)\b\.?|\bbaje\b|बजे",
+    re.I,
+)
 
 
 def _kind_of(info: dict) -> str:
@@ -507,6 +513,8 @@ def _inbound_is_unusable_answer(info: dict, text: str) -> bool:
     post-hoc check on its reply counts a re-ask."""
     text = (text or "").strip()
     if not text:
+        return False
+    if _TIME_SHAPED_RE.search(text.translate(str.maketrans("०१२३४५६७८९", "0123456789"))):
         return False
     if info.get("error") == "INVALID_PHONE":
         e164 = to_e164(text)
@@ -1593,12 +1601,24 @@ class ClinicAgentService:
         # otherwise the sanitizer strips it right out of the booking read-back
         # ("Phone: 9841540343. Shall I book this?"), defeating the visitor's own
         # chance to catch a wrong number.
-        allowed_phone_digits |= _extract_phone_digits(question)
+        # SBAL-Z10.1: evaluate the unusable-answer gate BEFORE the turn is
+        # written to the store or folded into allowed digits — a gated turn
+        # ("2:30", "123") left in history gets misread later by the model
+        # (it named a patient "2:30"). The assistant reply is still stored.
+        outstanding_missing = get_missing_details(session_id)
+        turn_gated = bool(
+            outstanding_missing
+            and not awaiting_confirmation
+            and _inbound_is_unusable_answer(outstanding_missing, question)
+        )
+        if not turn_gated:
+            allowed_phone_digits |= _extract_phone_digits(question)
         for m in history:
             if m.get("role") == "user":
                 allowed_phone_digits |= _extract_phone_digits(m.get("content") or "")
 
-        self.conversation_store.add_message(session_id, "user", question)
+        if not turn_gated:
+            self.conversation_store.add_message(session_id, "user", question)
 
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(history[-10:])
@@ -1609,8 +1629,7 @@ class ClinicAgentService:
         # SBAL-Z10 F4: the visitor's turn looks like an answer to the missing
         # detail but cannot satisfy it — count the ask HERE (no model, no
         # tool call needed) and answer deterministically.
-        outstanding_missing = get_missing_details(session_id)
-        if outstanding_missing and not awaiting_confirmation and _inbound_is_unusable_answer(outstanding_missing, question):
+        if turn_gated:
             gate_n = bump_missing_asks(session_id, repeat=True)
             _log_missing_ask(site_id, session_id, outstanding_missing, "gate", gate_n, gate_n >= HANDOFF_AT_ASK)
             full_answer = sanitize_phone_numbers(
