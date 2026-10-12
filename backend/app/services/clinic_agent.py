@@ -17,6 +17,7 @@ from openai import APIConnectionError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.database import async_session_maker
 from app.services.openai_client import get_openai_client
 from app.models.customer import Customer
 from app.models.widget_config import WidgetConfig
@@ -247,6 +248,10 @@ def _fix_catalog_translit(text: str) -> str:
 # stage turn (13.7s TTFT stall, 17 tokens); 6s + one retry on the fallback
 # model + ~0.6s tool + a normal ~3.7s final answer keeps a 2-iteration turn
 # under ~16s. Non-voice keeps its own 8s/6s budget.
+# SBAL-Z13 F7: the voice knowledge prefetch runs BEFORE the first LLM call, so
+# none of the per-attempt LLM timeouts cover it. Measured 5 ms..5.4 s on the
+# same lane; the cheap case is single-digit ms, so 1.5 s abandons only the tail.
+VOICE_KNOWLEDGE_PREFETCH_TIMEOUT_S = 1.5
 VOICE_ATTEMPT_TIMEOUT_S = 6.0
 VOICE_RETRY_TIMEOUT_S = 6.0
 
@@ -340,6 +345,48 @@ def _is_synthetic_or_neutral_text(text: str) -> bool:
         or _EMOJI_ONLY_PATTERN.match(stripped)
         or _NAME_PHONE_REPLY_PATTERN.match(stripped)
     )
+
+
+# SBAL-Z13 F10: one bare non-Devanagari token ("Lashes.") is a service name or a
+# filler word, not evidence the caller switched language.
+def _is_single_latin_token(text: str) -> bool:
+    stripped = (text or "").strip()
+    if not stripped or any("\u0900" <= c <= "\u097f" for c in stripped):
+        return False
+    return len(stripped.split()) == 1
+
+
+# SBAL-Z13 F9: voice has no markdown renderer — TTS reads the markers aloud.
+# Streamed chunks split at word boundaries, so a line-start marker ("1.") can
+# arrive without its trailing space; the lookaheads below allow that, and the
+# stripper carries "are we at a line start" across chunks.
+_VOICE_LINE_MARKER = re.compile(r"^([ \t]*)(?:#{1,6}(?=\s|$)|[-*+\u2022](?=\s|$)|\d{1,3}[.)](?=\s|$))[ \t]*")
+_VOICE_INLINE_MARKUP = re.compile(r"\*\*|__|`+|(?<!\w)\*(?=\S)|(?<=\S)\*(?!\w)")
+
+
+class _VoiceMarkdownStripper:
+    def __init__(self) -> None:
+        self.at_line_start = True
+
+    def feed(self, text: str) -> str:
+        if not text:
+            return text
+        out = []
+        for i, line in enumerate(text.split("\n")):
+            if i > 0:
+                out.append("\n")
+                self.at_line_start = True
+            if self.at_line_start:
+                line = _VOICE_LINE_MARKER.sub(r"\1", line, count=1)
+            line = _VOICE_INLINE_MARKUP.sub("", line)
+            if line.strip():
+                self.at_line_start = False
+            out.append(line)
+        return "".join(out)
+
+
+def strip_markdown_for_voice(text: str) -> str:
+    return _VoiceMarkdownStripper().feed(text)
 
 
 # SBAL-Z8 F3: the IG slot-chip prompt (chatbot_webhooks.py) was a hardcoded
@@ -1322,16 +1369,21 @@ class ClinicAgentService:
         # English (or a bare neutral reply like "12:30"), not anything the
         # visitor actually wrote — detecting language from it would flip a
         # Nepali conversation to English the moment a button is tapped.
-        # Voice is explicitly unchanged (it never sends synthetic text in
-        # the first place): no sticky-language read or write on that
-        # channel, so this cannot alter existing voice behaviour.
+        # Voice never sends synthetic text, so it skips that branch; since
+        # SBAL-Z13 F10 it does write sticky language and reads it for a
+        # single bare non-Devanagari token (see _is_single_latin_token).
         raw_detected_lang = detect_language(question)
+        sticky_lang = get_sticky_language(session_id)
         if channel != "voice" and _is_synthetic_or_neutral_text(question):
-            detected_lang = get_sticky_language(session_id) or raw_detected_lang
+            detected_lang = sticky_lang or raw_detected_lang
+        elif sticky_lang and _is_single_latin_token(question):
+            # SBAL-Z13 F10, every channel, no word list.
+            detected_lang = sticky_lang
         else:
             detected_lang = raw_detected_lang
-            if channel != "voice":
-                set_sticky_language(session_id, detected_lang)
+            # voice now records sticky too (Z13 F10) but, unlike other
+            # channels, still never reads it for synthetic text.
+            set_sticky_language(session_id, detected_lang)
         language_directive = _LANGUAGE_DIRECTIVES.get(detected_lang, "")
 
         # SBAL-Z3 B1: this turn names a time/date, or asks whether something
@@ -1534,10 +1586,9 @@ class ClinicAgentService:
             )
         elif knowledge_fast_path:
             prefetch_start = time.monotonic()
-            prefetch_result = await execute_clinic_tool(
+            prefetch_kwargs = dict(
                 tool_name="search_knowledge",
                 tool_args={"query": question},
-                db=db,
                 customer=customer,
                 config=config,
                 site_id=site_id,
@@ -1546,13 +1597,61 @@ class ClinicAgentService:
                 user_message=user_message,
                 trace_id=trace_id,
             )
+
+            async def _prefetch_on_own_session():
+                # SBAL-Z13 F7a: an abandoned (cancelled, not awaited) prefetch
+                # must never touch the request's AsyncSession, which the tool
+                # loop uses next ("concurrent operations are not permitted",
+                # pool poisoning). Voice gets its own short-lived session.
+                # Any failure means "fast path did not apply" (F8), never a
+                # failed turn.
+                try:
+                    async with async_session_maker() as prefetch_db:
+                        return await execute_clinic_tool(db=prefetch_db, **prefetch_kwargs)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.warning(
+                        "[CLINIC-AGENT] knowledge_prefetch_failed site_id=%s session_id=%s",
+                        site_id, session_id, exc_info=True,
+                    )
+                    return None
+
+            if channel == "voice":
+                prefetch_coro = _prefetch_on_own_session()
+            else:
+                prefetch_coro = execute_clinic_tool(db=db, **prefetch_kwargs)
+            prefetch_abandoned = False
+            if channel == "voice":
+                # SBAL-Z13 F7: bound the prefetch on voice only. asyncio.wait
+                # (not wait_for) so an abandoned task is cancelled without
+                # awaiting it — never cancel-and-wait.
+                prefetch_task = asyncio.ensure_future(prefetch_coro)
+                done, _pending = await asyncio.wait(
+                    {prefetch_task}, timeout=VOICE_KNOWLEDGE_PREFETCH_TIMEOUT_S
+                )
+                if done:
+                    prefetch_result = prefetch_task.result()
+                else:
+                    prefetch_abandoned = True
+                    prefetch_task.cancel()
+                    prefetch_result = None
+            else:
+                prefetch_result = await prefetch_coro
             prefetch_ms = (time.monotonic() - prefetch_start) * 1000
-            timing_tools.append(f"0:search_knowledge:{prefetch_ms:.0f}")
-            logger.info(
-                "[CLINIC-LATENCY] tool_call trace_id=%s site_id=%s session_id=%s "
-                "iteration=0 tool=search_knowledge latency_ms=%.0f",
-                trace_id, site_id, session_id, prefetch_ms,
-            )
+            if prefetch_abandoned:
+                logger.warning(
+                    "[CLINIC-AGENT] knowledge_prefetch_abandoned site_id=%s session_id=%s "
+                    "channel=%s elapsed_ms=%.0f",
+                    site_id, session_id, channel, prefetch_ms,
+                )
+            else:
+                timing_tools.append(f"0:search_knowledge:{prefetch_ms:.0f}")
+                logger.info(
+                    "[CLINIC-LATENCY] tool_call trace_id=%s site_id=%s session_id=%s "
+                    "iteration=0 tool=search_knowledge latency_ms=%.0f",
+                    trace_id, site_id, session_id, prefetch_ms,
+                )
             chunks = (prefetch_result or {}).get("chunks") or []
             for chunk_data in chunks:
                 allowed_phone_digits |= _extract_phone_digits(chunk_data.get("content", ""))
@@ -1566,19 +1665,23 @@ class ClinicAgentService:
                     "If it doesn't actually answer what they're asking (e.g. they want prices, "
                     "services, availability, or booking), use the correct tool instead.\n"
                 )
-            else:
-                knowledge_prefetch_line = (
-                    "\nKNOWLEDGE-THIS-TURN: search_knowledge was already tried for the "
-                    "visitor's question and found nothing. Say so honestly; do not call "
-                    "search_knowledge again this turn unless they ask something different.\n"
+                knowledge_tools_for_iteration_1 = [
+                    t for t in tools_for_turn if t["function"]["name"] != "search_knowledge"
+                ]
+                logger.info(
+                    "[CLINIC-AGENT] knowledge_fast_path_used site_id=%s session_id=%s chunks=%d",
+                    site_id, session_id, len(chunks),
                 )
-            knowledge_tools_for_iteration_1 = [
-                t for t in tools_for_turn if t["function"]["name"] != "search_knowledge"
-            ]
-            logger.info(
-                "[CLINIC-AGENT] knowledge_fast_path_used site_id=%s session_id=%s chunks=%d",
-                site_id, session_id, len(chunks),
-            )
+            else:
+                # SBAL-Z13 F8: zero chunks (or an abandoned prefetch) means "the
+                # fast path did not apply", never "the answer is we don't know".
+                # Inject nothing, keep the full tool set. A router that is
+                # unsure falls back to the full tool set, never to an apology.
+                logger.info(
+                    "[CLINIC-AGENT] knowledge_fast_path_skipped site_id=%s session_id=%s "
+                    "reason=%s",
+                    site_id, session_id, "abandoned" if prefetch_abandoned else "zero_chunks",
+                )
 
         system_prompt = CLINIC_SYSTEM_PROMPT.format(
             brand_name=brand_name,
@@ -1842,6 +1945,7 @@ class ClinicAgentService:
                 # whitespace so the next chunk's leading whitespace can be dropped
                 # when it would otherwise double up.
                 stream_ends_with_space = False
+                voice_md = _VoiceMarkdownStripper() if is_voice else None
 
                 try:
                     response = await self.client.chat.completions.create(
@@ -1887,6 +1991,8 @@ class ClinicAgentService:
                                 sanitized_chunk = _fix_catalog_translit(sanitize_phone_numbers(
                                     pending, allowed_phone_digits, is_final=False
                                 ))
+                                if voice_md is not None:
+                                    sanitized_chunk = voice_md.feed(sanitized_chunk)
                                 if stream_ends_with_space and sanitized_chunk[:1] in (" ", "\t"):
                                     sanitized_chunk = sanitized_chunk.lstrip(" \t")
                                 if sanitized_chunk:
@@ -1981,6 +2087,8 @@ class ClinicAgentService:
                         "[CLINIC-AGENT] phone_sanitized site_id=%s session_id=%s",
                         site_id, session_id,
                     )
+                if is_voice:
+                    full_answer = strip_markdown_for_voice(full_answer)
 
                 # Escalation-only language safety net (CLINIC-ESCALATION-LANGUAGE-
                 # BRIEF approach B). Approach A (the per-turn directive above) is a
@@ -2042,6 +2150,8 @@ class ClinicAgentService:
                 remainder = _fix_catalog_translit(sanitize_phone_numbers(
                     current_text[flushed_len:], allowed_phone_digits, is_final=False
                 ))
+                if voice_md is not None:
+                    remainder = voice_md.feed(remainder)
                 if stream_ends_with_space and remainder[:1] in (" ", "\t"):
                     remainder = remainder.lstrip(" \t")
                 if remainder:
