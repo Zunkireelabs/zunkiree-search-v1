@@ -255,7 +255,7 @@ def _fix_catalog_translit(text: str) -> str:
 # SBAL-Z13 F7: the voice knowledge prefetch runs BEFORE the first LLM call, so
 # none of the per-attempt LLM timeouts cover it. Measured 5 ms..5.4 s on the
 # same lane; the cheap case is single-digit ms, so 1.5 s abandons only the tail.
-VOICE_KNOWLEDGE_PREFETCH_TIMEOUT_S = 1.5
+VOICE_KNOWLEDGE_PREFETCH_TIMEOUT_S = get_settings().voice_knowledge_prefetch_timeout_s
 VOICE_ATTEMPT_TIMEOUT_S = 6.0
 VOICE_RETRY_TIMEOUT_S = 6.0
 
@@ -1741,7 +1741,6 @@ class ClinicAgentService:
         flow_turns = get_flow_turns(session_id) if mid_booking_flow else 0
         budget_exhausted = bool(
             mid_booking_flow
-            and not handed_off
             and not awaiting_confirmation
             and flow_turns >= BOOKING_FLOW_MAX_TURNS
         )
@@ -1799,17 +1798,25 @@ class ClinicAgentService:
             iteration = MAX_TOOL_ITERATIONS
         elif budget_exhausted:
             # SBAL-Z14 F17: the backstop. Mid-booking for BOOKING_FLOW_MAX_TURNS
-            # turns with no successful prepare_booking — hand off, whatever the
-            # reason the flow is stuck. Same line and same handed_off state as F16.
-            mark_handed_off(session_id)
-            _log_booking_flow(site_id, session_id, "budget_exhausted", None, flow_turns, "flow_turn_budget")
-            full_answer = sanitize_phone_numbers(
-                _build_missing_details_prompt(
-                    {}, detected_lang, attempt=HANDOFF_AT_ASK,
-                    contact_phone=config.contact_phone if config else None,
-                ),
-                allowed_phone_digits,
-            )
+            # STUCK turns — hand off, whatever the reason the flow is stuck.
+            # Already handed off (post-handoff prose re-asks reach here too, the
+            # model being free to speak again): acknowledge, never re-announce.
+            # The count restarts either way, so a caller is muted for one turn
+            # per BOOKING_FLOW_MAX_TURNS stuck turns, never for the rest of the call.
+            if handed_off:
+                _log_booking_flow(site_id, session_id, "handed_off", None, flow_turns, "budget_after_handoff")
+                full_answer = _HANDED_OFF_ACK_BY_LANG.get(detected_lang, _HANDED_OFF_ACK_BY_LANG["en"])
+            else:
+                mark_handed_off(session_id)
+                _log_booking_flow(site_id, session_id, "budget_exhausted", None, flow_turns, "flow_turn_budget")
+                full_answer = sanitize_phone_numbers(
+                    _build_missing_details_prompt(
+                        {}, detected_lang, attempt=HANDOFF_AT_ASK,
+                        contact_phone=config.contact_phone if config else None,
+                    ),
+                    allowed_phone_digits,
+                )
+            reset_flow_turns(session_id)
             yield {"type": "token", "data": full_answer}
             iteration = MAX_TOOL_ITERATIONS
         elif turn_services_shortcut_caption:
