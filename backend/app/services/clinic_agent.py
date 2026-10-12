@@ -23,12 +23,16 @@ from app.models.customer import Customer
 from app.models.widget_config import WidgetConfig
 from app.services.clinic_tools import (
     build_clinic_tools,
+    bump_flow_turns,
+    get_flow_turns,
+    reset_flow_turns,
     bump_missing_asks,
     clear_missing_details,
     execute_clinic_tool,
     fold_spoken_phone_in_text,
     get_missing_details,
-    set_missing_asks,
+    is_handed_off,
+    mark_handed_off,
     set_missing_details,
     to_e164,
     phone_is_plausible,
@@ -434,6 +438,18 @@ _MISSING_DETAILS_HANDOFF_BY_LANG = {
     "mixed_ne_en": "Maaf garnuhos, tapaiko bibaran bujhna sakina. Kripaya clinic lai sidhai sampark garnuhos{phone}, uniharule book garidinuhunchha.",
 }
 HANDOFF_AT_ASK = 3
+# SBAL-Z14 F17: a session that has gone mid_booking_flow (a live date anchor)
+# and not reached prepare_booking status=ok within this many turns is handed
+# off, whoever is stuck and whatever the reason. Counted per session.
+BOOKING_FLOW_MAX_TURNS = 6
+# SBAL-Z14 F16: said instead of another ask once the booking attempt has been
+# handed off. The handoff line itself is said exactly once.
+_HANDED_OFF_ACK_BY_LANG = {
+    "en": "Okay. Let me know if there's anything else I can help with.",
+    "ne_romanized": "Thik chha. Aru kehi madat chahiyema bhannuhos.",
+    "ne_devanagari": "ठीक छ। अरू केही मद्दत चाहिएमा भन्नुहोस्।",
+    "mixed_ne_en": "Thik chha. Aru kehi madat chahiyema bhannuhos.",
+}
 
 # SBAL-Z9 F3: Devanagari templates localized end to end — Nepali month,
 # numeral day, and a spoken-style time ("बिहान १० बजे") so a template can't
@@ -531,14 +547,11 @@ def _slot_parts(pending: dict, lang: str) -> tuple[str, str, str]:
     return weekday, str(date_obj.day), date_obj.strftime("%B")
 
 
-# SBAL-Z10 F4: the loop breaker used to count only at prepare_booking, so a
-# model that stopped calling the tool and re-asked in its own words never
-# advanced it. These helpers let the agent count a re-ask at the point it is
-# made, whoever authored it, and escalate ask -> variant -> handoff.
-_ASK_KEYWORDS = {
-    "INVALID_PHONE": re.compile(r"phone|number|mobile|नम्बर|नंबर|फोन|मोबाइल", re.I),
-    "INVALID_NAME": re.compile(r"name|naam|नाम", re.I),
-}
+# SBAL-Z14 F15: while a booking detail is outstanding the model does not
+# author the reply. A turn in which the model calls ANY tool is progress and
+# is left alone; a text-only turn is discarded and replaced by our own ask at
+# the current escalation level (ask -> variant -> handoff). Nothing here reads
+# the model's prose. SBAL-Z10's _ASK_KEYWORDS classifier is gone.
 _LETTER_RE = re.compile(r"[^\W\d_]")
 # SBAL-Z10.1: a time-shaped turn ("2:30", "2 pm", "दुई बजे") is a caller
 # changing the slot, not a failed phone/name attempt — never gate or count it.
@@ -572,6 +585,15 @@ def _inbound_is_unusable_answer(info: dict, text: str) -> bool:
         words = len(re.findall(r"[^\W\d_]+", ascii_text))
         return digits >= 3 and digits >= words
     return not _LETTER_RE.search(text)
+
+
+def _log_booking_flow(site_id, session_id, state, ask_n, flow_turns, reason) -> None:
+    """SBAL-Z14 F18: one line for every ownership decision."""
+    logger.info(
+        "[CLINIC-AGENT] booking_flow site_id=%s session_id=%s state=%s ask_n=%s "
+        "flow_turns=%s reason=%s",
+        site_id, session_id, state, ask_n, flow_turns, reason,
+    )
 
 
 def _log_missing_ask(site_id, session_id, info, source, n, handoff) -> None:
@@ -1714,6 +1736,28 @@ class ClinicAgentService:
             and not awaiting_confirmation
             and _inbound_is_unusable_answer(outstanding_missing, question)
         )
+        # SBAL-Z14 F15/F16/F17: ownership state, decided before any model call.
+        handed_off = is_handed_off(session_id)
+        flow_turns = get_flow_turns(session_id) if mid_booking_flow else 0
+        budget_exhausted = bool(
+            mid_booking_flow
+            and not handed_off
+            and not awaiting_confirmation
+            and flow_turns >= BOOKING_FLOW_MAX_TURNS
+        )
+        # SBAL-Z14 F16a: after a handoff only a structurally-booking turn is
+        # ours (turn_gated above, or a booking tool failing in the tool path —
+        # both acknowledged, never re-asked). A text-only turn is the model's
+        # again, so a post-handoff FAQ is answered rather than muted.
+        own_active = bool(
+            outstanding_missing and not handed_off and not turn_gated and not awaiting_confirmation
+        )
+        if handed_off:
+            system_prompt += (
+                "\nBOOKING-HANDED-OFF: The caller has already been given the clinic's contact "
+                "details for this booking. Do not ask for their name or phone again; answer "
+                "any other question normally.\n"
+            )
         if not turn_gated:
             allowed_phone_digits |= _extract_phone_digits(question)
         for m in history:
@@ -1732,8 +1776,14 @@ class ClinicAgentService:
         # SBAL-Z10 F4: the visitor's turn looks like an answer to the missing
         # detail but cannot satisfy it — count the ask HERE (no model, no
         # tool call needed) and answer deterministically.
-        if turn_gated:
-            gate_n = bump_missing_asks(session_id, repeat=True)
+        if turn_gated and handed_off:
+            # SBAL-Z14 F16: terminal — acknowledge, never ask again.
+            _log_booking_flow(site_id, session_id, "handed_off", None, flow_turns, "gate_after_handoff")
+            full_answer = _HANDED_OFF_ACK_BY_LANG.get(detected_lang, _HANDED_OFF_ACK_BY_LANG["en"])
+            yield {"type": "token", "data": full_answer}
+            iteration = MAX_TOOL_ITERATIONS
+        elif turn_gated:
+            gate_n = bump_missing_asks(session_id, repeat=True, kind=_kind_of(outstanding_missing))
             _log_missing_ask(site_id, session_id, outstanding_missing, "gate", gate_n, gate_n >= HANDOFF_AT_ASK)
             full_answer = sanitize_phone_numbers(
                 _build_missing_details_prompt(
@@ -1743,7 +1793,23 @@ class ClinicAgentService:
                 allowed_phone_digits,
             )
             if gate_n >= HANDOFF_AT_ASK:
-                clear_missing_details(session_id)
+                mark_handed_off(session_id)
+                _log_booking_flow(site_id, session_id, "handed_off", gate_n, flow_turns, "ask_budget")
+            yield {"type": "token", "data": full_answer}
+            iteration = MAX_TOOL_ITERATIONS
+        elif budget_exhausted:
+            # SBAL-Z14 F17: the backstop. Mid-booking for BOOKING_FLOW_MAX_TURNS
+            # turns with no successful prepare_booking — hand off, whatever the
+            # reason the flow is stuck. Same line and same handed_off state as F16.
+            mark_handed_off(session_id)
+            _log_booking_flow(site_id, session_id, "budget_exhausted", None, flow_turns, "flow_turn_budget")
+            full_answer = sanitize_phone_numbers(
+                _build_missing_details_prompt(
+                    {}, detected_lang, attempt=HANDOFF_AT_ASK,
+                    contact_phone=config.contact_phone if config else None,
+                ),
+                allowed_phone_digits,
+            )
             yield {"type": "token", "data": full_answer}
             iteration = MAX_TOOL_ITERATIONS
         elif turn_services_shortcut_caption:
@@ -1759,6 +1825,9 @@ class ClinicAgentService:
         # for the MUST A read-back template) and whether a confirm_booking
         # actually created a booking. See the check right after the tool
         # loop below.
+        # SBAL-Z14 F15: structural progress signal. A prefetch that already ran
+        # a tool this turn counts (timing_tools is appended to by it).
+        turn_tool_called = bool(timing_tools)
         turn_prepared_pending: dict | None = None
         turn_booking_confirmed = False
         turn_confirmed: tuple[dict, str] | None = None
@@ -1986,7 +2055,10 @@ class ClinicAgentService:
                             # not-yet-inspected tail is delayed, not the whole answer.
                             current_text += delta.content
                             boundary = _safe_flush_index(current_text, HOLD_BACK_TOKENS)
-                            if boundary > flushed_len:
+                            # SBAL-Z14 F15: inside the ownership window nothing the
+                            # model writes is spoken until we know whether it called
+                            # a tool (progress) or only talked (discarded).
+                            if boundary > flushed_len and not (own_active and not turn_tool_called):
                                 pending = current_text[flushed_len:boundary]
                                 sanitized_chunk = _fix_catalog_translit(sanitize_phone_numbers(
                                     pending, allowed_phone_digits, is_final=False
@@ -2067,6 +2139,35 @@ class ClinicAgentService:
                 max_completion_tokens,
                 attempt_model,
             )
+
+            if (
+                own_active
+                and not turn_tool_called
+                and not tool_calls_data
+                and finish_reason != "voice_llm_failure"
+            ):
+                # SBAL-Z14 F15: text only, no tool call, while a detail is
+                # outstanding (never after a handoff — F16a). Discard the model's text.
+                # We author this turn.
+                owned_info = outstanding_missing
+                owned_n = bump_missing_asks(session_id, repeat=True, kind=_kind_of(owned_info))
+                owned_handoff = owned_n >= HANDOFF_AT_ASK
+                _log_missing_ask(site_id, session_id, owned_info, "owned", owned_n, owned_handoff)
+                _log_booking_flow(
+                    site_id, session_id, "handed_off" if owned_handoff else "owned",
+                    owned_n, flow_turns, "no_tool_call",
+                )
+                if owned_handoff:
+                    mark_handed_off(session_id)
+                full_answer = sanitize_phone_numbers(
+                    _build_missing_details_prompt(
+                        owned_info, detected_lang, attempt=owned_n,
+                        contact_phone=config.contact_phone if config else None,
+                    ),
+                    allowed_phone_digits,
+                )
+                yield {"type": "token", "data": full_answer}
+                break
 
             if current_text and not tool_calls_data:
                 if finish_length:
@@ -2157,34 +2258,13 @@ class ClinicAgentService:
                 if remainder:
                     yield {"type": "token", "data": remainder}
 
-                # SBAL-Z10 F4: a model-authored re-ask (iterations=1, no tool
-                # call) counts exactly like a deterministic one. A turn whose
-                # reply does not ask for the missing detail ends the streak.
-                model_missing = get_missing_details(session_id)
-                if model_missing and turn_prepared_pending is None:
-                    if _ASK_KEYWORDS[model_missing["error"]].search(full_answer or ""):
-                        model_n = bump_missing_asks(session_id, repeat=True)
-                        handoff_now = model_n >= HANDOFF_AT_ASK
-                        _log_missing_ask(site_id, session_id, model_missing, "model", model_n, handoff_now)
-                        if model_n >= 2:
-                            # the model's paraphrase never carried the how-to-answer
-                            # variant or the handoff; add the deterministic line.
-                            extra = sanitize_phone_numbers(
-                                _build_missing_details_prompt(
-                                    model_missing, detected_lang, attempt=model_n,
-                                    contact_phone=config.contact_phone if config else None,
-                                ),
-                                allowed_phone_digits,
-                            )
-                            if handoff_now:
-                                clear_missing_details(session_id)
-                            full_answer = f"{full_answer} {extra}".strip()
-                            yield {"type": "token", "data": f" {extra}"}
-                    else:
-                        set_missing_asks(session_id, 1)
                 break
 
             if tool_calls_data:
+                # SBAL-Z14 F15: a tool call is progress — from here the turn is
+                # the model's and streams normally; nothing is counted.
+                turn_tool_called = True
+                reset_flow_turns(session_id)
                 tool_calls_list = []
                 for idx in sorted(tool_calls_data.keys()):
                     tc = tool_calls_data[idx]
@@ -2510,12 +2590,21 @@ class ClinicAgentService:
                         (err == "INVALID_PHONE" and bool(str(turn_missing_details.get("phone_given") or "").strip()))
                         or (err == "INVALID_NAME" and turn_missing_details.get("name_given"))
                     )
-                    missing_ask_n = bump_missing_asks(session_id, repeat=bool(repeat))
+                    if is_handed_off(session_id):
+                        # SBAL-Z14 F16: terminal — a tool-path failure after the
+                        # handoff is acknowledged, never re-asked.
+                        _log_booking_flow(site_id, session_id, "handed_off", None, flow_turns, "tool_after_handoff")
+                        full_answer = _HANDED_OFF_ACK_BY_LANG.get(detected_lang, _HANDED_OFF_ACK_BY_LANG["en"])
+                        yield {"type": "token", "data": full_answer}
+                        break
+                    missing_ask_n = bump_missing_asks(
+                        session_id, repeat=bool(repeat), kind=_kind_of(turn_missing_details)
+                    )
                     _log_missing_ask(site_id, session_id, turn_missing_details, "tool", missing_ask_n, missing_ask_n >= HANDOFF_AT_ASK)
+                    set_missing_details(session_id, turn_missing_details)
                     if missing_ask_n >= HANDOFF_AT_ASK:
-                        clear_missing_details(session_id)
-                    else:
-                        set_missing_details(session_id, turn_missing_details)
+                        mark_handed_off(session_id)
+                        _log_booking_flow(site_id, session_id, "handed_off", missing_ask_n, flow_turns, "ask_budget")
                     full_answer = sanitize_phone_numbers(
                         _build_missing_details_prompt(
                             turn_missing_details, detected_lang,
@@ -2562,6 +2651,12 @@ class ClinicAgentService:
 
         if full_answer:
             self.conversation_store.add_message(session_id, "assistant", full_answer)
+
+        # SBAL-Z14 F17: count STUCK turns only. A turn that called a tool
+        # reset the count above; a mid-booking turn with no tool call (and not
+        # the budget handoff itself) is one more stuck turn.
+        if mid_booking_flow and not turn_tool_called and not budget_exhausted:
+            bump_flow_turns(session_id)
 
         # ZUNKIREE-EMIT-USAGE-BRIEF: one usage event per turn, after done's
         # content is decided but emitted before it on the wire (order doesn't
