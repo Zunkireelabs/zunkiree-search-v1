@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"  # Default: cheap, fast model
     llm_model_premium: str = "gpt-4o"  # Premium: for complex/enterprise queries
     llm_temperature: float = 0.3
+    # SBAL-Z13 F7: bound on the voice knowledge prefetch (seconds). A real
+    # setting (env VOICE_KNOWLEDGE_PREFETCH_TIMEOUT_S) so F7 can be tuned or
+    # effectively switched off (large value) as a config flip with rollback.
+    voice_knowledge_prefetch_timeout_s: float = 1.5
     llm_max_tokens: int = 500
     # SBAL demo-hardening (review on #127): the clinic agent's non-voice
     # retry (clinic_agent.py) uses a DIFFERENT model than the one that just

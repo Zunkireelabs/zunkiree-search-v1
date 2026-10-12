@@ -248,3 +248,43 @@ async def test_f17_consecutive_stuck_turns_do_hand_off(caplog):
     finally:
         clinic_agent._DATE_ANCHOR.pop(sid, None)
         reset_session_state(sid)
+
+
+@pytest.mark.asyncio
+async def test_f17_post_handoff_prose_asks_are_capped_structurally(caplog):
+    """After a handoff the model speaks again, so its prose re-asks ("could you
+    rephrase?") are uncounted by the ask budget. The stuck-turn budget bounds
+    them: MAX stuck turns -> the ack (not the handoff line), count restarts."""
+    caplog.set_level(logging.INFO)
+    config, sid = _config(), str(uuid.uuid4())
+    reset_session_state(sid)
+    clinic_agent._DATE_ANCHOR[sid] = "2026-10-08"
+    try:
+        with patch("app.services.clinic_agent.execute_clinic_tool", side_effect=_exec):
+            await _arm(config, sid)
+            for _ in range(2):
+                await _run(_service_for_responses([_stream(PARAPHRASE)]), config, "mm", sid)
+            assert is_handed_off(sid)
+            clinic_agent.reset_flow_turns(sid)  # count only the post-handoff stuck turns
+            for i in range(clinic_agent.BOOKING_FLOW_MAX_TURNS):
+                events = await _run(_service_for_responses([_stream(f"rephrase {i}")]), config, "hmm", sid)
+                assert _answer(events) == f"rephrase {i}"  # the model's prose, counted as stuck
+            service = _service_for_responses([])
+            events = await _run(service, config, "hmm", sid)
+            service.client.chat.completions.create.assert_not_called()
+            assert _answer(events) == clinic_agent._HANDED_OFF_ACK_BY_LANG["en"]
+            assert CONTACT not in _answer(events)  # ack, not the handoff line again
+            assert any("reason=budget_after_handoff" in m for m in _flow(caplog))
+            # the cap restarts: the next turn is the model's again (an FAQ is not muted)
+            events = await _run(_service_for_responses([_stream("We are open 9 to 5.")]), config, "hours?", sid)
+            assert _answer(events) == "We are open 9 to 5."
+    finally:
+        clinic_agent._DATE_ANCHOR.pop(sid, None)
+        reset_session_state(sid)
+
+
+def test_voice_prefetch_timeout_is_a_setting(monkeypatch):
+    from app.config import Settings
+    assert Settings().voice_knowledge_prefetch_timeout_s == 1.5
+    monkeypatch.setenv("VOICE_KNOWLEDGE_PREFETCH_TIMEOUT_S", "0.01")
+    assert Settings().voice_knowledge_prefetch_timeout_s == 0.01
