@@ -17,6 +17,7 @@ from openai import APIConnectionError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.database import async_session_maker
 from app.services.openai_client import get_openai_client
 from app.models.customer import Customer
 from app.models.widget_config import WidgetConfig
@@ -1368,9 +1369,9 @@ class ClinicAgentService:
         # English (or a bare neutral reply like "12:30"), not anything the
         # visitor actually wrote — detecting language from it would flip a
         # Nepali conversation to English the moment a button is tapped.
-        # Voice is explicitly unchanged (it never sends synthetic text in
-        # the first place): no sticky-language read or write on that
-        # channel, so this cannot alter existing voice behaviour.
+        # Voice never sends synthetic text, so it skips that branch; since
+        # SBAL-Z13 F10 it does write sticky language and reads it for a
+        # single bare non-Devanagari token (see _is_single_latin_token).
         raw_detected_lang = detect_language(question)
         sticky_lang = get_sticky_language(session_id)
         if channel != "voice" and _is_synthetic_or_neutral_text(question):
@@ -1585,10 +1586,9 @@ class ClinicAgentService:
             )
         elif knowledge_fast_path:
             prefetch_start = time.monotonic()
-            prefetch_coro = execute_clinic_tool(
+            prefetch_kwargs = dict(
                 tool_name="search_knowledge",
                 tool_args={"query": question},
-                db=db,
                 customer=customer,
                 config=config,
                 site_id=site_id,
@@ -1597,6 +1597,30 @@ class ClinicAgentService:
                 user_message=user_message,
                 trace_id=trace_id,
             )
+
+            async def _prefetch_on_own_session():
+                # SBAL-Z13 F7a: an abandoned (cancelled, not awaited) prefetch
+                # must never touch the request's AsyncSession, which the tool
+                # loop uses next ("concurrent operations are not permitted",
+                # pool poisoning). Voice gets its own short-lived session.
+                # Any failure means "fast path did not apply" (F8), never a
+                # failed turn.
+                try:
+                    async with async_session_maker() as prefetch_db:
+                        return await execute_clinic_tool(db=prefetch_db, **prefetch_kwargs)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.warning(
+                        "[CLINIC-AGENT] knowledge_prefetch_failed site_id=%s session_id=%s",
+                        site_id, session_id, exc_info=True,
+                    )
+                    return None
+
+            if channel == "voice":
+                prefetch_coro = _prefetch_on_own_session()
+            else:
+                prefetch_coro = execute_clinic_tool(db=db, **prefetch_kwargs)
             prefetch_abandoned = False
             if channel == "voice":
                 # SBAL-Z13 F7: bound the prefetch on voice only. asyncio.wait

@@ -139,3 +139,44 @@ def test_signal_regexes_untouched_by_z13():
     for word in ("गर्दिनुहुन्न", "खुल्ला", "बारेमा"):
         assert not clinic_agent._BOOKING_SIGNAL.search(word)
         assert not clinic_agent._AVAILABILITY_SIGNAL.search(word)
+
+
+@pytest.mark.asyncio
+async def test_f7a_voice_prefetch_uses_its_own_session_not_the_requests():
+    captured = []
+    request_db = AsyncMock()
+    customer = _make_customer()
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="Dental City", contact_phone=None)
+    mock_tool = AsyncMock(return_value={"chunks": [{"content": "Hours."}]})
+    with patch("app.services.clinic_agent.execute_clinic_tool", mock_tool):
+        async for _ in _service(captured).process_agent_stream(
+            db=request_db, site_id="dental-city", session_id="z13-f7a", question=FAQ,
+            customer_id=customer.id, customer=customer, config=config,
+            brand_name="Dental City", channel="voice",
+        ):
+            pass
+    assert mock_tool.await_args.kwargs["db"] is not request_db
+
+
+@pytest.mark.asyncio
+async def test_f7a_chat_prefetch_still_uses_request_session():
+    captured = []
+    request_db = AsyncMock()
+    customer = _make_customer()
+    config = WidgetConfig(customer_id=uuid.uuid4(), brand_name="Dental City", contact_phone=None)
+    mock_tool = AsyncMock(return_value={"chunks": [{"content": "Hours."}]})
+    with patch("app.services.clinic_agent.execute_clinic_tool", mock_tool):
+        async for _ in _service(captured).process_agent_stream(
+            db=request_db, site_id="dental-city", session_id="z13-f7a-chat", question=FAQ,
+            customer_id=customer.id, customer=customer, config=config,
+            brand_name="Dental City", channel="chat",
+        ):
+            pass
+    assert mock_tool.await_args.kwargs["db"] is request_db
+
+
+def test_f9_inline_marker_split_across_chunks_is_the_known_gap():
+    """Documents (not hides) the streamed-token behaviour: chunks flush on word
+    boundaries, so '**' only splits if the model emits '** word' with a space."""
+    s = _VoiceMarkdownStripper()
+    assert "**" not in s.feed("Try **Lashes** today ") + s.feed("or **Facial**")
