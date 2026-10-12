@@ -1,6 +1,7 @@
 """SBAL-Z14: F15 turn ownership, F16 terminal handoff, F17 per-detail ask
 budget + mid-booking flow-turn budget. Everything is scored on structure
 (did a tool get called), never on the model's wording."""
+import asyncio
 import logging
 import uuid
 from unittest.mock import patch
@@ -79,7 +80,9 @@ async def test_f15_text_only_turn_is_discarded_counted_and_reaches_handoff(caplo
 
 
 @pytest.mark.asyncio
-async def test_f16_handoff_is_terminal_said_once_and_the_session_still_works(caplog):
+async def test_f16_handoff_is_terminal_for_booking_turns_and_never_a_fourth_ask(caplog):
+    """After the handoff a structurally-booking turn (a gated answer, or a
+    failing booking tool) is acknowledged, never re-asked."""
     caplog.set_level(logging.INFO)
     config, sid = _config(), str(uuid.uuid4())
     reset_session_state(sid)
@@ -88,17 +91,46 @@ async def test_f16_handoff_is_terminal_said_once_and_the_session_still_works(cap
         for _ in range(2):
             await _run(_service_for_responses([_stream(PARAPHRASE)]), config, "mm", sid)
         assert is_handed_off(sid)
-        after = []
-        for _ in range(2):
-            after.append(_answer(await _run(_service_for_responses([_stream("Please share your phone number.")]), config, "ok", sid)))
-        # an FAQ in the same session still works: the model calls a tool
-        faq = _answer(await _run(_service_for_responses([
-            _stream_tool_call("k", "search_knowledge", '{"query": "hours"}'),
-            _stream("We are open 9 to 5."),
-        ]), config, "when are you open", sid))
-    assert all(CONTACT not in a and "phone number" not in a for a in after)  # not repeated, not re-asked
-    assert faq == "We are open 9 to 5."
+        gated = _answer(await _run(_service_for_responses([_stream("x")]), config, "123", sid))
+        tool = _answer(await _run(_service_for_responses([
+            _stream_tool_call("p", "prepare_booking", PHONE_MISSING_ARGS),
+        ]), config, "try again", sid))
+    assert all(CONTACT not in a and "phone number" not in a for a in (gated, tool))
     assert len(_asks(caplog)) == 3  # never a 4th
+    reset_session_state(sid)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("channel,abandon_prefetch", [("instagram", False), ("voice", False), ("voice", True)])
+async def test_f16a_post_handoff_faq_is_answered_not_muted(caplog, channel, abandon_prefetch):
+    caplog.set_level(logging.INFO)
+    """Exit test 3: a post-handoff FAQ gets the model's answer — including on
+    voice with an ABANDONED prefetch (turn_tool_called stays False there, the
+    case that used to collapse into 'Okay. Let me know...')."""
+    config, sid = _config(), str(uuid.uuid4())
+    reset_session_state(sid)
+    state = {"slow": False}
+
+    async def exec_(**kw):
+        if state["slow"] and kw["tool_name"] == "search_knowledge":
+            await asyncio.sleep(10)
+        return _exec(**kw)
+
+    with patch("app.services.clinic_agent.execute_clinic_tool", side_effect=exec_):
+        await _arm(config, sid)
+        for _ in range(2):
+            await _run(_service_for_responses([_stream(PARAPHRASE)]), config, "mm", sid)
+        assert is_handed_off(sid)
+        clinic_agent._DATE_ANCHOR.pop(sid, None)  # an FAQ turn takes the prefetch lane
+        state["slow"] = abandon_prefetch
+        with patch.object(clinic_agent, "VOICE_KNOWLEDGE_PREFETCH_TIMEOUT_S", 0.05):
+            events = await _run(
+                _service_for_responses([_stream("We are open 9 to 5, Sunday to Friday.")]),
+                config, "what are your opening hours", sid, channel=channel,
+            )
+    assert _answer(events) == "We are open 9 to 5, Sunday to Friday."
+    assert "Let me know if there's anything else" not in _answer(events)
+    assert ("knowledge_prefetch_abandoned" in caplog.text) == abandon_prefetch  # the scenario really ran
     reset_session_state(sid)
 
 
@@ -131,15 +163,25 @@ def test_f17_ask_budget_is_per_detail():
     reset_session_state(sid)
 
 
+def test_f17_per_detail_first_ask_of_a_new_detail_is_attempt_one_even_when_flagged_repeat():
+    """The off-by-one: the second detail must get ask 1 -> variant 2 -> handoff 3."""
+    sid = str(uuid.uuid4())
+    reset_session_state(sid)
+    for _ in range(3):
+        bump_missing_asks(sid, repeat=True, kind="phone")
+    assert [bump_missing_asks(sid, repeat=True, kind="name") for _ in range(3)] == [1, 2, 3]
+    reset_session_state(sid)
+
+
 @pytest.mark.asyncio
-async def test_f17_flow_turn_budget_hands_off_without_calling_the_model(caplog):
+async def test_f17_stuck_turn_budget_hands_off_without_calling_the_model(caplog):
     caplog.set_level(logging.INFO)
     config, sid = _config(), str(uuid.uuid4())
     reset_session_state(sid)
     clinic_agent._DATE_ANCHOR[sid] = "2026-10-08"  # mid_booking_flow, the existing signal
     try:
-        for _ in range(clinic_agent.BOOKING_FLOW_MAX_TURNS - 1):
-            bump_flow_turns(sid)
+        for _ in range(clinic_agent.BOOKING_FLOW_MAX_TURNS):
+            bump_flow_turns(sid)  # six STUCK turns already
         service = _service_for_responses([])  # the model must NOT be called
         events = await _run(service, config, "hmm", sid)
         service.client.chat.completions.create.assert_not_called()
@@ -161,3 +203,48 @@ async def test_f17_does_not_fire_inside_the_budget_or_without_an_anchor(caplog):
     events = await _run(_service_for_responses([_stream("Hello!")]), config, "hi", sid)
     assert _answer(events) == "Hello!" and not is_handed_off(sid)
     reset_session_state(sid)
+
+
+@pytest.mark.asyncio
+async def test_f17_a_long_successful_booking_is_never_handed_off(caplog):
+    """The blocker: BOOKING_FLOW_MAX_TURNS counts STUCK turns. A healthy
+    booking (a tool call every turn) well past the cap must not hand off."""
+    caplog.set_level(logging.INFO)
+    config, sid = _config(), str(uuid.uuid4())
+    reset_session_state(sid)
+    clinic_agent._DATE_ANCHOR[sid] = "2026-10-08"
+    turns = clinic_agent.BOOKING_FLOW_MAX_TURNS + 3
+    try:
+        with patch("app.services.clinic_agent.execute_clinic_tool", side_effect=_exec):
+            for i in range(turns):
+                service = _service_for_responses([
+                    _stream_tool_call(f"k{i}", "search_knowledge", '{"query": "x"}'),
+                    _stream(f"step {i}"),
+                ])
+                events = await _run(service, config, f"turn {i}", sid)
+                assert _answer(events) == f"step {i}"
+                assert not is_handed_off(sid)
+        assert not any("state=budget_exhausted" in m for m in _flow(caplog))
+    finally:
+        clinic_agent._DATE_ANCHOR.pop(sid, None)
+        reset_session_state(sid)
+
+
+@pytest.mark.asyncio
+async def test_f17_consecutive_stuck_turns_do_hand_off(caplog):
+    """Text-only mid-booking turns (no tool, no outstanding detail) ARE stuck."""
+    caplog.set_level(logging.INFO)
+    config, sid = _config(), str(uuid.uuid4())
+    reset_session_state(sid)
+    clinic_agent._DATE_ANCHOR[sid] = "2026-10-08"
+    try:
+        for i in range(clinic_agent.BOOKING_FLOW_MAX_TURNS):
+            events = await _run(_service_for_responses([_stream(f"hm {i}")]), config, "hmm", sid)
+            assert _answer(events) == f"hm {i}"
+        service = _service_for_responses([])
+        events = await _run(service, config, "hmm", sid)
+        service.client.chat.completions.create.assert_not_called()
+        assert is_handed_off(sid) and CONTACT in _answer(events)
+    finally:
+        clinic_agent._DATE_ANCHOR.pop(sid, None)
+        reset_session_state(sid)

@@ -348,12 +348,16 @@ def bump_missing_asks(session_id: str | None, repeat: bool = True, kind: str | N
     if not session_id:
         return 1
     state = _state(session_id)
-    if kind is not None and state.get("missing_kind") not in (None, kind):
+    kind_changed = kind is not None and state.get("missing_kind") not in (None, kind)
+    if kind_changed:
         state["missing_asks"] = 0
     if kind is not None:
         state["missing_kind"] = kind
     n = max(state.get("missing_asks", 0), 1)
-    if repeat:
+    # A new detail's FIRST ask is attempt 1 even when it arrives flagged
+    # `repeat` (the caller's earlier value for ANOTHER detail failed); only
+    # a second miss on the same detail escalates.
+    if repeat and not kind_changed:
         n += 1
     state["missing_asks"] = n
     return n
@@ -397,14 +401,28 @@ def is_handed_off(session_id: str | None) -> bool:
     return bool(state and state.get("handed_off"))
 
 
+def get_flow_turns(session_id: str | None) -> int:
+    """SBAL-Z14 F17: STUCK turns so far this booking flow (see bump_flow_turns)."""
+    state = _SESSION_STATE.get(session_id) if session_id else None
+    return int(state.get("flow_turns", 0)) if state else 0
+
+
 def bump_flow_turns(session_id: str | None) -> int:
-    """SBAL-Z14 F17: turns this session has spent mid-booking-flow with no
-    successful prepare_booking (reset by one)."""
+    """SBAL-Z14 F17: record one STUCK turn — a mid-booking turn in which no
+    tool advanced the flow. Called at the END of the turn. Counting elapsed
+    turns would re-adopt F4's progress test (punishes a healthy slot-filling
+    booking); stuck turns are the only thing worth budgeting."""
     if not session_id:
         return 1
     state = _state(session_id)
     state["flow_turns"] = state.get("flow_turns", 0) + 1
     return state["flow_turns"]
+
+
+def reset_flow_turns(session_id: str | None) -> None:
+    """SBAL-Z14 F17: a tool call this turn is progress; the stuck count starts over."""
+    if session_id and session_id in _SESSION_STATE:
+        _SESSION_STATE[session_id]["flow_turns"] = 0
 
 
 def set_missing_asks(session_id: str | None, n: int) -> None:
