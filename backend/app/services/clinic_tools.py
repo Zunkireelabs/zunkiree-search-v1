@@ -334,14 +334,24 @@ def _state(session_id: str) -> dict:
     return _SESSION_STATE.setdefault(session_id, {"pending": None, "confirmed": []})
 
 
-def bump_missing_asks(session_id: str | None, repeat: bool = True) -> int:
+def bump_missing_asks(session_id: str | None, repeat: bool = True, kind: str | None = None) -> int:
     """SBAL-Z9 F2: attempt number of the deterministic missing-details ask
     this session (reset to 0 when a prepare_booking succeeds). `repeat` =
     the visitor supplied a value that failed; an ask because nothing was
-    given yet records the first ask without escalating."""
+    given yet records the first ask without escalating.
+
+    SBAL-Z14 F17: the budget is PER DETAIL. When `kind` ("phone"/"name")
+    differs from the detail the counter was last spent on, it starts over —
+    a caller who fumbled their phone still gets a full ask -> variant ->
+    handoff run on their name. The flow-turn budget (bump_flow_turns) is the
+    total backstop, so per-detail cannot loop forever."""
     if not session_id:
         return 1
     state = _state(session_id)
+    if kind is not None and state.get("missing_kind") not in (None, kind):
+        state["missing_asks"] = 0
+    if kind is not None:
+        state["missing_kind"] = kind
     n = max(state.get("missing_asks", 0), 1)
     if repeat:
         n += 1
@@ -367,10 +377,34 @@ def get_missing_details(session_id: str | None) -> dict | None:
 
 
 def clear_missing_details(session_id: str | None) -> None:
-    """Handoff given or booking prepared: nothing outstanding any more."""
+    """Booking prepared: nothing outstanding any more."""
     if session_id and session_id in _SESSION_STATE:
         _SESSION_STATE[session_id]["missing_info"] = None
         _SESSION_STATE[session_id]["missing_asks"] = 0
+        _SESSION_STATE[session_id]["missing_kind"] = None
+
+
+def mark_handed_off(session_id: str | None) -> None:
+    """SBAL-Z14 F16: the handoff line has been said. Terminal for the booking
+    attempt: `missing_info` is KEPT (it is what keeps F15 owning the turns)
+    and `handed_off` is set. Only a successful prepare_booking clears it."""
+    if session_id:
+        _state(session_id)["handed_off"] = True
+
+
+def is_handed_off(session_id: str | None) -> bool:
+    state = _SESSION_STATE.get(session_id) if session_id else None
+    return bool(state and state.get("handed_off"))
+
+
+def bump_flow_turns(session_id: str | None) -> int:
+    """SBAL-Z14 F17: turns this session has spent mid-booking-flow with no
+    successful prepare_booking (reset by one)."""
+    if not session_id:
+        return 1
+    state = _state(session_id)
+    state["flow_turns"] = state.get("flow_turns", 0) + 1
+    return state["flow_turns"]
 
 
 def set_missing_asks(session_id: str | None, n: int) -> None:
@@ -1231,7 +1265,13 @@ async def _prepare_booking(
         substituted_for = substituted_for or existing_pending.get("substituted_for")
 
     _state(session_id)["missing_asks"] = 0
+    _state(session_id)["missing_kind"] = None
     _state(session_id)["missing_info"] = None
+    # SBAL-Z14 F16/F17: a good prepare_booking ends a handoff and resets the
+    # flow-turn budget — a caller who later supplies a good number is not
+    # locked out.
+    _state(session_id)["handed_off"] = False
+    _state(session_id)["flow_turns"] = 0
     pending = {
         "service_id": treatment["id"],
         "service_name": treatment["name"],
