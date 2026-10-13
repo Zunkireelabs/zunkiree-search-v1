@@ -4,8 +4,9 @@
 --   contact, plus the record of which blocks were shown so the same question
 --   re-shows the identical block). Keyed by (customer_id, session_id): the
 --   widget's session id lives in localStorage, so it is stable per browser.
---   `email` is set once the student shares contact details and lets the
---   profile be found again from another device.
+--   `email` is set once the student shares contact details. It is stored for
+--   the team's follow-up only: profiles are never linked or merged across
+--   sessions by email (an unverified email must not expose another student's data).
 -- widget_messages: the chat transcript incl. the UI blocks shown, so a page
 --   reload re-renders exactly what the student saw and the agent has real
 --   history instead of per-process memory.
