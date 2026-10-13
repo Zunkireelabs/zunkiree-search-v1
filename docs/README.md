@@ -13,6 +13,8 @@ docs/
 │   ├── database-schema.md
 │   ├── widget-spec.md
 │   ├── widget-style-guide.md  (1198 lines — the canonical widget style ref)
+│   ├── generative-ui-card-catalog.md   (every education card + when it appears)
+│   ├── generative-ui-design-guideline.md (look, states, motion, copy rules for cards)
 │   ├── llm-abstraction.md
 │   ├── developer-workflow.md
 │   └── deployment-plan.md
