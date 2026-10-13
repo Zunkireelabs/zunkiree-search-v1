@@ -181,3 +181,53 @@ async def test_history_is_limited_more_loosely():
         client = TestClient(app)
         codes = [client.get(f"/api/v1/widget/history/{SITE}/s1", headers=hdr).status_code for _ in range(HISTORY_LIMIT + 1)]
     assert codes[:HISTORY_LIMIT] == [200] * HISTORY_LIMIT and codes[-1] == 429
+
+
+# --- the non-streaming route (POST /query) reaches the same AI cost, so it shares the same limit -------------------
+
+async def _send_plain(service, ip="203.0.113.9", website_type="education", session="s1"):
+    from app.api.query import submit_query
+    customer = _customer(website_type)
+    request = AsyncMock()
+    request.headers, request.client = {"x-forwarded-for": ip}, SimpleNamespace(host="10.0.0.2")
+    service._get_customer = AsyncMock(return_value=customer)
+    service._get_widget_config = AsyncMock(return_value=WidgetConfig(customer_id=customer.id, brand_name="Edu"))
+    with patch("app.api.query.get_query_service", return_value=service):
+        return await submit_query(request, QueryRequest(site_id=SITE, question="tell me about fees", session_id=session), db=AsyncMock())
+
+
+def _service():
+    service = MagicMock()
+    service.process_query = AsyncMock(return_value={"answer": "ok", "suggestions": [], "sources": [], "session_id": "s1"})
+    return service
+
+
+@pytest.mark.asyncio
+async def test_plain_query_route_is_refused_after_the_limit_and_never_reaches_the_ai():
+    service = _service()
+    for _ in range(CHAT_LIMIT):
+        await _send_plain(service)
+    with pytest.raises(HTTPException) as e:
+        await _send_plain(service)
+    assert e.value.status_code == 429 and e.value.detail["code"] == "RATE_LIMITED"
+    assert int(e.value.headers["Retry-After"]) >= 1
+    assert service.process_query.await_count == CHAT_LIMIT
+
+
+@pytest.mark.asyncio
+async def test_plain_and_stream_routes_share_one_count():
+    service, agent = _service(), _agent()
+    for _ in range(CHAT_LIMIT - 1):
+        await _send_plain(service)
+    await _send(agent)                                    # the stream route is the 20th
+    with pytest.raises(HTTPException) as e:
+        await _send_plain(service)                        # so the next plain request is the 21st
+    assert e.value.status_code == 429
+
+
+@pytest.mark.asyncio
+async def test_plain_query_route_is_unchanged_for_other_tenant_types():
+    service = _service()
+    for _ in range(CHAT_LIMIT + 5):
+        await _send_plain(service, website_type="clinic")
+    assert service.process_query.await_count == CHAT_LIMIT + 5

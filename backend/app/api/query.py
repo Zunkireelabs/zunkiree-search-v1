@@ -257,6 +257,10 @@ async def submit_query(
             detail={"code": "SERVICE_BUSY", "message": "Service is busy, please retry shortly", "retry_after_seconds": 2},
         )
 
+    if customer.website_type == "education":
+        # Same count as /query/stream: an education site answered here still costs AI calls.
+        enforce_rate_limit(request, query.site_id, "chat", CHAT_LIMIT)
+
     brand_name = config.brand_name if config else customer.name
     logger.warning("[QUERY-TRACE] site_id=%s question=%s origin=%s", query.site_id,
                    question_for_log(customer.website_type, query.question), request.headers.get("origin"))
