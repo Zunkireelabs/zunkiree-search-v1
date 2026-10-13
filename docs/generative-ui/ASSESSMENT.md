@@ -223,7 +223,11 @@ The widget always sends a UUID (`Widget.tsx:125`), so the risk comes from direct
 **Expected after the fix:** education returns 400 for a missing or non-UUID `session_id`. The history endpoint validates the UUID format too.
 **Regression test:** a new test for the route, covering missing, empty and malformed values.
 
-**1.3 The education stream skips the per-site origin allowlist [HYPOTHESIS: code verified]**
+**1.3 The education stream skips the per-site origin allowlist [TEST: reproduced and FIXED 2026-10-13, committed]**
+
+> Fixed: `/query/stream` (education branch) and `/widget/history` now call `require_allowed_origin` (`backend/app/api/origin_guard.py`), which uses the same `QueryService._validate_origin` rule as the other chat paths. An unapproved website gets 403 `ORIGIN_NOT_ALLOWED`; a request with no Origin header is let through (server to server, same origin), so this is a browser-side control, not authentication. Other tenant types are unchanged. Tests: `backend/tests/test_education_origin.py` (15, incl. a real HTTP check of the history route). **Read-only DB check 2026-10-13:** the shared database has one education tenant, `admizz-test`, whose approved list is `localhost` only, so no real tenant is affected. **Go-live requirement:** the real Admizz website must be added to that tenant's `domains` list, or its widget will be refused. Production `ALLOWED_ORIGINS` is `*` (read-only check of the VPS `.env`), so browser CORS does not limit websites; this guard does. An Origin of `null` (sandboxed iframe, file://) is refused, as on the other paths.
+
+Original finding:
 
 **Code involved:**
 - `api/query.py:737` returns from the education branch before line 787, where the generic path passes `origin` into `process_query_stream`.

@@ -1,12 +1,14 @@
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from app.api.origin_guard import require_allowed_origin
 from app.database import get_db
 from app.models import Customer, WidgetConfig
+from app.services.query import get_query_service
 
 router = APIRouter(prefix="/widget", tags=["widget"])
 
@@ -113,6 +115,8 @@ async def get_widget_history(
     site_id: str,
     session_id: str,
     db: AsyncSession = Depends(get_db),
+    *,
+    request: Request = None,
 ):
     """
     Restore a conversation (messages + the UI blocks shown) after a page reload.
@@ -131,6 +135,7 @@ async def get_widget_history(
     from app.services.education_memory import DbEducationMemory, is_valid_session_id
     from app.services.education_profile import progress
 
+    await require_allowed_origin(request, db, customer.id, get_query_service())
     if not is_valid_session_id(session_id):
         raise HTTPException(
             status_code=400,
