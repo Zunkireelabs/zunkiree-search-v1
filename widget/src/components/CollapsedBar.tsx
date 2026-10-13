@@ -68,11 +68,7 @@ export function CollapsedBar({
         aria-label={`Talk to ${launcherName}`}
         type="button"
       >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M10 2l1.5 4.5L16 8l-4.5 1.5L10 14l-1.5-4.5L4 8l4.5-1.5L10 2z" />
-          <path d="M18 12l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3z" />
-          <path d="M6 16l.75 2.25L9 19l-2.25.75L6 22l-.75-2.25L3 19l2.25-.75L6 16z" opacity="0.7" />
-        </svg>
+        <span className="zk-orb zk-orb--lg" aria-hidden="true" />
         <span className="zk-fab__label">Talk to {launcherName}</span>
       </button>
 
@@ -98,17 +94,7 @@ export function CollapsedBar({
           <div className="zk-collapsed-bar__input-wrap" onClick={onClick}>
             <div className="zk-input-container">
               <div className="zk-input-inner zk-collapsed-bar__input-inner">
-                <svg
-                  className="zk-collapsed-bar__icon"
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                >
-                  <path d="M10 2l1.5 4.5L16 8l-4.5 1.5L10 14l-1.5-4.5L4 8l4.5-1.5L10 2z" />
-                  <path d="M18 12l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3z" />
-                  <path d="M6 16l.75 2.25L9 19l-2.25.75L6 22l-.75-2.25L3 19l2.25-.75L6 16z" opacity="0.7" />
-                </svg>
+                <span className="zk-orb zk-orb--md" aria-hidden="true" />
                 <span className="zk-collapsed-bar__placeholder">
                   Ask {brandName} a question&hellip;
                 </span>

@@ -136,7 +136,7 @@ async def test_prepare_without_confirm_never_claims_booked():
     # and in the visitor's own language (this question was Devanagari).
     assert "2026-09-20" not in answer
     assert "आइतबार" in answer  # Sunday, in Devanagari
-    assert "September" in answer
+    assert "सेप्टेम्बर" in answer  # SBAL-Z9 F3: Nepali month, not English
     # MUST A: phone in LOCAL ASCII form, never +977.
     assert "9841234567" in answer
     assert "+977" not in answer

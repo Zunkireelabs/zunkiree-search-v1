@@ -19,6 +19,7 @@ exceeded) — already mapped to SLOT_TAKEN by the existing P0003/P0005
 handling in _write_and_record; this file never needs to re-implement that
 mapping, only exercise it on this path.
 """
+import datetime as _dt
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -28,6 +29,11 @@ import pytest
 from app.models.customer import Customer
 from app.services import clinic_availability as avail
 from app.services import clinic_tools
+
+# Relative, never a literal: a hardcoded "today" trips the same-day past-cutoff
+# once the wall clock passes it (this file rotted at 11:00 NPT on 2026-10-12).
+FUTURE_DATE = (_dt.date.today() + _dt.timedelta(days=7)).isoformat()
+FUTURE_DATE_PLUS_1 = (_dt.date.today() + _dt.timedelta(days=8)).isoformat()
 from app.services.clinicmd_client import ClinicMdError
 from app.services.zennly_client import ZennlyError
 
@@ -171,7 +177,7 @@ async def test_check_availability_uses_headcount_not_rooms(monkeypatch):
     monkeypatch.setattr(clinic_tools, "_client_for_backend", lambda bt: fake)
 
     result = await clinic_tools._check_availability(
-        AsyncMock(), _customer(), "Brow Lamination", date="2026-10-12",
+        AsyncMock(), _customer(), "Brow Lamination", date=FUTURE_DATE,
     )
     assert "open_times" in result
     assert len(result["open_times"]) > 0  # one female therapist, no bookings -> available
@@ -186,7 +192,7 @@ async def test_check_availability_no_rooms_never_calls_list_chairs(monkeypatch):
     monkeypatch.setattr(clinic_tools, "_client_for_backend", lambda bt: fake)
 
     result = await clinic_tools._check_availability(
-        AsyncMock(), _customer(), "Brow Lamination", date="2026-10-12",
+        AsyncMock(), _customer(), "Brow Lamination", date=FUTURE_DATE,
     )
     assert "error" not in result
 
@@ -199,7 +205,7 @@ async def test_execute_booking_no_rooms_sends_room_id_and_therapist_id_null(monk
     monkeypatch.setattr(clinic_tools, "new_booking_id", lambda: "req-fixed")
 
     pending = {
-        "service_id": "svc-1", "branch_id": "b1", "date": "2026-10-12", "time": "11:00",
+        "service_id": "svc-1", "branch_id": "b1", "date": FUTURE_DATE, "time": "11:00",
         "full_name": "test user", "phone_e164": "+9779841230000", "email": None, "note": None,
         "gender_preference": None,
     }
@@ -226,7 +232,7 @@ async def test_execute_booking_no_rooms_rejects_when_gender_capacity_exhausted(m
     monkeypatch.setattr(clinic_tools, "_client_for_backend", lambda bt: fake)
 
     pending = {
-        "service_id": "svc-1", "branch_id": "b1", "date": "2026-10-12", "time": "11:00",
+        "service_id": "svc-1", "branch_id": "b1", "date": FUTURE_DATE, "time": "11:00",
         "full_name": "test user", "phone_e164": "+9779841230000", "email": None, "note": None,
         "gender_preference": None,
     }
@@ -269,7 +275,7 @@ async def test_concurrent_booking_for_last_therapist_second_caller_gets_slot_tak
     monkeypatch.setattr(clinic_tools, "new_booking_id", lambda: "req-fixed")
 
     pending = {
-        "service_id": "svc-1", "branch_id": "b1", "date": "2026-10-12", "time": "11:00",
+        "service_id": "svc-1", "branch_id": "b1", "date": FUTURE_DATE, "time": "11:00",
         "full_name": "test user", "phone_e164": "+9779841230000", "email": None, "note": None,
         "gender_preference": None, "prepared_turn": 1,
     }
@@ -284,7 +290,7 @@ async def test_concurrent_booking_for_last_therapist_second_caller_gets_slot_tak
     pending_2 = {**pending, "time": "11:00", "service_id": "svc-1"}
     # Force a genuinely new signature by varying the date, so _write_and_record
     # doesn't short-circuit on the already-confirmed signature from `first`.
-    pending_2["date"] = "2026-10-13"
+    pending_2["date"] = FUTURE_DATE_PLUS_1
     second = await clinic_tools._write_and_record(AsyncMock(), _customer(), state, pending_2)
 
     assert second["error"] == "SLOT_TAKEN"

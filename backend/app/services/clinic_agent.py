@@ -13,20 +13,36 @@ import uuid
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from openai import APIConnectionError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.database import async_session_maker
 from app.services.openai_client import get_openai_client
 from app.models.customer import Customer
 from app.models.widget_config import WidgetConfig
 from app.services.clinic_tools import (
     build_clinic_tools,
+    bump_flow_turns,
+    get_flow_turns,
+    reset_flow_turns,
+    bump_missing_asks,
+    clear_missing_details,
     execute_clinic_tool,
+    fold_spoken_phone_in_text,
+    get_missing_details,
+    is_handed_off,
+    mark_handed_off,
+    set_missing_details,
+    to_e164,
+    phone_is_plausible,
     get_awaiting_confirmation,
     get_readback_lang,
+    get_sticky_language,
     get_vocab_for_customer,
     has_pending_booking,
     mark_readback,
+    set_sticky_language,
 )
 from app.services.clinic_confirm import is_clear_confirmation  # noqa: F401 (re-exported)
 from app.services.conversation import get_conversation_store
@@ -119,7 +135,7 @@ Current date/time in Nepal: {now_npt}.
 
 {phone_fact_line}
 
-LANGUAGE: Reply in the same language the visitor's LATEST message is written in — English in, English out; Nepali in, Nepali out. Never switch languages yourself. This never changes what you're willing to explain: every rule below, including FACTS and BOOKING, applies identically no matter which language you're replying in.
+LANGUAGE: Reply in the same language the visitor's LATEST message is written in — English in, English out; Nepali in, Nepali out. Never switch languages yourself. This never changes what you're willing to explain: every rule below, including FACTS and BOOKING, applies identically no matter which language you're replying in. In any language, write service names exactly as the catalog spells them, in English Latin letters (e.g. "Lash Lift", never Devanagari).
 
 FACTS: Clinic facts (hours, address, parking, payment methods, {staff_term}) come ONLY from search_knowledge. Prices, services, and durations come ONLY from list_services. Open appointment times come ONLY from check_availability. If a tool has no answer, say so honestly — never guess or invent facts, and never invent a phone number under any circumstance. This governs clinic DATA only. It does NOT cover your own capabilities or how you work — what booking involves, what you can help with, what information you still need — those are described in BOOKING below and you may explain them directly, without a tool and without any disclaimer or refusal.
 
@@ -219,6 +235,39 @@ def _build_availability_line(
     return ("\nAVAILABILITY: " + " ".join(lines) + "\n") if lines else ""
 
 
+# SBAL-Z11 V2: safety net for the one catalog word whose Devanagari
+# transliteration is a different, alarming word ("लाश" = corpse). A fixed
+# rewrite of model OUTPUT only — it binds nothing and matches no catalog
+# service, so it is not the cut Z9 transliteration matcher.
+_LASH_TRANSLIT = re.compile(r"(?<![\u0900-\u097F])लाश(?:\s+लिफ्ट)?(?![\u0900-\u097F])")
+
+
+def _fix_catalog_translit(text: str) -> str:
+    if "लाश" not in text:
+        return text
+    return _LASH_TRANSLIT.sub(lambda m: "Lash Lift" if "लिफ्ट" in m.group(0) else "Lash", text)
+
+
+# SBAL-Z11 V1: voice-sized OpenAI budget. ElevenLabs gave up at ~18s on a
+# stage turn (13.7s TTFT stall, 17 tokens); 6s + one retry on the fallback
+# model + ~0.6s tool + a normal ~3.7s final answer keeps a 2-iteration turn
+# under ~16s. Non-voice keeps its own 8s/6s budget.
+# SBAL-Z13 F7: the voice knowledge prefetch runs BEFORE the first LLM call, so
+# none of the per-attempt LLM timeouts cover it. Measured 5 ms..5.4 s on the
+# same lane; the cheap case is single-digit ms, so 1.5 s abandons only the tail.
+VOICE_KNOWLEDGE_PREFETCH_TIMEOUT_S = get_settings().voice_knowledge_prefetch_timeout_s
+VOICE_ATTEMPT_TIMEOUT_S = 6.0
+VOICE_RETRY_TIMEOUT_S = 6.0
+
+# Spoken when BOTH voice attempts time out: one short sentence instead of
+# silence and a dropped call. Keyed by detect_language() values.
+_VOICE_LLM_FAILURE_LINE = {
+    "ne_devanagari": "माफ गर्नुहोस्, अलि समस्या भयो। कृपया फेरि भन्नुहोस्।",
+    "ne_romanized": "Maaf garnuhos, ali samasya bhayo. Kripaya pheri bhannuhos.",
+    "en": "Sorry, I had a little trouble there. Could you say that again?",
+    "mixed_ne_en": "Sorry, ali samasya bhayo. Could you say that again?",
+}
+
 # --- Per-turn language directive (CLINIC-ESCALATION-LANGUAGE-BRIEF approach A) ---
 #
 # LANGUAGE above is a generic standing rule stated early, and it has now
@@ -245,6 +294,180 @@ _LANGUAGE_DIRECTIVES = {
     # than forcing a single language on them.
     "mixed_ne_en": "\nLANGUAGE-THIS-TURN: The visitor wrote in a mix of Nepali and English. Reply in the same mix, matching how they wrote.\n",
 }
+
+# SBAL-Z8 F2: a chip tap, carousel postback, or card button sends a
+# CODE-SYNTHESIZED English sentence as the visitor's "message" — not
+# anything they actually wrote. Detecting language from that text flips a
+# Nepali conversation to English the moment the visitor taps a button. Every
+# synthetic template this codebase builds (meta_messaging.py,
+# chatbot_webhooks.py, clinic_agent.py's own slot/another-day chips, and the
+# widget's Book/Details buttons in Widget.tsx) is enumerated here, plus the
+# short, language-neutral replies (a bare time, "ok", a thumbs-up) that
+# carry no real language signal either way. Matching either means: don't
+# update the session's sticky language from this turn — reuse what was
+# already established. Deliberately exhaustive/literal rather than a fuzzy
+# heuristic, since every pattern it must catch is one this same codebase
+# generates and therefore fully known.
+_SLOT_PICK_PATTERN = re.compile(r"^book .+ on .+ at .+$", re.IGNORECASE)
+# Review on #131: a slot pick isn't only a chip tap — a visitor can just as
+# well TYPE the time they want ("12:30", "12:30 ma", "10:30 baje") right
+# after a slot list. Matched alongside _SLOT_PICK_PATTERN wherever "this
+# turn picked a slot" is decided (turn_is_slot_pick below), so the no-
+# reoffer-chips fix doesn't depend on how the pick arrived.
+_TYPED_TIME_PICK_PATTERN = re.compile(r"^\d{1,2}:\d{2}\s*(am|pm|ma|baje)?\.?$", re.IGNORECASE)
+_SYNTHETIC_PAYLOAD_PATTERNS = [
+    _SLOT_PICK_PATTERN,
+    re.compile(r"^book room .+$", re.IGNORECASE),
+    re.compile(r"^i.d like to book .+$", re.IGNORECASE),
+    re.compile(r"^tell me more about .+$", re.IGNORECASE),
+    re.compile(r"^what other days is .+ available\??$", re.IGNORECASE),
+    re.compile(r"^add .+ to my cart(\s*\[product_id:.+\])?$", re.IGNORECASE),
+    re.compile(r"^\[shared (post|link): .+\] i want to know about this$", re.IGNORECASE),
+]
+_NEUTRAL_TEXT_PATTERN = re.compile(
+    r"^(\d{1,2}(:\d{2})?\s*(am|pm)?|ok(ay)?|yes|no|sure|k|yep|nope)[.!]?$", re.IGNORECASE
+)
+_EMOJI_ONLY_PATTERN = re.compile(r"^[\s\U0001F300-\U0001FAFF☀-➿]+$")
+# SBAL-Z8 exit test 1: giving a name + phone in answer to the deterministic
+# "what's your full name and phone number?" ask (exit test 1's "Test Demo,
+# 9800000000") must not flip the language either — a name and a phone
+# number carry no Nepali-vs-English signal regardless of which language
+# the visitor is actually speaking, so plain detect_language's silent
+# default-to-"en" on zero Nepali words would otherwise flip the session on
+# the exact turn that answers the agent's own question.
+_NAME_PHONE_REPLY_PATTERN = re.compile(r"^[A-Za-z][A-Za-z .'-]*,?\s*\+?\d[\d \-]{6,}$")
+
+
+def _is_synthetic_or_neutral_text(text: str) -> bool:
+    stripped = (text or "").strip()
+    if not stripped:
+        return False
+    if any(p.match(stripped) for p in _SYNTHETIC_PAYLOAD_PATTERNS):
+        return True
+    return bool(
+        _NEUTRAL_TEXT_PATTERN.match(stripped)
+        or _EMOJI_ONLY_PATTERN.match(stripped)
+        or _NAME_PHONE_REPLY_PATTERN.match(stripped)
+    )
+
+
+# SBAL-Z13 F10: one bare non-Devanagari token ("Lashes.") is a service name or a
+# filler word, not evidence the caller switched language.
+def _is_single_latin_token(text: str) -> bool:
+    stripped = (text or "").strip()
+    if not stripped or any("\u0900" <= c <= "\u097f" for c in stripped):
+        return False
+    return len(stripped.split()) == 1
+
+
+# SBAL-Z13 F9: voice has no markdown renderer — TTS reads the markers aloud.
+# Streamed chunks split at word boundaries, so a line-start marker ("1.") can
+# arrive without its trailing space; the lookaheads below allow that, and the
+# stripper carries "are we at a line start" across chunks.
+_VOICE_LINE_MARKER = re.compile(r"^([ \t]*)(?:#{1,6}(?=\s|$)|[-*+\u2022](?=\s|$)|\d{1,3}[.)](?=\s|$))[ \t]*")
+_VOICE_INLINE_MARKUP = re.compile(r"\*\*|__|`+|(?<!\w)\*(?=\S)|(?<=\S)\*(?!\w)")
+
+
+class _VoiceMarkdownStripper:
+    def __init__(self) -> None:
+        self.at_line_start = True
+
+    def feed(self, text: str) -> str:
+        if not text:
+            return text
+        out = []
+        for i, line in enumerate(text.split("\n")):
+            if i > 0:
+                out.append("\n")
+                self.at_line_start = True
+            if self.at_line_start:
+                line = _VOICE_LINE_MARKER.sub(r"\1", line, count=1)
+            line = _VOICE_INLINE_MARKUP.sub("", line)
+            if line.strip():
+                self.at_line_start = False
+            out.append(line)
+        return "".join(out)
+
+
+def strip_markdown_for_voice(text: str) -> str:
+    return _VoiceMarkdownStripper().feed(text)
+
+
+# SBAL-Z8 F3: the IG slot-chip prompt (chatbot_webhooks.py) was a hardcoded
+# English "Pick a time:" regardless of the conversation's language.
+# Review on #131: mixed_ne_en is Latin-script code-switching — those
+# visitors type romanized, not Devanagari, so it maps to ne_romanized here
+# (and in _MISSING_DETAILS_PROMPT_BY_LANG below), not ne_devanagari.
+_PICK_A_TIME_LABEL_BY_LANG = {
+    "ne_devanagari": "समय छान्नुहोस्:",
+    "ne_romanized": "Samaya chhannuhos:",
+    "en": "Pick a time:",
+    "mixed_ne_en": "Samaya chhannuhos:",
+}
+
+# SBAL-Z8 F1: prepare_booking resolved the service/date/time but failed on
+# the visitor's own details (INVALID_NAME/INVALID_PHONE) — asked
+# deterministically, in the conversation's sticky language, same pattern as
+# _build_booking_readback (no LLM narration of what's missing or why).
+_MISSING_DETAILS_PROMPT_BY_LANG = {
+    "en": "Great — {weekday}, {day} {month} at {time} for {service}. What's your full name and phone number?",
+    "ne_romanized": "Sahi cha — {weekday}, {day} {month} {time} baje {service} ko lagi. Tapaiko pura naam ra phone number pathaunus?",
+    "ne_devanagari": "ठिक छ — {weekday}, {day} {month} {time} {service} को लागि। तपाईंको पूरा नाम र फोन नम्बर दिनुहोस्?",
+    "mixed_ne_en": "Sahi cha — {weekday}, {day} {month} {time} baje {service} ko lagi. Tapaiko pura naam ra phone number pathaunus?",
+}
+
+# SBAL-Z9 F2: the same sentence again is useless — a repeat ask tells the
+# caller HOW to answer (digit by digit / name only), keyed on what was
+# actually missing. The 3rd ask hands off instead of repeating.
+_MISSING_PHONE_RETRY_BY_LANG = {
+    "en": "Sorry, I didn't catch the number. Please say your phone number one digit at a time.",
+    "ne_romanized": "Maaf garnuhos, number bujhna sakina. Tapaiko phone number ank ma ek-ek gari bhannuhos hai.",
+    "ne_devanagari": "माफ गर्नुहोस्, नम्बर बुझ्न सकिएन। तपाईंको फोन नम्बर अंकमा एक-एक गरी भन्नुहोस् है।",
+    "mixed_ne_en": "Maaf garnuhos, number bujhna sakina. Tapaiko phone number ank ma ek-ek gari bhannuhos hai.",
+}
+_MISSING_NAME_RETRY_BY_LANG = {
+    "en": "Sorry, I didn't catch your name. Please tell me your full name.",
+    "ne_romanized": "Maaf garnuhos, naam bujhna sakina. Tapaiko pura naam bhannuhos hai.",
+    "ne_devanagari": "माफ गर्नुहोस्, नाम बुझ्न सकिएन। तपाईंको पूरा नाम भन्नुहोस् है।",
+    "mixed_ne_en": "Maaf garnuhos, naam bujhna sakina. Tapaiko pura naam bhannuhos hai.",
+}
+_MISSING_DETAILS_HANDOFF_BY_LANG = {
+    "en": "I'm sorry, I'm having trouble getting your details. Please contact the clinic directly{phone} and they'll book you in.",
+    "ne_romanized": "Maaf garnuhos, tapaiko bibaran bujhna sakina. Kripaya clinic lai sidhai sampark garnuhos{phone}, uniharule book garidinuhunchha.",
+    "ne_devanagari": "माफ गर्नुहोस्, तपाईंको विवरण बुझ्न सकिएन। कृपया क्लिनिकमा सिधै सम्पर्क गर्नुहोस्{phone}, उहाँहरूले बुक गरिदिनुहुन्छ।",
+    "mixed_ne_en": "Maaf garnuhos, tapaiko bibaran bujhna sakina. Kripaya clinic lai sidhai sampark garnuhos{phone}, uniharule book garidinuhunchha.",
+}
+HANDOFF_AT_ASK = 3
+# SBAL-Z14 F17: a session that has gone mid_booking_flow (a live date anchor)
+# and not reached prepare_booking status=ok within this many turns is handed
+# off, whoever is stuck and whatever the reason. Counted per session.
+BOOKING_FLOW_MAX_TURNS = 6
+# SBAL-Z14 F16: said instead of another ask once the booking attempt has been
+# handed off. The handoff line itself is said exactly once.
+_HANDED_OFF_ACK_BY_LANG = {
+    "en": "Okay. Let me know if there's anything else I can help with.",
+    "ne_romanized": "Thik chha. Aru kehi madat chahiyema bhannuhos.",
+    "ne_devanagari": "ठीक छ। अरू केही मद्दत चाहिएमा भन्नुहोस्।",
+    "mixed_ne_en": "Thik chha. Aru kehi madat chahiyema bhannuhos.",
+}
+
+# SBAL-Z9 F3: Devanagari templates localized end to end — Nepali month,
+# numeral day, and a spoken-style time ("बिहान १० बजे") so a template can't
+# double the "बजे" or splice English date/time into a Nepali sentence.
+_MONTH_NE = ["जनवरी", "फेब्रुअरी", "मार्च", "अप्रिल", "मे", "जुन", "जुलाई", "अगस्ट", "सेप्टेम्बर", "अक्टोबर", "नोभेम्बर", "डिसेम्बर"]
+_TO_DEVANAGARI_DIGITS = str.maketrans("0123456789", "०१२३४५६७८९")
+
+
+def _ne_time_phrase(hhmm: str) -> str:
+    """'10:00' -> 'बिहान १० बजे'; '14:30' -> 'दिउँसो २:३० बजे'."""
+    m = re.fullmatch(r"(\d{1,2}):(\d{2})", (hhmm or "").strip())
+    if not m:
+        return hhmm
+    h, mi = int(m.group(1)), int(m.group(2))
+    part = "बिहान" if h < 12 else "दिउँसो" if h < 16 else "साँझ" if h < 19 else "राति"
+    h12 = h % 12 or 12
+    clock = f"{h12}" if mi == 0 else f"{h12}:{mi:02d}"
+    return f"{part} {clock.translate(_TO_DEVANAGARI_DIGITS)} बजे"
 
 # --- No false booking claims (CLINIC-BOOKING-TRUTH-BRIEF F1) ---
 #
@@ -319,7 +542,87 @@ def _slot_parts(pending: dict, lang: str) -> tuple[str, str, str]:
         weekday = _WEEKDAY_NE_BY_INDEX[date_obj.weekday()]
     else:
         weekday = date_obj.strftime("%A")
+    if lang in ("ne_devanagari", "mixed_ne_en"):
+        return weekday, str(date_obj.day).translate(_TO_DEVANAGARI_DIGITS), _MONTH_NE[date_obj.month - 1]
     return weekday, str(date_obj.day), date_obj.strftime("%B")
+
+
+# SBAL-Z14 F15: while a booking detail is outstanding the model does not
+# author the reply. A turn in which the model calls ANY tool is progress and
+# is left alone; a text-only turn is discarded and replaced by our own ask at
+# the current escalation level (ask -> variant -> handoff). Nothing here reads
+# the model's prose. SBAL-Z10's _ASK_KEYWORDS classifier is gone.
+_LETTER_RE = re.compile(r"[^\W\d_]")
+# SBAL-Z10.1: a time-shaped turn ("2:30", "2 pm", "दुई बजे") is a caller
+# changing the slot, not a failed phone/name attempt — never gate or count it.
+_TIME_SHAPED_RE = re.compile(
+    r"(?<!\d)\d{1,2}[:.]\d{2}(?!\d)|\b(?:a\.?m|p\.?m)\b\.?|\bbaje\b|बजे",
+    re.I,
+)
+
+
+def _kind_of(info: dict) -> str:
+    return "phone" if info.get("error") == "INVALID_PHONE" else "name"
+
+
+def _inbound_is_unusable_answer(info: dict, text: str) -> bool:
+    """True when the visitor's turn is shaped like an answer to the missing
+    detail but cannot satisfy it (digits that are not a plausible number for
+    a phone; no letters at all for a name). Deliberately narrow: anything
+    that merely might be a different request goes to the model, and the
+    post-hoc check on its reply counts a re-ask."""
+    text = (text or "").strip()
+    if not text:
+        return False
+    if _TIME_SHAPED_RE.search(text.translate(str.maketrans("०१२३४५६७८९", "0123456789"))):
+        return False
+    if info.get("error") == "INVALID_PHONE":
+        e164 = to_e164(text)
+        if e164 and phone_is_plausible(text, e164):
+            return False
+        ascii_text = text.translate(str.maketrans("०१२३४५६७८९", "0123456789"))
+        digits = sum(c.isdigit() for c in ascii_text)
+        words = len(re.findall(r"[^\W\d_]+", ascii_text))
+        return digits >= 3 and digits >= words
+    return not _LETTER_RE.search(text)
+
+
+def _log_booking_flow(site_id, session_id, state, ask_n, flow_turns, reason) -> None:
+    """SBAL-Z14 F18: one line for every ownership decision."""
+    logger.info(
+        "[CLINIC-AGENT] booking_flow site_id=%s session_id=%s state=%s ask_n=%s "
+        "flow_turns=%s reason=%s",
+        site_id, session_id, state, ask_n, flow_turns, reason,
+    )
+
+
+def _log_missing_ask(site_id, session_id, info, source, n, handoff) -> None:
+    logger.info(
+        "[CLINIC-AGENT] missing_details_ask site_id=%s session_id=%s kind=%s "
+        "source=%s ask_n=%d handoff=%s",
+        site_id, session_id, _kind_of(info), source, n, handoff,
+    )
+
+
+def _build_missing_details_prompt(info: dict, lang: str, attempt: int = 1, contact_phone: str | None = None) -> str:
+    """SBAL-Z8 F1: `info` is prepare_booking's INVALID_NAME/INVALID_PHONE
+    result — service/date/time already resolved, only the visitor's own
+    details are missing."""
+    if attempt >= HANDOFF_AT_ASK:
+        tpl = _MISSING_DETAILS_HANDOFF_BY_LANG.get(lang, _MISSING_DETAILS_HANDOFF_BY_LANG["en"])
+        return tpl.format(phone=f" ({contact_phone})" if contact_phone else "")
+    if attempt == 2:
+        retry = _MISSING_NAME_RETRY_BY_LANG if info.get("error") == "INVALID_NAME" else _MISSING_PHONE_RETRY_BY_LANG
+        return retry.get(lang, retry["en"])
+    weekday, day, month = _slot_parts(info, lang)
+    time_str = info.get("time") or ""
+    if lang == "ne_devanagari":
+        time_str = _ne_time_phrase(time_str)
+    tpl = _MISSING_DETAILS_PROMPT_BY_LANG.get(lang, _MISSING_DETAILS_PROMPT_BY_LANG["en"])
+    return tpl.format(
+        weekday=weekday, day=day, month=month,
+        time=time_str, service=info.get("service_name") or "",
+    )
 
 
 # --- Post-booking sentence (CLINIC-POSTBOOKING-SENTENCE) ---
@@ -384,6 +687,27 @@ _SERVICES_CAPTION_BY_LANG = {
     "en": "Here are our services — swipe to see them.",
     "mixed_ne_en": "Hamro services haru yaha chan — swipe garera hernuhos.",
 }
+
+
+# SBAL-Z11 V3: a Details request whose name matches several services (and no
+# single one exactly) is a disambiguation question, not "here is the catalog".
+_SERVICES_DISAMBIG_CAPTION_BY_LANG = {
+    "ne_devanagari": "यी मध्ये तपाईं कुन सेवाको बारेमा जान्न चाहनुहुन्छ?",
+    "ne_romanized": "Yi madhye tapai kun service ko barema jana chahanuhuncha?",
+    "en": "Which of these did you mean? Tap one to see its details.",
+    "mixed_ne_en": "Yi madhye tapai kun service ko barema jana chahanuhuncha?",
+}
+
+
+def _exact_service_match(services: list[dict], query: str | None) -> list[dict]:
+    """SBAL-Z11 V3: the one service whose catalog name equals `query`
+    (case-insensitive, trimmed), else the list unchanged. Shared by the
+    Details prefetch and the tool-loop list_services path."""
+    q = (query or "").strip().casefold()
+    if not q:
+        return services
+    exact = [s for s in services if (s.get("name") or "").strip().casefold() == q]
+    return exact if len(exact) == 1 else services
 
 
 _ANOTHER_DAY_LABEL_BY_LANG = {
@@ -463,7 +787,7 @@ def _build_confirmation_sentence(
     if lang == "ne_romanized":
         text = f"Tapaiko {service} {weekday}, {day} {month} maa {time_str} baje {branch} maa book bhayo."
     elif lang in ("ne_devanagari", "mixed_ne_en"):
-        text = f"तपाईंको {service} {weekday}, {day} {month} मा {time_str} बजे {branch} मा बुक भयो।"
+        text = f"तपाईंको {service} {weekday}, {day} {month} मा {_ne_time_phrase(time_str)} {branch} मा बुक भयो।"
     else:
         text = f"You're booked: {service} on {weekday} {day} {month} at {time_str} at {branch}."
     will_confirm = _CLINIC_WILL_CONFIRM.get(lang, _CLINIC_WILL_CONFIRM["en"])
@@ -496,7 +820,7 @@ def _build_booking_readback_body(pending: dict, lang: str) -> str:
     if lang in ("ne_devanagari", "mixed_ne_en"):
         price_part = f" मूल्य रु {price}।" if price is not None else ""
         return (
-            f"{weekday}, {day} {month_en} मा {time_str} बजे {service} — {name} को "
+            f"{weekday}, {day} {month_en} मा {_ne_time_phrase(time_str)} {service} — {name} को "
             f"नाममा, फोन {local_phone}, {branch} मा।{price_part}"
         )
     price_part = f" Price: NPR {price}." if price is not None else ""
@@ -831,9 +1155,34 @@ _BOOKING_SIGNAL = re.compile(
     r"\b(?:book\w*|appointment\w*|schedule\w*|reschedule\w*|cancel\w*|confirm\w*|avail\w*|"
     r"slot\w*|price\w*|cost\w*|npr|rs\.?\s*\d|service\w*|treatment\w*|how\s+much|kati|"
     r"\d{1,2}\s*(?:am|pm)|baje)\b"
-    r"|बुक|मिलाउ|उपलब्ध|मूल्य|मुल्य|शुल्क|सेवा|भेट|बजे|गर्दिनोस्|गर्नुहोस्",
+    r"|बुक|मिलाउ|उपलब्ध|मूल्य|मुल्य|शुल्क|सेवा|सर्(?:भ|व)िस|भेट|बजे|गर्दिनोस्|गर्नुहोस्",
     re.IGNORECASE,
 )
+# SBAL-Z12 F2: on voice there is no card rendering — the model must speak the
+# list_services result as prose. sbal has 53 services; reciting them hit
+# finish_reason=length (~4.5 s of generation, inside the vendor's TTFT
+# ceiling) and is unusable on a call anyway. Cap what the MODEL sees, only on
+# voice; widget/IG tool results are untouched.
+_VOICE_SERVICES_CAP = 8
+
+
+def _cap_services_for_voice(result: dict) -> dict:
+    services = result.get("services")
+    if result.get("blocked") or not isinstance(services, list) or len(services) <= _VOICE_SERVICES_CAP:
+        return result
+    return {
+        **result,
+        "services": services[:_VOICE_SERVICES_CAP],
+        "truncated": True,
+        "total_services": len(services),
+        "note": (
+            f"Voice call: only the first {_VOICE_SERVICES_CAP} of {len(services)} services are "
+            "shown. Name a few of them briefly, say there are more, and offer to name more or "
+            "to help book a specific one. Do not read out the whole list."
+        ),
+    }
+
+
 _PHONE_LIKE_IN_QUESTION = re.compile(r"\d{7,}")
 _EMAIL_LIKE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 
@@ -917,6 +1266,7 @@ class ClinicAgentService:
     def __init__(self):
         self.client = get_openai_client("chat")
         self.model = settings.llm_model
+        self.fallback_model = settings.clinic_agent_fallback_model
         self.conversation_store = get_conversation_store()
 
     async def _translate_escalation_to_devanagari(self, text: str) -> tuple[str | None, dict | None]:
@@ -996,6 +1346,16 @@ class ClinicAgentService:
         """
         # `question` is later rebound to the booking read-back question below; the
         # confirm gate needs the visitor's ORIGINAL words.
+        # SBAL-Z10 F5: a spoken phone number reaches the model as digits, not
+        # words (the model's own words-to-digits step is where digits were
+        # lost). Narrow by construction: only a run that folds to a plausible
+        # 9-10 digit number changes; every other turn is untouched.
+        question, _phone_folded = fold_spoken_phone_in_text(question)
+        if _phone_folded:
+            logger.info(
+                "[CLINIC-AGENT] phone_words_folded site_id=%s session_id=%s",
+                site_id, session_id,
+            )
         user_message = question
         turn_start_ts = time.monotonic()
         logger.info(
@@ -1027,7 +1387,25 @@ class ClinicAgentService:
                 "closed_reason=%s handoff_available=%s escalation_turn=%s",
                 site_id, session_id, channel_open, closed_reason, handoff_available, escalation_turn,
             )
-        detected_lang = detect_language(question)
+        # SBAL-Z8 F2: a chip/postback/button tap sends code-synthesized
+        # English (or a bare neutral reply like "12:30"), not anything the
+        # visitor actually wrote — detecting language from it would flip a
+        # Nepali conversation to English the moment a button is tapped.
+        # Voice never sends synthetic text, so it skips that branch; since
+        # SBAL-Z13 F10 it does write sticky language and reads it for a
+        # single bare non-Devanagari token (see _is_single_latin_token).
+        raw_detected_lang = detect_language(question)
+        sticky_lang = get_sticky_language(session_id)
+        if channel != "voice" and _is_synthetic_or_neutral_text(question):
+            detected_lang = sticky_lang or raw_detected_lang
+        elif sticky_lang and _is_single_latin_token(question):
+            # SBAL-Z13 F10, every channel, no word list.
+            detected_lang = sticky_lang
+        else:
+            detected_lang = raw_detected_lang
+            # voice now records sticky too (Z13 F10) but, unlike other
+            # channels, still never reads it for synthetic text.
+            set_sticky_language(session_id, detected_lang)
         language_directive = _LANGUAGE_DIRECTIVES.get(detected_lang, "")
 
         # SBAL-Z3 B1: this turn names a time/date, or asks whether something
@@ -1036,6 +1414,20 @@ class ClinicAgentService:
         # memory (see _AVAILABILITY_SIGNAL's note).
         force_availability_check = bool(
             _AVAILABILITY_SIGNAL.search(question) or _mentions_time_or_date(question, now_npt_dt)
+        )
+        # SBAL-Z8 F1 (addendum + review on #131): a slot pick — a chip's
+        # "Book X on D at T" postback OR a typed time ("12:30", "12:30 ma",
+        # "10:30 baje") — forces this same check_availability re-
+        # verification above, but the visitor already picked a time;
+        # re-offering slot chips this turn is the loop from the addendum
+        # repro (pick 12:30 -> asked for name/phone + chips anyway; pick
+        # 10:30 -> same). This holds regardless of whether the model goes
+        # on to call prepare_booking this turn or just asks for the
+        # details itself in its own text — either way, slot chips are
+        # never this turn's own open question.
+        stripped_question = question.strip()
+        turn_is_slot_pick = bool(
+            _SLOT_PICK_PATTERN.match(stripped_question) or _TYPED_TIME_PICK_PATTERN.match(stripped_question)
         )
 
         # PR #64 review (MINOR): `session_id or "anonymous"` made every
@@ -1124,8 +1516,13 @@ class ClinicAgentService:
         # live anchor is exactly the signal that this session is mid-booking.
         awaiting_confirmation = get_awaiting_confirmation(session_id, current_turn)
         mid_booking_flow = bool(anchor_key and _DATE_ANCHOR.get(anchor_key))
+        # SBAL-Z11 V3: a Details tap is an explicit request about ONE service,
+        # so it is honored mid-booking too (a live date anchor from an earlier
+        # turn used to push it into the generic tool loop, which answered with
+        # the generic services carousel). Only a staged, awaiting-confirmation
+        # booking still takes precedence.
         service_details_match = (
-            None if (awaiting_confirmation or mid_booking_flow)
+            None if awaiting_confirmation
             else _SERVICE_DETAILS_POSTBACK.match((question or "").strip())
         )
         knowledge_fast_path = (
@@ -1163,14 +1560,27 @@ class ClinicAgentService:
                 trace_id, site_id, session_id, prefetch_ms,
             )
             services = (prefetch_result or {}).get("services") or []
+            # SBAL-Z7: "Tell me more about Lash Lift" named the service
+            # EXACTLY, but list_services' own substring match is loose (it
+            # also matches "Highly Defining Dye Lash Lift", "Lash Lift
+            # Removal", ...) — 5 loose hits buried the one the visitor
+            # actually asked about behind a carousel instead of its own
+            # details. An exact (case-insensitive, trimmed) name match
+            # wins outright; the loose list is only the fallback when
+            # nothing names the service exactly.
+            services = _exact_service_match(services, service_query)
             if services:
                 ui_lang = get_readback_lang(session_id) or detected_lang
                 if len(services) == 1:
                     ui_state["service_detail"] = _services_ui(services, limit=1)[0]
                 else:
-                    ui_state["services"] = _services_ui(services)
-                    ui_state["services_caption"] = _SERVICES_CAPTION_BY_LANG.get(
-                        ui_lang, _SERVICES_CAPTION_BY_LANG["en"]
+                    carousel_limit = 10 if channel == "instagram" else len(services)
+                    ui_state["services"] = _services_ui(services, limit=carousel_limit)
+                    # SBAL-Z11 V3: this list answers a Details request for
+                    # a name that matched several services — caption it as
+                    # a question, not as the full catalog.
+                    ui_state["services_caption"] = _SERVICES_DISAMBIG_CAPTION_BY_LANG.get(
+                        ui_lang, _SERVICES_DISAMBIG_CAPTION_BY_LANG["en"]
                     )
                     if widget_cards_enabled:
                         turn_services_shortcut_caption = ui_state["services_caption"]
@@ -1198,10 +1608,9 @@ class ClinicAgentService:
             )
         elif knowledge_fast_path:
             prefetch_start = time.monotonic()
-            prefetch_result = await execute_clinic_tool(
+            prefetch_kwargs = dict(
                 tool_name="search_knowledge",
                 tool_args={"query": question},
-                db=db,
                 customer=customer,
                 config=config,
                 site_id=site_id,
@@ -1210,13 +1619,61 @@ class ClinicAgentService:
                 user_message=user_message,
                 trace_id=trace_id,
             )
+
+            async def _prefetch_on_own_session():
+                # SBAL-Z13 F7a: an abandoned (cancelled, not awaited) prefetch
+                # must never touch the request's AsyncSession, which the tool
+                # loop uses next ("concurrent operations are not permitted",
+                # pool poisoning). Voice gets its own short-lived session.
+                # Any failure means "fast path did not apply" (F8), never a
+                # failed turn.
+                try:
+                    async with async_session_maker() as prefetch_db:
+                        return await execute_clinic_tool(db=prefetch_db, **prefetch_kwargs)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.warning(
+                        "[CLINIC-AGENT] knowledge_prefetch_failed site_id=%s session_id=%s",
+                        site_id, session_id, exc_info=True,
+                    )
+                    return None
+
+            if channel == "voice":
+                prefetch_coro = _prefetch_on_own_session()
+            else:
+                prefetch_coro = execute_clinic_tool(db=db, **prefetch_kwargs)
+            prefetch_abandoned = False
+            if channel == "voice":
+                # SBAL-Z13 F7: bound the prefetch on voice only. asyncio.wait
+                # (not wait_for) so an abandoned task is cancelled without
+                # awaiting it — never cancel-and-wait.
+                prefetch_task = asyncio.ensure_future(prefetch_coro)
+                done, _pending = await asyncio.wait(
+                    {prefetch_task}, timeout=VOICE_KNOWLEDGE_PREFETCH_TIMEOUT_S
+                )
+                if done:
+                    prefetch_result = prefetch_task.result()
+                else:
+                    prefetch_abandoned = True
+                    prefetch_task.cancel()
+                    prefetch_result = None
+            else:
+                prefetch_result = await prefetch_coro
             prefetch_ms = (time.monotonic() - prefetch_start) * 1000
-            timing_tools.append(f"0:search_knowledge:{prefetch_ms:.0f}")
-            logger.info(
-                "[CLINIC-LATENCY] tool_call trace_id=%s site_id=%s session_id=%s "
-                "iteration=0 tool=search_knowledge latency_ms=%.0f",
-                trace_id, site_id, session_id, prefetch_ms,
-            )
+            if prefetch_abandoned:
+                logger.warning(
+                    "[CLINIC-AGENT] knowledge_prefetch_abandoned site_id=%s session_id=%s "
+                    "channel=%s elapsed_ms=%.0f",
+                    site_id, session_id, channel, prefetch_ms,
+                )
+            else:
+                timing_tools.append(f"0:search_knowledge:{prefetch_ms:.0f}")
+                logger.info(
+                    "[CLINIC-LATENCY] tool_call trace_id=%s site_id=%s session_id=%s "
+                    "iteration=0 tool=search_knowledge latency_ms=%.0f",
+                    trace_id, site_id, session_id, prefetch_ms,
+                )
             chunks = (prefetch_result or {}).get("chunks") or []
             for chunk_data in chunks:
                 allowed_phone_digits |= _extract_phone_digits(chunk_data.get("content", ""))
@@ -1230,19 +1687,23 @@ class ClinicAgentService:
                     "If it doesn't actually answer what they're asking (e.g. they want prices, "
                     "services, availability, or booking), use the correct tool instead.\n"
                 )
-            else:
-                knowledge_prefetch_line = (
-                    "\nKNOWLEDGE-THIS-TURN: search_knowledge was already tried for the "
-                    "visitor's question and found nothing. Say so honestly; do not call "
-                    "search_knowledge again this turn unless they ask something different.\n"
+                knowledge_tools_for_iteration_1 = [
+                    t for t in tools_for_turn if t["function"]["name"] != "search_knowledge"
+                ]
+                logger.info(
+                    "[CLINIC-AGENT] knowledge_fast_path_used site_id=%s session_id=%s chunks=%d",
+                    site_id, session_id, len(chunks),
                 )
-            knowledge_tools_for_iteration_1 = [
-                t for t in tools_for_turn if t["function"]["name"] != "search_knowledge"
-            ]
-            logger.info(
-                "[CLINIC-AGENT] knowledge_fast_path_used site_id=%s session_id=%s chunks=%d",
-                site_id, session_id, len(chunks),
-            )
+            else:
+                # SBAL-Z13 F8: zero chunks (or an abandoned prefetch) means "the
+                # fast path did not apply", never "the answer is we don't know".
+                # Inject nothing, keep the full tool set. A router that is
+                # unsure falls back to the full tool set, never to an apology.
+                logger.info(
+                    "[CLINIC-AGENT] knowledge_fast_path_skipped site_id=%s session_id=%s "
+                    "reason=%s",
+                    site_id, session_id, "abandoned" if prefetch_abandoned else "zero_chunks",
+                )
 
         system_prompt = CLINIC_SYSTEM_PROMPT.format(
             brand_name=brand_name,
@@ -1265,12 +1726,45 @@ class ClinicAgentService:
         # otherwise the sanitizer strips it right out of the booking read-back
         # ("Phone: 9841540343. Shall I book this?"), defeating the visitor's own
         # chance to catch a wrong number.
-        allowed_phone_digits |= _extract_phone_digits(question)
+        # SBAL-Z10.1: evaluate the unusable-answer gate BEFORE the turn is
+        # written to the store or folded into allowed digits — a gated turn
+        # ("2:30", "123") left in history gets misread later by the model
+        # (it named a patient "2:30"). The assistant reply is still stored.
+        outstanding_missing = get_missing_details(session_id)
+        turn_gated = bool(
+            outstanding_missing
+            and not awaiting_confirmation
+            and _inbound_is_unusable_answer(outstanding_missing, question)
+        )
+        # SBAL-Z14 F15/F16/F17: ownership state, decided before any model call.
+        handed_off = is_handed_off(session_id)
+        flow_turns = get_flow_turns(session_id) if mid_booking_flow else 0
+        budget_exhausted = bool(
+            mid_booking_flow
+            and not awaiting_confirmation
+            and flow_turns >= BOOKING_FLOW_MAX_TURNS
+        )
+        # SBAL-Z14 F16a: after a handoff only a structurally-booking turn is
+        # ours (turn_gated above, or a booking tool failing in the tool path —
+        # both acknowledged, never re-asked). A text-only turn is the model's
+        # again, so a post-handoff FAQ is answered rather than muted.
+        own_active = bool(
+            outstanding_missing and not handed_off and not turn_gated and not awaiting_confirmation
+        )
+        if handed_off:
+            system_prompt += (
+                "\nBOOKING-HANDED-OFF: The caller has already been given the clinic's contact "
+                "details for this booking. Do not ask for their name or phone again; answer "
+                "any other question normally.\n"
+            )
+        if not turn_gated:
+            allowed_phone_digits |= _extract_phone_digits(question)
         for m in history:
             if m.get("role") == "user":
                 allowed_phone_digits |= _extract_phone_digits(m.get("content") or "")
 
-        self.conversation_store.add_message(session_id, "user", question)
+        if not turn_gated:
+            self.conversation_store.add_message(session_id, "user", question)
 
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(history[-10:])
@@ -1278,7 +1772,54 @@ class ClinicAgentService:
 
         full_answer = ""
         iteration = 0
-        if turn_services_shortcut_caption:
+        # SBAL-Z10 F4: the visitor's turn looks like an answer to the missing
+        # detail but cannot satisfy it — count the ask HERE (no model, no
+        # tool call needed) and answer deterministically.
+        if turn_gated and handed_off:
+            # SBAL-Z14 F16: terminal — acknowledge, never ask again.
+            _log_booking_flow(site_id, session_id, "handed_off", None, flow_turns, "gate_after_handoff")
+            full_answer = _HANDED_OFF_ACK_BY_LANG.get(detected_lang, _HANDED_OFF_ACK_BY_LANG["en"])
+            yield {"type": "token", "data": full_answer}
+            iteration = MAX_TOOL_ITERATIONS
+        elif turn_gated:
+            gate_n = bump_missing_asks(session_id, repeat=True, kind=_kind_of(outstanding_missing))
+            _log_missing_ask(site_id, session_id, outstanding_missing, "gate", gate_n, gate_n >= HANDOFF_AT_ASK)
+            full_answer = sanitize_phone_numbers(
+                _build_missing_details_prompt(
+                    outstanding_missing, detected_lang, attempt=gate_n,
+                    contact_phone=config.contact_phone if config else None,
+                ),
+                allowed_phone_digits,
+            )
+            if gate_n >= HANDOFF_AT_ASK:
+                mark_handed_off(session_id)
+                _log_booking_flow(site_id, session_id, "handed_off", gate_n, flow_turns, "ask_budget")
+            yield {"type": "token", "data": full_answer}
+            iteration = MAX_TOOL_ITERATIONS
+        elif budget_exhausted:
+            # SBAL-Z14 F17: the backstop. Mid-booking for BOOKING_FLOW_MAX_TURNS
+            # STUCK turns — hand off, whatever the reason the flow is stuck.
+            # Already handed off (post-handoff prose re-asks reach here too, the
+            # model being free to speak again): acknowledge, never re-announce.
+            # The count restarts either way, so a caller is muted for one turn
+            # per BOOKING_FLOW_MAX_TURNS stuck turns, never for the rest of the call.
+            if handed_off:
+                _log_booking_flow(site_id, session_id, "handed_off", None, flow_turns, "budget_after_handoff")
+                full_answer = _HANDED_OFF_ACK_BY_LANG.get(detected_lang, _HANDED_OFF_ACK_BY_LANG["en"])
+            else:
+                mark_handed_off(session_id)
+                _log_booking_flow(site_id, session_id, "budget_exhausted", None, flow_turns, "flow_turn_budget")
+                full_answer = sanitize_phone_numbers(
+                    _build_missing_details_prompt(
+                        {}, detected_lang, attempt=HANDOFF_AT_ASK,
+                        contact_phone=config.contact_phone if config else None,
+                    ),
+                    allowed_phone_digits,
+                )
+            reset_flow_turns(session_id)
+            yield {"type": "token", "data": full_answer}
+            iteration = MAX_TOOL_ITERATIONS
+        elif turn_services_shortcut_caption:
             # SBAL-Z6: the service_details_match prefetch above already
             # resolved a multi-service match before the tool loop even
             # starts — same code-built-answer shortcut as
@@ -1291,9 +1832,16 @@ class ClinicAgentService:
         # for the MUST A read-back template) and whether a confirm_booking
         # actually created a booking. See the check right after the tool
         # loop below.
+        # SBAL-Z14 F15: structural progress signal. A prefetch that already ran
+        # a tool this turn counts (timing_tools is appended to by it).
+        turn_tool_called = bool(timing_tools)
         turn_prepared_pending: dict | None = None
         turn_booking_confirmed = False
         turn_confirmed: tuple[dict, str] | None = None
+        # SBAL-Z8 F1: prepare_booking resolved service/date/time but failed
+        # on the visitor's own details (INVALID_NAME/INVALID_PHONE) — asked
+        # deterministically below, same pattern as turn_prepared_pending.
+        turn_missing_details: dict | None = None
         # P4 B1: hard cap on the service-guess fan-out (prod incident: guess
         # "Teeth Cleaning" -> check_availability -> list_services -> guess
         # "General Dentistry" -> check_availability again = 4 iterations,
@@ -1425,87 +1973,208 @@ class ClinicAgentService:
             if block_check_availability_next_iteration:
                 iteration_tools = [t for t in iteration_tools if t["function"]["name"] != "check_availability"]
                 block_check_availability_next_iteration = False  # only blocks the one iteration
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                tools=iteration_tools,
-                tool_choice=force_tool_choice,
-                max_tokens=max_completion_tokens,
-                temperature=0.3,
-                stream=True,
-                # ZUNKIREE-EMIT-USAGE-BRIEF: a streaming completion only carries
-                # `usage` at all when this is set — otherwise every chunk's
-                # `.usage` is None, including the last one.
-                stream_options={"include_usage": True},
-            )
+            # SBAL follow-up (review on #126/#127): the one retry below only
+            # fits inside IG's 20s lane timeout and Orca's 25s widget-run
+            # budget if each attempt is shorter than the "chat" profile's
+            # default 15s. Non-voice: attempt 1 = 8s / retry = 6s (~14s).
+            # SBAL-Z11 V1: voice now retries too, on a voice-sized budget
+            # (VOICE_ATTEMPT_TIMEOUT_S / VOICE_RETRY_TIMEOUT_S, 6s + 6s),
+            # because ElevenLabs hangs up at ~18s. The per-request timeout
+            # also bounds time-to-first-token on a stalled stream.
+            #
+            # Demo-hardening (stage evidence 2026-10-07 10:58 UTC: a repeat
+            # of the exact same question 3x right after a same-model stall
+            # answered in 2.4-2.6s) — a same-model retry is more likely to
+            # hit the same stalled infra. The retry uses a DIFFERENT model
+            # (self.fallback_model) instead.
+            is_voice = channel == "voice"
 
-            current_text = ""
-            flushed_len = 0
-            tool_calls_data: dict[int, dict] = {}
-            finish_length = False
-            # N2 follow-up: a removed phone number can leave two originally-
-            # separate single spaces (one on each side of it) adjacent to each
-            # other, split across two different flush chunks — neither chunk's
-            # own text ever contains both spaces together, so the per-chunk
-            # "[ \t]{2,}" collapse can't see the run and a double space leaks
-            # to the client. Track whether the last emitted chunk ended in
-            # whitespace so the next chunk's leading whitespace can be dropped
-            # when it would otherwise double up.
-            stream_ends_with_space = False
+            llm_attempt = 0
+            while True:
+                llm_attempt += 1
+                is_retry = llm_attempt >= 2
+                # SBAL-Z11 V1: voice gets the same mechanism as non-voice
+                # (#127/#129) with a voice-sized budget.
+                if is_voice:
+                    attempt_timeout = VOICE_RETRY_TIMEOUT_S if is_retry else VOICE_ATTEMPT_TIMEOUT_S
+                else:
+                    attempt_timeout = 6.0 if is_retry else 8.0
+                attempt_model = self.fallback_model if is_retry else self.model
+                logger.info(
+                    "[CLINIC-LATENCY] llm_attempt trace_id=%s site_id=%s session_id=%s "
+                    "iteration=%d attempt=%d channel=%s model=%s timeout_s=%.1f",
+                    trace_id, site_id, session_id, iteration, llm_attempt, channel,
+                    attempt_model, attempt_timeout,
+                )
+                current_text = ""
+                flushed_len = 0
+                tool_calls_data: dict[int, dict] = {}
+                finish_length = False
+                finish_reason: str | None = None
+                call_usage: dict | None = None
+                # N2 follow-up: a removed phone number can leave two originally-
+                # separate single spaces (one on each side of it) adjacent to each
+                # other, split across two different flush chunks — neither chunk's
+                # own text ever contains both spaces together, so the per-chunk
+                # "[ \t]{2,}" collapse can't see the run and a double space leaks
+                # to the client. Track whether the last emitted chunk ended in
+                # whitespace so the next chunk's leading whitespace can be dropped
+                # when it would otherwise double up.
+                stream_ends_with_space = False
+                voice_md = _VoiceMarkdownStripper() if is_voice else None
 
-            async for chunk in response:
-                # With stream_options.include_usage, the final chunk carries
-                # usage and an empty `choices` list (no delta to read).
-                chunk_usage = _usage_to_dict(getattr(chunk, "usage", None))
-                if chunk_usage:
-                    _add_usage(turn_usage, chunk_usage)
-                if not chunk.choices:
-                    continue
-                delta = chunk.choices[0].delta
-                if getattr(chunk.choices[0], "finish_reason", None) == "length":
-                    finish_length = True
+                try:
+                    response = await self.client.chat.completions.create(
+                        model=attempt_model,
+                        messages=messages,
+                        tools=iteration_tools,
+                        tool_choice=force_tool_choice,
+                        max_tokens=max_completion_tokens,
+                        temperature=0.3,
+                        stream=True,
+                        # ZUNKIREE-EMIT-USAGE-BRIEF: a streaming completion only carries
+                        # `usage` at all when this is set — otherwise every chunk's
+                        # `.usage` is None, including the last one.
+                        stream_options={"include_usage": True},
+                        timeout=attempt_timeout,
+                    )
 
-                if delta.content:
-                    # F3: stream live, but hold back the trailing HOLD_BACK_TOKENS
-                    # words so a phone number split across deltas ("+977", "1",
-                    # "4444444") is never flushed mid-formation — only the
-                    # not-yet-inspected tail is delayed, not the whole answer.
-                    current_text += delta.content
-                    boundary = _safe_flush_index(current_text, HOLD_BACK_TOKENS)
-                    if boundary > flushed_len:
-                        pending = current_text[flushed_len:boundary]
-                        sanitized_chunk = sanitize_phone_numbers(
-                            pending, allowed_phone_digits, is_final=False
+                    async for chunk in response:
+                        # With stream_options.include_usage, the final chunk carries
+                        # usage and an empty `choices` list (no delta to read).
+                        chunk_usage = _usage_to_dict(getattr(chunk, "usage", None))
+                        if chunk_usage:
+                            _add_usage(turn_usage, chunk_usage)
+                            call_usage = chunk_usage
+                        if not chunk.choices:
+                            continue
+                        delta = chunk.choices[0].delta
+                        chunk_finish_reason = getattr(chunk.choices[0], "finish_reason", None)
+                        if chunk_finish_reason:
+                            finish_reason = chunk_finish_reason
+                        if chunk_finish_reason == "length":
+                            finish_length = True
+
+                        if delta.content:
+                            # F3: stream live, but hold back the trailing HOLD_BACK_TOKENS
+                            # words so a phone number split across deltas ("+977", "1",
+                            # "4444444") is never flushed mid-formation — only the
+                            # not-yet-inspected tail is delayed, not the whole answer.
+                            current_text += delta.content
+                            boundary = _safe_flush_index(current_text, HOLD_BACK_TOKENS)
+                            # SBAL-Z14 F15: inside the ownership window nothing the
+                            # model writes is spoken until we know whether it called
+                            # a tool (progress) or only talked (discarded).
+                            if boundary > flushed_len and not (own_active and not turn_tool_called):
+                                pending = current_text[flushed_len:boundary]
+                                sanitized_chunk = _fix_catalog_translit(sanitize_phone_numbers(
+                                    pending, allowed_phone_digits, is_final=False
+                                ))
+                                if voice_md is not None:
+                                    sanitized_chunk = voice_md.feed(sanitized_chunk)
+                                if stream_ends_with_space and sanitized_chunk[:1] in (" ", "\t"):
+                                    sanitized_chunk = sanitized_chunk.lstrip(" \t")
+                                if sanitized_chunk:
+                                    yield {"type": "token", "data": sanitized_chunk}
+                                    stream_ends_with_space = sanitized_chunk[-1:] in (" ", "\t")
+                                flushed_len = boundary
+
+                        if delta.tool_calls:
+                            for tc in delta.tool_calls:
+                                idx = tc.index
+                                if idx not in tool_calls_data:
+                                    tool_calls_data[idx] = {"id": tc.id or "", "name": "", "arguments": ""}
+                                if tc.id:
+                                    tool_calls_data[idx]["id"] = tc.id
+                                if tc.function:
+                                    if tc.function.name:
+                                        tool_calls_data[idx]["name"] = tc.function.name
+                                    if tc.function.arguments:
+                                        tool_calls_data[idx]["arguments"] += tc.function.arguments
+                    break
+                except APIConnectionError:
+                    # The "chat" client profile (openai_client.py) deliberately
+                    # carries 0 SDK retries so no single call can blow past
+                    # voice's 25s Orca run budget. But a bare timeout on this
+                    # call with nothing shown to the visitor yet is worth one
+                    # retry on non-voice channels — voice is the only channel
+                    # that bound was protecting, and chat/IG would otherwise
+                    # surface a failure to the visitor on a single hiccup.
+                    if flushed_len > 0:
+                        raise
+                    if llm_attempt >= 2:
+                        if not is_voice:
+                            raise
+                        # SBAL-Z11 V1: both voice attempts failed. Speak one
+                        # short language-matched line rather than raising
+                        # (a raise = silence + dropped call).
+                        logger.error(
+                            "[CLINIC-LATENCY] llm_voice_both_attempts_failed trace_id=%s "
+                            "site_id=%s session_id=%s iteration=%d model=%s lang=%s",
+                            trace_id, site_id, session_id, iteration, attempt_model,
+                            detected_lang,
                         )
-                        if stream_ends_with_space and sanitized_chunk[:1] in (" ", "\t"):
-                            sanitized_chunk = sanitized_chunk.lstrip(" \t")
-                        if sanitized_chunk:
-                            yield {"type": "token", "data": sanitized_chunk}
-                            stream_ends_with_space = sanitized_chunk[-1:] in (" ", "\t")
-                        flushed_len = boundary
-
-                if delta.tool_calls:
-                    for tc in delta.tool_calls:
-                        idx = tc.index
-                        if idx not in tool_calls_data:
-                            tool_calls_data[idx] = {"id": tc.id or "", "name": "", "arguments": ""}
-                        if tc.id:
-                            tool_calls_data[idx]["id"] = tc.id
-                        if tc.function:
-                            if tc.function.name:
-                                tool_calls_data[idx]["name"] = tc.function.name
-                            if tc.function.arguments:
-                                tool_calls_data[idx]["arguments"] += tc.function.arguments
+                        current_text = _VOICE_LLM_FAILURE_LINE.get(
+                            detected_lang, _VOICE_LLM_FAILURE_LINE["en"]
+                        )
+                        tool_calls_data = {}
+                        finish_reason = "voice_llm_failure"
+                        call_usage = None
+                        yield {"type": "token", "data": current_text}
+                        flushed_len = len(current_text)
+                        break
+                    logger.warning(
+                        "[CLINIC-LATENCY] llm_call_timeout_retry trace_id=%s site_id=%s "
+                        "session_id=%s iteration=%d channel=%s timed_out_model=%s "
+                        "timeout_s=%.1f next_model=%s",
+                        trace_id, site_id, session_id, iteration, channel,
+                        attempt_model, attempt_timeout, self.fallback_model,
+                    )
 
             llm_call_ms = (time.monotonic() - llm_call_start) * 1000
             timing_llm_ms.append(llm_call_ms)
             logger.info(
                 "[CLINIC-LATENCY] llm_call trace_id=%s site_id=%s session_id=%s iteration=%d "
-                "kind=%s latency_ms=%.0f",
+                "kind=%s latency_ms=%.0f finish_reason=%s completion_tokens=%s content_len=%d "
+                "max_tokens=%d model=%s",
                 trace_id, site_id, session_id, iteration,
                 "tool_call" if tool_calls_data else "final_answer",
                 llm_call_ms,
+                finish_reason,
+                call_usage.get("completion_tokens") if call_usage else None,
+                len(current_text),
+                max_completion_tokens,
+                attempt_model,
             )
+
+            if (
+                own_active
+                and not turn_tool_called
+                and not tool_calls_data
+                and finish_reason != "voice_llm_failure"
+            ):
+                # SBAL-Z14 F15: text only, no tool call, while a detail is
+                # outstanding (never after a handoff — F16a). Discard the model's text.
+                # We author this turn.
+                owned_info = outstanding_missing
+                owned_n = bump_missing_asks(session_id, repeat=True, kind=_kind_of(owned_info))
+                owned_handoff = owned_n >= HANDOFF_AT_ASK
+                _log_missing_ask(site_id, session_id, owned_info, "owned", owned_n, owned_handoff)
+                _log_booking_flow(
+                    site_id, session_id, "handed_off" if owned_handoff else "owned",
+                    owned_n, flow_turns, "no_tool_call",
+                )
+                if owned_handoff:
+                    mark_handed_off(session_id)
+                full_answer = sanitize_phone_numbers(
+                    _build_missing_details_prompt(
+                        owned_info, detected_lang, attempt=owned_n,
+                        contact_phone=config.contact_phone if config else None,
+                    ),
+                    allowed_phone_digits,
+                )
+                yield {"type": "token", "data": full_answer}
+                break
 
             if current_text and not tool_calls_data:
                 if finish_length:
@@ -1520,12 +2189,14 @@ class ClinicAgentService:
                         "channel_open=%s",
                         site_id, session_id, channel_open,
                     )
-                full_answer = sanitize_phone_numbers(current_text, allowed_phone_digits)
+                full_answer = _fix_catalog_translit(sanitize_phone_numbers(current_text, allowed_phone_digits))
                 if full_answer != current_text:
                     logger.warning(
                         "[CLINIC-AGENT] phone_sanitized site_id=%s session_id=%s",
                         site_id, session_id,
                     )
+                if is_voice:
+                    full_answer = strip_markdown_for_voice(full_answer)
 
                 # Escalation-only language safety net (CLINIC-ESCALATION-LANGUAGE-
                 # BRIEF approach B). Approach A (the per-turn directive above) is a
@@ -1584,16 +2255,23 @@ class ClinicAgentService:
                                 site_id, session_id, latency_ms,
                             )
 
-                remainder = sanitize_phone_numbers(
+                remainder = _fix_catalog_translit(sanitize_phone_numbers(
                     current_text[flushed_len:], allowed_phone_digits, is_final=False
-                )
+                ))
+                if voice_md is not None:
+                    remainder = voice_md.feed(remainder)
                 if stream_ends_with_space and remainder[:1] in (" ", "\t"):
                     remainder = remainder.lstrip(" \t")
                 if remainder:
                     yield {"type": "token", "data": remainder}
+
                 break
 
             if tool_calls_data:
+                # SBAL-Z14 F15: a tool call is progress — from here the turn is
+                # the model's and streams normally; nothing is counted.
+                turn_tool_called = True
+                reset_flow_turns(session_id)
                 tool_calls_list = []
                 for idx in sorted(tool_calls_data.keys()):
                     tc = tool_calls_data[idx]
@@ -1742,6 +2420,11 @@ class ClinicAgentService:
                             allowed_phone_digits |= _extract_phone_digits(chunk_data.get("content", ""))
                     elif tool_name == "list_services" and not result.get("blocked"):
                         services = result.get("services")
+                        # SBAL-Z11 V3: an exact catalog-name query wins here
+                        # too (the Details prefetch is skipped when a booking
+                        # is staged), instead of a loose substring carousel.
+                        if services:
+                            services = _exact_service_match(services, tool_args.get("query"))
                         if services:
                             # SBAL-Z5 F1/F2: a single match (the visitor named
                             # one service, even outside the Details-postback
@@ -1753,17 +2436,40 @@ class ClinicAgentService:
                                 ui_state["service_detail"] = _services_ui(services, limit=1)[0]
                             else:
                                 ui_lang = get_readback_lang(session_id) or detected_lang
-                                ui_state["services"] = _services_ui(services)
+                                # SBAL-Z7: Meta's carousel caps at 10
+                                # elements — the widget has no such limit
+                                # (sbal has 16 services), so only cap the
+                                # IG/Messenger shape.
+                                carousel_limit = 10 if channel == "instagram" else len(services)
+                                ui_state["services"] = _services_ui(services, limit=carousel_limit)
                                 ui_state["services_caption"] = _SERVICES_CAPTION_BY_LANG.get(
                                     ui_lang, _SERVICES_CAPTION_BY_LANG["en"]
                                 )
                                 if widget_cards_enabled:
                                     turn_services_shortcut_caption = ui_state["services_caption"]
                     elif tool_name == "check_availability" and not result.get("blocked"):
-                        ui_lang = get_readback_lang(session_id) or detected_lang
-                        slots = _slots_ui(result, lang=ui_lang)
-                        if slots:
-                            ui_state["slots"] = slots
+                        # SBAL-Z8 F1 (addendum): this turn is itself a slot
+                        # pick ("Book X on D at T") — check_availability ran
+                        # only as B1's forced same-slot re-verification, not
+                        # because slots are this turn's open question.
+                        # Re-offering them is the addendum's exact loop, and
+                        # it doesn't depend on whether prepare_booking also
+                        # ran this turn (sometimes the model asks for
+                        # name/phone in its own text without ever calling
+                        # it) — so this is gated on the turn's own text, not
+                        # on prepare_booking's result.
+                        if not turn_is_slot_pick:
+                            ui_lang = get_readback_lang(session_id) or detected_lang
+                            slots = _slots_ui(result, lang=ui_lang)
+                            if slots:
+                                ui_state["slots"] = slots
+                                # SBAL-Z8 F3: the IG adapter's "Pick a time:"
+                                # chip prompt, localized — ui.py builders are
+                                # the only place that already knows the
+                                # turn's language.
+                                ui_state["slots_prompt"] = _PICK_A_TIME_LABEL_BY_LANG.get(
+                                    ui_lang, _PICK_A_TIME_LABEL_BY_LANG["en"]
+                                )
                     elif tool_name == "prepare_booking":
                         # F1 (PHONE-HALLUCINATION-BRIEF): the phone the visitor gave to
                         # book with is grounded — prepare_booking's read-back must be
@@ -1788,6 +2494,24 @@ class ClinicAgentService:
                                 "change_label": _CHANGE_CHIP_LABEL_BY_LANG.get(ui_lang, _CHANGE_CHIP_LABEL_BY_LANG["en"]),
                                 "change_payload": "I'd like to change the details",
                             }
+                        elif result.get("error") in ("INVALID_NAME", "INVALID_PHONE"):
+                            # SBAL-Z8 F1: the slot is already picked (service/
+                            # date/time all resolved) — only the visitor's own
+                            # details are missing. Ask for exactly that,
+                            # deterministically, and never re-offer slot chips
+                            # this turn (the lane incident: a re-run
+                            # check_availability earlier this same turn had
+                            # already set ui_state["slots"]).
+                            turn_missing_details = {
+                                "error": result.get("error"),
+                                "phone_given": tool_args.get("phone"),
+                                "name_given": "full_name" in tool_args,
+                                "service_name": result.get("service_name") or tool_args.get("service") or "",
+                                "date": result.get("date") or tool_args.get("date") or "",
+                                "time": result.get("time") or tool_args.get("time") or "",
+                            }
+                            ui_state.pop("slots", None)
+                            ui_state.pop("slots_prompt", None)
                     elif tool_name == "confirm_booking":
                         # N1: a booking_number is phone-shaped (7-13 digits) and comes
                         # straight from ClinicMD, so it's grounded exactly like a phone
@@ -1805,10 +2529,14 @@ class ClinicAgentService:
                             if result.get("confirmed_pending"):
                                 turn_confirmed = (result["confirmed_pending"], booking["booking_number"])
 
+                    model_result = result
+                    if tool_name == "list_services" and channel == "voice":
+                        model_result = _cap_services_for_voice(result)
+
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc["id"],
-                        "content": json.dumps(result),
+                        "content": json.dumps(model_result),
                     })
 
                 if turn_confirmed is not None:
@@ -1848,6 +2576,54 @@ class ClinicAgentService:
                         mark_readback(session_id, current_turn, detected_lang)
                     break
 
+                if turn_missing_details is not None:
+                    # SBAL-Z8 F1: the slot is picked (service/date/time all
+                    # resolved by prepare_booking itself) but the visitor's
+                    # own details are missing — ask for exactly that,
+                    # deterministically, in the sticky language, and end
+                    # the turn immediately. Same reasoning as the
+                    # turn_prepared_pending branch above: the model is
+                    # never given a chance to narrate a booking that
+                    # didn't happen, or to re-offer slots that are no
+                    # longer the open question this turn.
+                    # SBAL-Z9 F2: count consecutive deterministic asks per
+                    # session (reset when a prepare succeeds) — 2nd ask says
+                    # how to answer, 3rd hands off, never a verbatim repeat.
+                    # A value the caller supplied that failed (phone given
+                    # but unparseable; name key present but blank) is a
+                    # REPEAT; asking because nothing was given is the first.
+                    err = turn_missing_details.get("error")
+                    repeat = (
+                        (err == "INVALID_PHONE" and bool(str(turn_missing_details.get("phone_given") or "").strip()))
+                        or (err == "INVALID_NAME" and turn_missing_details.get("name_given"))
+                    )
+                    if is_handed_off(session_id):
+                        # SBAL-Z14 F16: terminal — a tool-path failure after the
+                        # handoff is acknowledged, never re-asked.
+                        _log_booking_flow(site_id, session_id, "handed_off", None, flow_turns, "tool_after_handoff")
+                        full_answer = _HANDED_OFF_ACK_BY_LANG.get(detected_lang, _HANDED_OFF_ACK_BY_LANG["en"])
+                        yield {"type": "token", "data": full_answer}
+                        break
+                    missing_ask_n = bump_missing_asks(
+                        session_id, repeat=bool(repeat), kind=_kind_of(turn_missing_details)
+                    )
+                    _log_missing_ask(site_id, session_id, turn_missing_details, "tool", missing_ask_n, missing_ask_n >= HANDOFF_AT_ASK)
+                    set_missing_details(session_id, turn_missing_details)
+                    if missing_ask_n >= HANDOFF_AT_ASK:
+                        mark_handed_off(session_id)
+                        _log_booking_flow(site_id, session_id, "handed_off", missing_ask_n, flow_turns, "ask_budget")
+                    full_answer = sanitize_phone_numbers(
+                        _build_missing_details_prompt(
+                            turn_missing_details, detected_lang,
+                            attempt=missing_ask_n,
+                            contact_phone=config.contact_phone if config else None,
+                        ),
+                        allowed_phone_digits,
+                    )
+                    if full_answer:
+                        yield {"type": "token", "data": full_answer}
+                    break
+
                 if turn_services_shortcut_caption is not None:
                     # SBAL-Z6: same shortcut as the pre-loop one above, for a
                     # multi-service match reached through the normal tool
@@ -1882,6 +2658,12 @@ class ClinicAgentService:
 
         if full_answer:
             self.conversation_store.add_message(session_id, "assistant", full_answer)
+
+        # SBAL-Z14 F17: count STUCK turns only. A turn that called a tool
+        # reset the count above; a mid-booking turn with no tool call (and not
+        # the budget handoff itself) is one more stuck turn.
+        if mid_booking_flow and not turn_tool_called and not budget_exhausted:
+            bump_flow_turns(session_id)
 
         # ZUNKIREE-EMIT-USAGE-BRIEF: one usage event per turn, after done's
         # content is decided but emitted before it on the wire (order doesn't

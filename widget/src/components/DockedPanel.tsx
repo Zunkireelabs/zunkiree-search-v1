@@ -9,6 +9,8 @@ import { ProfileProgress } from './blocks/ProfileProgress'
 import { BlockAnnouncer } from './blocks/BlockAnnouncer'
 import type { ProfileProgressData } from './blocks/ProfileProgress'
 import type { UIBlock, OnBlockAction } from './blocks/types'
+import { ServiceGrid } from './ServiceGrid'
+import { ServiceCard, ServiceItem } from './ServiceCard'
 import { FeedbackButtons } from './FeedbackButtons'
 import { CartView } from './CartView'
 import { CheckoutView } from './CheckoutView'
@@ -34,6 +36,10 @@ interface Message {
   imagePreview?: string
   blocks?: UIBlock[]
   pending?: { block_type: string; label: string }
+  rooms?: any[]
+  services?: ServiceItem[]
+  serviceDetail?: ServiceItem
+  queryLogId?: string
 }
 
 interface DockedPanelProps {
@@ -68,6 +74,8 @@ interface DockedPanelProps {
   onBookRoom?: (roomId: string) => void
   onBlockAction?: OnBlockAction
   profileProgress?: ProfileProgressData | null
+  onBookService?: (name: string) => void
+  onServiceDetails?: (name: string) => void
   isLongSession?: boolean
   websiteType?: string | null
 }
@@ -120,6 +128,8 @@ export function DockedPanel({
   onBookRoom,
   onBlockAction,
   profileProgress,
+  onBookService,
+  onServiceDetails,
   isLongSession,
   websiteType,
 }: DockedPanelProps) {
@@ -152,11 +162,17 @@ export function DockedPanel({
     }
   }, [messages, isLoading])
 
+  // Auto-grow the composer. When the field is empty we clear the inline
+  // height entirely and let CSS govern, rather than writing a measured one:
+  // in the docked panel this effect first runs while the portal still has
+  // no width, so the placeholder wraps, scrollHeight blows past the cap and
+  // the empty textarea gets frozen at 120px for the rest of the session.
   useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.style.height = 'auto'
-      inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 120)}px`
-    }
+    const textarea = inputRef.current
+    if (!textarea) return
+    textarea.style.height = 'auto'
+    if (!input) return
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`
   }, [input])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -164,7 +180,9 @@ export function DockedPanel({
     setShowAutocomplete(e.target.value.trim().length >= 2)
     const textarea = e.target
     textarea.style.height = 'auto'
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`
+    if (e.target.value) {
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -338,6 +356,20 @@ export function DockedPanel({
               {message.rooms && message.rooms.length > 0 && onBookRoom && (
                 <RoomGrid rooms={message.rooms} onBookRoom={onBookRoom} />
               )}
+              {message.services && message.services.length > 0 && onBookService && onServiceDetails && (
+                <ServiceGrid
+                  services={message.services}
+                  onBookService={onBookService}
+                  onServiceDetails={onServiceDetails}
+                />
+              )}
+              {message.serviceDetail && onBookService && (
+                <ServiceCard
+                  service={message.serviceDetail}
+                  onBookService={onBookService}
+                  showDescription
+                />
+              )}
               {message.cartUpdate && onRemoveFromCart && onCheckout && (
                 <CartView cart={message.cartUpdate} onRemoveItem={onRemoveFromCart} onCheckout={onCheckout} />
               )}
@@ -403,7 +435,8 @@ export function DockedPanel({
       </div>
 
       {/* Input Area */}
-      <form className="zk-docked__input" onSubmit={onSubmit} style={{ position: 'relative' }}>
+      {/* Positioning lives in CSS — see .zk-docked__input */}
+      <form className="zk-docked__input" onSubmit={onSubmit}>
         <Autocomplete
           apiUrl={apiUrl}
           siteId={siteId}

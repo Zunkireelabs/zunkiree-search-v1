@@ -106,7 +106,9 @@ _RB = {
 def test_substitution_prefix_then_full_readback(lang, fragment):
     out = _build_booking_readback({**_RB, "substituted_for": "teeth cleaning"}, lang)
     assert out.startswith(fragment)
-    assert "9800000034" in out and "TEST X" in out and "10:00" in out
+    assert "9800000034" in out and "TEST X" in out
+    assert ("बिहान १० बजे" in out) if lang == "ne_devanagari" else ("10:00" in out)
+    assert "बजे बजे" not in out
 
 
 @pytest.mark.parametrize("lang", ["en", "ne_devanagari", "ne_romanized"])

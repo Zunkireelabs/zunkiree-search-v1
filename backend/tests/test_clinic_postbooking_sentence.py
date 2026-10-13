@@ -19,7 +19,7 @@ OK = {"booking": {"booking_number": "BK-20260922-0001"}, "confirmed_pending": CO
 
 @pytest.mark.parametrize("lang,parts", [
     ("en", ["General Dentistry", "Tuesday", "22", "September", "10:00"]),
-    ("ne_devanagari", ["General Dentistry", "मंगलबार", "22", "September", "10:00", "बुक भयो"]),
+    ("ne_devanagari", ["General Dentistry", "मंगलबार", "२२", "सेप्टेम्बर", "बिहान १० बजे", "बुक भयो"]),
     ("ne_romanized", ["General Dentistry", "Mangalbar", "22", "September", "10:00", "book bhayo"]),
 ])
 def test_sentence_names_service_weekday_date_time(lang, parts):

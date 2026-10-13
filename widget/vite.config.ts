@@ -25,5 +25,11 @@ export default defineConfig({
   server: {
     port: 5173,
     cors: true,
+    // Local design harness: widget/dev-samis may be a symlink to a demo
+    // site outside the repo, which vite will not serve unless its target is
+    // allow-listed. Set ZK_DEV_DEMO_DIR to that directory to enable it.
+    fs: {
+      allow: ['..', ...(process.env.ZK_DEV_DEMO_DIR ? [process.env.ZK_DEV_DEMO_DIR] : [])],
+    },
   },
 })

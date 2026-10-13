@@ -85,7 +85,17 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"  # Default: cheap, fast model
     llm_model_premium: str = "gpt-4o"  # Premium: for complex/enterprise queries
     llm_temperature: float = 0.3
+    # SBAL-Z13 F7: bound on the voice knowledge prefetch (seconds). A real
+    # setting (env VOICE_KNOWLEDGE_PREFETCH_TIMEOUT_S) so F7 can be tuned or
+    # effectively switched off (large value) as a config flip with rollback.
+    voice_knowledge_prefetch_timeout_s: float = 1.5
     llm_max_tokens: int = 500
+    # SBAL demo-hardening (review on #127): the clinic agent's non-voice
+    # retry (clinic_agent.py) uses a DIFFERENT model than the one that just
+    # timed out, since a same-model retry is more likely to hit the same
+    # stalled infra. gpt-4.1-mini: same cost/quality tier as the gpt-4o-mini
+    # default, solid tool-calling, different model family/serving path.
+    clinic_agent_fallback_model: str = "gpt-4.1-mini"
 
     # SMTP / Email verification
     smtp_host: str = "smtp.gmail.com"
@@ -158,6 +168,7 @@ class Settings(BaseSettings):
     edgex_hrgoel_integration_key: str = ""
 
     # Meta Messaging / Chatbot
+    meta_app_id: str = ""
     meta_app_secret: str = ""
     meta_verify_token: str = ""
     chatbot_encryption_key: str = ""  # Fernet key for encrypting page_access_tokens
