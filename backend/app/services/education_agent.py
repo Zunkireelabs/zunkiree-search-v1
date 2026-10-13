@@ -247,7 +247,7 @@ class EducationAgentService:
 
         if intent:
             name, args = tool_for_intent(intent[0]), dict(intent[1])
-            logger.info("[EDU] intent=%s source=%s tool=%s args=%s", intent[0], source, name, args)
+            logger.info("[EDU] intent=%s source=%s tool=%s arg_keys=%s", intent[0], source, name, sorted(args))
             if goal := args.pop("goal", None):
                 profile["goal"] = goal  # remembered so the next tap (which country?) continues the same goal
             if args.get("country"):
@@ -412,7 +412,7 @@ class EducationAgentService:
                     tool_args = json.loads(call["function"]["arguments"])
                 except ValueError:
                     tool_args = {}
-                logger.info("[EDU] tool=%s args=%s", tool_name, tool_args)
+                logger.info("[EDU] tool=%s arg_keys=%s", tool_name, sorted(tool_args) if isinstance(tool_args, dict) else [])
 
                 yield {"type": "tool_call", "name": tool_name, "status": "running"}
                 result = execute_education_tool(tool_name, tool_args, profile, catalog)

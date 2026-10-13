@@ -247,7 +247,11 @@ The widget always sends a UUID (`Widget.tsx:125`), so the risk comes from direct
 **Decision needed:** an in-house limiter, or a new dependency, which needs your approval.
 **Regression test:** a burst test asserting 429.
 
-**1.5 Student text in logs [CODE]**
+**1.5 Student text in logs [TEST: reproduced and FIXED 2026-10-13, committed]**
+
+> Fixed for education only: the `[QUERY-TRACE]` / `[QUERY-STREAM]` lines (`api/query.py`) now log the question's length instead of its text (other tenants unchanged); the `[EDU]` tool lines (`education_agent.py`) log argument names, not values; uvicorn's access log hides the session id in `/widget/history/<site>/<session>` (`app/utils/log_redaction.py`, installed in `main.py`). Tests: `tests/test_education_log_privacy.py`. Not covered: `logger.exception` in `/query/stream` and the other tenants' log lines.
+
+Original finding:
 
 **Code involved:** `api/query.py:536`. `[QUERY-STREAM]` logs `question[:80]` at WARNING before routing, and `api/query.py:230` (`[QUERY-TRACE]`) does the same on the non-stream path.
 **Expected after the fix:** education turns log length and language only, like `[EDU] no_rule_match` does (`education_agent.py:289`).

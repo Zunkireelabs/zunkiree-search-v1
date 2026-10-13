@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import Customer, QueryLog, DocumentChunk, WidgetConfig
+from app.utils.log_redaction import question_for_log
 from app.services.query import get_query_service
 from app.services.verification import (
     get_or_create_session,
@@ -227,8 +228,6 @@ async def submit_query(
     """
     Submit a question and receive an AI-generated answer.
     """
-    logger.warning("[QUERY-TRACE] site_id=%s question=%r origin=%s", query.site_id, query.question[:80], request.headers.get("origin"))
-
     if not query.question or not query.question.strip():
         raise HTTPException(
             status_code=400,
@@ -257,6 +256,8 @@ async def submit_query(
         )
 
     brand_name = config.brand_name if config else customer.name
+    logger.warning("[QUERY-TRACE] site_id=%s question=%s origin=%s", query.site_id,
+                   question_for_log(customer.website_type, query.question), request.headers.get("origin"))
 
     # Handle greeting — clinic tenants skip this generic template and go to
     # the clinic agent instead (SBAL-Z4: that's the only place assistant_name
@@ -528,14 +529,6 @@ async def submit_query_stream(
     """
     Submit a question and receive a streamed AI-generated answer via SSE.
     """
-    # channel is logged here (not just deep in clinic_agent's turn_start) so
-    # an Orca-forwarded chat turn and a direct widget turn can be proven to
-    # take the same path straight from this one line — brief B3, exit test 1.
-    logger.warning(
-        "[QUERY-STREAM] site_id=%s channel=%s question=%r",
-        query.site_id, query.channel or "chat", query.question[:80],
-    )
-
     if not query.question or not query.question.strip():
         raise HTTPException(
             status_code=400,
@@ -564,6 +557,15 @@ async def submit_query_stream(
         )
 
     brand_name = config.brand_name if config else customer.name
+
+    # channel is logged here (not just deep in clinic_agent's turn_start) so
+    # an Orca-forwarded chat turn and a direct widget turn can be proven to
+    # take the same path straight from this one line — brief B3, exit test 1.
+    # Logged once the tenant is known so an education student's text stays out of the log.
+    logger.warning(
+        "[QUERY-STREAM] site_id=%s channel=%s question=%s",
+        query.site_id, query.channel or "chat", question_for_log(customer.website_type, query.question),
+    )
 
     if customer.website_type == "education":
         from app.services.education_memory import is_valid_session_id

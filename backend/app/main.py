@@ -20,6 +20,7 @@ from app.api.hooks_stella import router as hooks_stella_router
 from app.api.admin_inbound_webhooks import router as admin_inbound_webhooks_router
 from app.api.admin_tenants import router as admin_tenants_router
 from app.middleware.correlation import CorrelationMiddleware
+from app.utils.log_redaction import install_access_log_redaction
 from app.services.inbound_event_dispatcher import run_dispatcher_loop
 from app.services.clinic_prewarm import run_clinic_prewarm_loop
 
@@ -31,6 +32,8 @@ logging.basicConfig(
 # Silence noisy third-party libraries
 for _lib in ("httpx", "httpcore", "openai", "pinecone", "pinecone_plugin_interface"):
     logging.getLogger(_lib).setLevel(logging.WARNING)
+# The history URL carries the session id, which unlocks that visitor's chat: keep it out of the access log.
+install_access_log_redaction()
 
 settings = get_settings()
 
