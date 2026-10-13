@@ -315,6 +315,32 @@ Leads aren't delivered anywhere. The system prompt says "Nothing is sent to the 
 - **Blocked on catalog data:** Phase 5, the NPR/lakh demo, and university/course cards.
 - **Needs migration, dependency or prod approval:** a DB catalog provider, a rate-limit dependency, and lead delivery.
 
+## J. Release and go-live checklist
+
+Status as of 2026-10-13, branch `feature/generative-ui-education`. An item is marked done only where it was checked in code, by a test, or by a read-only look; everything else is outstanding. Nothing in this branch has been deployed.
+
+### Done (verified)
+- [x] **Cross-session profile exposure closed.** No profile merge by email; blank or oversized `session_id` refused (`test_education_email_merge.py`, `test_education_session_id.py`).
+- [x] **Student text kept out of the education logs.** Question text and session ids are not logged on the education paths (`test_education_log_privacy.py`). Not covered: knowledge-base error lines and `logger.exception` in `/query/stream`, which can carry AI output.
+- [x] **Markdown injection tests.** 21 attack strings checked structurally (`Markdown.test.ts`).
+- [x] **Website (Origin) check** on the education chat, `/widget/history` and, through the search service, `/query` (`test_education_origin.py`). A request with no Origin header is allowed, as on every other chat path.
+- [x] **Message limit** of 20 per minute per visitor address on `/query/stream` and `/query` (one shared count) and 60 per minute on `/widget/history`, refused with 429 and `Retry-After` before any AI call (`test_education_rate_limit.py`).
+- [x] **Tables exist.** `visitor_profiles` and `widget_messages` (migration 042) exist on the shared database (read-only table-name check; no rows read).
+
+### Outstanding before the production widget is enabled
+- [ ] **Confirm how the proxy reports the visitor address. NOT VERIFIED.** The limiter counts the last `X-Forwarded-For` entry, which Traefik is assumed to add. `traefik.yml` was not readable from the audit account, so this is unconfirmed. Check with authorized VPS access (read `forwardedHeaders`), or with a controlled staging test: send from two addresses and confirm the counts are separate, and confirm that a forged first `X-Forwarded-For` entry does not change the key. If this is wrong, every visitor shares one counter.
+- [ ] **Add the real Admizz website to the tenant's approved domains.** Tenant `admizz-test` currently lists only `localhost`. Until the real domain is added, the widget gets `403 ORIGIN_NOT_ALLOWED`.
+- [ ] **Replace the placeholder catalog with verified data.** `admizz-test.json` is `PLACEHOLDER`: USD, sample numbers, not Admizz data. The code only logs a warning for an unverified catalog, so nothing yet stops its numbers being shown as real facts. Do not enable for real students until the catalog is verified and a guard exists (Phase 3).
+- [ ] **Build and verify lead delivery.** Submitted contact details are saved to the profile only. The assistant tells the student "Nothing is sent to the team yet" (`education_agent.py`). Do not promise that inquiries reach the Admizz team until delivery exists and is tested.
+- [ ] **Decide how `/query` treats education tenants.** The generic `/query` path stores the question text in `query_logs`, and an education site can reach it. See the pending decision in the PR notes. Read-only count on 2026-10-13: 0 education rows in `query_logs`.
+- [ ] **Browser-level CORS.** Production `ALLOWED_ORIGINS=*` is unchanged; the per-tenant Origin check above is what limits sites.
+
+### Accepted limitations of the message limit
+- Counters live in memory, per worker. Production runs 2 workers, so a visitor can reach about 40 per minute. A restart resets them.
+- Visitors behind one shared address (a school or office network) share one count; a visitor with many IPv6 addresses can rotate.
+- If a CDN is later placed in front of the proxy, all visitors behind it would share a counter unless the address logic is updated.
+- Only education traffic is limited. `/query/autocomplete`, `/query/feedback` and the Instagram webhook are not.
+
 ## Not verified in this assessment
 - The full backend test suite, the widget `tsc` and the widget tests.
 - Whether the brief's four phrasings resolve to `recommend_country` today.
@@ -326,4 +352,4 @@ Leads aren't delivered anywhere. The system prompt says "Nothing is sent to the 
 ## Verification for later phases
 - `cd backend && .venv311/bin/python -m pytest tests/ -q`: the full suite stays green, and no known-gap tests are removed or weakened.
 - `cd widget && npx tsc --noEmit` and the widget tests.
-- Manual check at `http://localhost:5173/admizz-preview.html`, at 390px and 768px.
+- Manual check at 390px and 768px, using `http://localhost:5173/blocks-preview.html` (cards, committed) or a local, uncommitted copy of the Admizz demo page pointing at `data-site-id="admizz-test"` (it is kept out of the PR because it hard-codes localhost and the placeholder tenant).
