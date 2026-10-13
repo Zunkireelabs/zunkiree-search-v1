@@ -20,6 +20,7 @@ from typing import Protocol
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from app.services.education_catalog_models import Course, University
+from app.services.education_scores import academic_percent, ielts_comparable
 from app.services.money import format_money, normalize_currency
 
 logger = logging.getLogger("zunkiree.education_catalog")
@@ -231,8 +232,8 @@ def fit_countries(profile: dict, catalog: Catalog) -> list[dict]:
     """
     cur = catalog.currency
     budget = profile.get("budget")
-    english = profile.get("english_score")
-    academic = profile.get("academic_score")
+    english = ielts_comparable(profile)          # only an IELTS-sized score is held against the IELTS minimum
+    academic, gpa_source = academic_percent(profile)
     intake = profile.get("intake") or ""
     items = []
 
@@ -259,8 +260,9 @@ def fit_countries(profile: dict, catalog: Catalog) -> list[dict]:
         if academic is not None and c.academic_min_percent is not None:
             hard += 1
             ok = academic >= c.academic_min_percent
+            of_what = "Academic score (estimated from your GPA)" if gpa_source else "Academic score"
             reasons.append({"status": "pass" if ok else "fail", "text":
-                            f"Academic score {'meets' if ok else 'is below'} the {c.academic_min_percent:g}% minimum"})
+                            f"{of_what} {'meets' if ok else 'is below'} the {c.academic_min_percent:g}% minimum"})
 
         if not hard:
             continue  # nothing we can honestly evaluate for this country
@@ -288,7 +290,8 @@ def fit_countries(profile: dict, catalog: Catalog) -> list[dict]:
 def check_eligibility(profile: dict, country: CountryRecord) -> dict | None:
     """Eligibility checks from facts we actually have. None when nothing can be evaluated."""
     checks = []
-    english, academic = profile.get("english_score"), profile.get("academic_score")
+    english = ielts_comparable(profile)
+    academic, gpa_source = academic_percent(profile)
 
     if english is not None and country.ielts_min is not None:
         ok = english >= country.ielts_min
@@ -296,8 +299,9 @@ def check_eligibility(profile: dict, country: CountryRecord) -> dict | None:
                        "detail": f"{english:g} vs {country.ielts_min:g} minimum"})
     if academic is not None and country.academic_min_percent is not None:
         ok = academic >= country.academic_min_percent
-        checks.append({"label": "Academic score", "ok": ok,
-                       "detail": f"{academic:g}% vs {country.academic_min_percent:g}% minimum"})
+        detail = (f"{gpa_source[0]:g}/{gpa_source[1]:g} GPA ≈ {academic:.0f}% (estimated) vs {country.academic_min_percent:g}% minimum"
+                  if gpa_source else f"{academic:g}% vs {country.academic_min_percent:g}% minimum")
+        checks.append({"label": "Academic score", "ok": ok, "detail": detail})
     if not checks:
         return None
 

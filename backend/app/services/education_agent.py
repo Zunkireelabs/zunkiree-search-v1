@@ -33,8 +33,9 @@ from app.services.education_followup import RESULT_INTENTS, record_ui_state, res
 from app.services.education_kb_blocks import PENDING_LABELS, SHAPE_TO_BLOCK, classify_shape, kb_block, looks_like_question
 from app.services.education_leadins import KB_FOUND, KB_MISS, NEEDS_DETAILS, leadin_for
 from app.services.education_memory import DbEducationMemory
+from app.services.education_scores import extract_scores
 from app.services.education_profile import (
-    FIELD_LABELS, apply_block_action, display_value, missing_slots, progress, set_field,
+    FIELD_LABELS, apply_block_action, apply_updates, display_value, missing_slots, progress, set_field,
 )
 from app.services.education_tools import EDUCATION_TOOLS, ToolOutcome, execute_education_tool, tool_for_intent
 from app.services.education_ui_registry import TOOL_TO_INTENT, country_goal, detect_intent, journey_intent
@@ -214,6 +215,10 @@ class EducationAgentService:
                 block_action = None  # degrade to the typed text; nothing from the tap is applied
 
         changed = apply_block_action(profile, block_action)
+        if block_action is None:
+            # Scores the student states in their own words are saved here, with their unit, before any card is chosen: the AI
+            # sometimes asks "check eligibility" before it saves what was just said, and drops the word "gpa" when it does.
+            changed += apply_updates(profile, extract_scores(question))
         # No cross-device merge on a submitted email: a typed email is not proof of identity, and merging let anyone who
         # typed a student's email see that student's profile. `find_profile_by_email` + `merge_profiles` stay for a merge
         # done after the email is verified.

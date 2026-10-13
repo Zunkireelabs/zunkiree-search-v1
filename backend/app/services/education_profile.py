@@ -15,6 +15,7 @@ import json
 import logging
 from typing import Any
 
+from app.services.education_scores import GPA_SCALES, PERCENT_RANGE, infer_gpa_scale
 from app.services.money import format_money
 
 logger = logging.getLogger("zunkiree.education_profile")
@@ -29,6 +30,8 @@ FIELDS: dict[str, str] = {
     "budget": "num",
     "english_score": "num",
     "academic_score": "num",
+    "academic_gpa": "num",
+    "academic_gpa_scale": "num",
     "focus_country": "str",
 }
 
@@ -41,6 +44,8 @@ FIELD_LABELS: dict[str, str] = {
     "english_test": "English test",
     "english_score": "English score",
     "academic_score": "Academic score",
+    "academic_gpa": "Academic GPA",
+    "academic_gpa_scale": "GPA scale",
     "focus_country": "Looking at",
 }
 
@@ -77,6 +82,14 @@ def _coerce(kind: str, value: Any) -> Any:
     return None
 
 
+# A number outside these limits cannot be a value of that field, whatever the AI or a tap says.
+_BOUNDS: dict[str, tuple[float, float]] = {
+    "academic_score": PERCENT_RANGE,       # a percentage; a GPA saved here would be compared with a percentage minimum
+    "academic_gpa": (0, 10),
+    "english_score": (0, 160),
+}
+
+
 def set_field(profile: dict, field: str, value: Any) -> bool:
     """Set one whitelisted field. Returns True only if the stored value changed."""
     kind = FIELDS.get(field)
@@ -85,13 +98,36 @@ def set_field(profile: dict, field: str, value: Any) -> bool:
     clean = _coerce(kind, value)
     if clean is None or profile.get(field) == clean:
         return False
+    if field in _BOUNDS and not _BOUNDS[field][0] < clean <= _BOUNDS[field][1]:
+        return False
+    if field == "academic_gpa_scale" and clean not in GPA_SCALES:
+        return False
     profile[field] = clean
     return True
 
 
+def _normalize_score_updates(profile: dict, updates: dict) -> dict:
+    """Keep each score with its unit. The AI may save a GPA as `academic_score`; that field is a percentage."""
+    updates = dict(updates or {})
+    raw = updates.get("academic_score")
+    if raw is not None:
+        n = _coerce("num", raw)
+        if n is not None and 0 < n <= PERCENT_RANGE[0]:
+            del updates["academic_score"]
+            if (scale := infer_gpa_scale(n)) and "academic_gpa" not in updates:
+                updates["academic_gpa"], updates["academic_gpa_scale"] = n, scale
+    gpa = _coerce("num", updates["academic_gpa"]) if "academic_gpa" in updates else None
+    if gpa is not None:
+        scale = _coerce("num", updates.get("academic_gpa_scale", profile.get("academic_gpa_scale")))
+        if scale is not None and gpa > scale:       # 5.0 out of 4 is not a GPA
+            updates.pop("academic_gpa", None)
+            updates.pop("academic_gpa_scale", None)
+    return updates
+
+
 def apply_updates(profile: dict, updates: dict) -> list[str]:
     """Apply free-text-extracted updates (update_profile tool). Returns changed field names."""
-    return [f for f, v in (updates or {}).items() if set_field(profile, f, v)]
+    return [f for f, v in _normalize_score_updates(profile, updates).items() if set_field(profile, f, v)]
 
 
 def apply_block_action(profile: dict, action: dict | None) -> list[str]:
@@ -154,7 +190,10 @@ def profile_rows(profile: dict, labels: dict[str, str] | None = None, currency: 
     rows = []
     for field in FIELD_LABELS:
         value = profile.get(field)
-        if not value:
+        if not value or field == "academic_gpa_scale":
+            continue
+        if field == "academic_gpa":
+            rows.append({"label": FIELD_LABELS[field], "value": f"{value:g} / {profile.get('academic_gpa_scale') or 4:g}"})
             continue
         if field in ("countries", "focus_country"):
             value = [labels.get(v, v) for v in value] if isinstance(value, list) else labels.get(value, value)

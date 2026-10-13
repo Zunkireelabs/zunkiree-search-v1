@@ -395,6 +395,8 @@ def _update_profile(args: dict, profile: dict, catalog: Catalog) -> ToolOutcome:
         updates["countries"] = _resolve_many(catalog, updates["countries"])
     changed = apply_updates(profile, updates)
     if not changed:
+        if updates and all(profile.get(f) == v for f, v in updates.items() if f in FIELD_LABELS):
+            return ToolOutcome(None, "Already saved. Continue helping; show a card if it answers their question.")
         return ToolOutcome(None, "Profile unchanged (nothing new or unrecognized values).")
     return ToolOutcome(None, "Saved: " + ", ".join(FIELD_LABELS[f].lower() for f in changed)
                        + ". Continue helping; show a card if it answers their question.", changed)

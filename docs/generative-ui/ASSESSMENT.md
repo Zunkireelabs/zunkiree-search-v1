@@ -325,6 +325,7 @@ Status as of 2026-10-13, branch `feature/generative-ui-education`. An item is ma
 - [x] **Markdown injection tests.** 21 attack strings checked structurally (`Markdown.test.ts`).
 - [x] **Website (Origin) check** on the education chat and `/widget/history` (`test_education_origin.py`). A request with no Origin header is allowed, as on every other chat path.
 - [x] **Message limit** of 20 per minute per visitor address on `/query/stream` and 60 per minute on `/widget/history`, refused with 429 and `Retry-After` before any AI call (`test_education_rate_limit.py`).
+- [x] **Scores keep their unit** (`education_scores.py`, `test_education_scores.py`). A typed score is read in code before the AI runs ("7 is my english score", "ielts 6.5", "3.64 gpa", "72%"); a GPA is stored with its scale and never as a percentage; an English score is only compared with the IELTS minimum when it is an IELTS score. Replayed with the real AI model (in memory) on the conversation that exposed the bug. Not covered: a bare reply with no unit or cue (for example just "7" after the bot asks), which still depends on the AI saving it.
 - [x] **Tables exist.** `visitor_profiles` and `widget_messages` (migration 042) exist on the shared database (read-only table-name check; no rows read).
 
 ### Outstanding before the production widget is enabled
@@ -333,6 +334,7 @@ Status as of 2026-10-13, branch `feature/generative-ui-education`. An item is ma
 - [ ] **Replace the placeholder catalog with verified data.** `admizz-test.json` is `PLACEHOLDER`: USD, sample numbers, not Admizz data. The code only logs a warning for an unverified catalog, so nothing yet stops its numbers being shown as real facts. Do not enable for real students until the catalog is verified and a guard exists (Phase 3).
 - [ ] **Build and verify lead delivery.** Submitted contact details are saved to the profile only. The assistant tells the student "Nothing is sent to the team yet" (`education_agent.py`). Do not promise that inquiries reach the Admizz team until delivery exists and is tested.
 - [x] **`/query` refuses education tenants** with `400 USE_STREAM_ENDPOINT` before any AI call, log line or `query_logs` write, so student text cannot be stored there (`test_education_rate_limit.py`). Evidence checked before the change: 0 education rows in `query_logs` (count only), 0 non-stream `/query` requests in 72 hours of production access logs, and the only repo caller (`ZunkireeSearch.tsx`) is imported nowhere. An outside integration calling `/query` for an education site was not found, but cannot be ruled out; it would now get the 400.
+- [ ] **Replace the GPA conversion with Admizz's own rule.** A GPA is converted to a percentage by a plain proportion (3.64 out of 4 is about 91%), and every card that uses it says "estimated". There is no official conversion, so this is a stand-in: change `gpa_to_percent` in `education_scores.py` to use Admizz's table.
 - [ ] **Browser-level CORS.** Production `ALLOWED_ORIGINS=*` is unchanged; the per-tenant Origin check above is what limits sites.
 
 ### Accepted limitations of the message limit

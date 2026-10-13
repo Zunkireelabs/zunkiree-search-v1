@@ -160,7 +160,8 @@ async def test_free_form_turn_uses_rag_and_tool_loop_to_save_profile():
     assert "ui_block" not in types(events)
     assert events[-1]["answer"] == "Noted, thanks!"
     # the tool result went back to the LLM
-    assert any(m.get("role") == "tool" and "Saved" in m["content"] for m in agent.client.calls[1]["messages"])
+    # the score in "my IELTS is 6.5" is saved in code before the AI runs, so its update_profile call finds it already saved
+    assert any(m.get("role") == "tool" and "saved" in m["content"].lower() for m in agent.client.calls[1]["messages"])
 
 
 @pytest.mark.asyncio
