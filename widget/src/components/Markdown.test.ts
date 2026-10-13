@@ -94,3 +94,27 @@ describe('markdownToHtml: links', () => {
     expect(html).not.toContain('\u0000')
   })
 })
+
+describe('markdownToHtml: the source link the chatbot adds to a reply', () => {
+  const line = 'More on Admizz: [UK Student Visa Fee and Health Surcharge](https://admizzeducation.com/answers/uk-student-visa-fee-nepal) (checked October 2026)'
+
+  it('renders as one safe link that opens in a new tab, with the checked date as plain text after it', () => {
+    const html = markdownToHtml(`Here are the UK facts.\n\n${line}`)
+    assertSafe(html)
+    expect(html.match(/<a /g)).toHaveLength(1)
+    expect(html).toContain('<a href="https://admizzeducation.com/answers/uk-student-visa-fee-nepal" target="_blank" rel="noopener noreferrer">UK Student Visa Fee and Health Surcharge</a> (checked October 2026)')
+  })
+
+  it('stays one safe link when the reply around it holds formatting or an email address', () => {
+    const html = markdownToHtml(`**Bold** reply, write to info@admizz.com.\n\n${line}`)
+    assertSafe(html)
+    expect(html.match(/<a /g)).toHaveLength(2)          // the source link and the auto-linked email, nothing else
+    expect(html).toContain('<strong>Bold</strong>')
+  })
+
+  it('does not turn a link line with an unapproved scheme into a link', () => {
+    for (const bad of ['javascript:alert(1)', 'data:text/html,x', 'JaVaScRiPt:alert(1)']) {
+      expect(markdownToHtml(`More on Admizz: [x](${bad})`)).not.toContain('<a ')
+    }
+  })
+})
