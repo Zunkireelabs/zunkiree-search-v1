@@ -257,7 +257,11 @@ Original finding:
 **Expected after the fix:** education turns log length and language only, like `[EDU] no_rule_match` does (`education_agent.py:289`).
 **Regression test:** a `caplog` test asserting the question text is absent.
 
-**1.6 XSS through markdown [HYPOTHESIS: escaping exists, not tested]**
+**1.6 XSS through markdown [TEST: no script injection found; display bug FIXED 2026-10-13, committed]**
+
+> Tested with 21 attack strings (`<script>`, `<img onerror>`, `javascript:` and `data:` links, quote breakouts, tables, lists, headings): none produced an active tag, attribute or non-http(s)/mailto link. Found and fixed a display bug: bold/italic/code and the email auto-link ran inside a link's address, injecting tags into `href` and nesting a link inside a link. Links are now set aside before formatting (`renderInline` in `widget/src/components/Markdown.tsx`). Tests: `widget/src/components/Markdown.test.ts`. Not covered: other places that render student or AI text (the lead form values, block titles) were not audited; React escapes them by default.
+
+Original finding:
 
 **Code involved:** `widget/src/components/Markdown.tsx:7` (`escapeHtml`) and line 176 (`dangerouslySetInnerHTML`).
 **Expected:** `<img onerror>` and `javascript:` links render as inert text.
