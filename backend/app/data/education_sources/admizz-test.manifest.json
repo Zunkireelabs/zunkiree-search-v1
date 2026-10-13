@@ -1,0 +1,1469 @@
+{
+  "dry_run": true,
+  "note": "No page is verified; content_class describes how a page presents itself.",
+  "pages": [
+    {
+      "id": "uk-guide",
+      "registry_url": "https://admizzeducation.com/study-in-the-uk",
+      "category": "guide",
+      "country": "uk",
+      "kind": "guide",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": null,
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/study-in-the-uk",
+      "canonical_url": "https://admizzeducation.com/study-in-the-uk",
+      "title": "Study in the UK - Admizz Education",
+      "characters": 10350,
+      "chunks": 6,
+      "tokens": 2432,
+      "warnings": [
+        "university_list",
+        "repeated_sections"
+      ],
+      "dropped_sections": [
+        "Study Abroad Insights",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [],
+      "has_checked_statement": false,
+      "content_class": "explanatory",
+      "overlap": {
+        "match": "title",
+        "job_id": "079e4d10-a844-4500-8d9f-3266b122c6c7",
+        "job_ids": [
+          "079e4d10-a844-4500-8d9f-3266b122c6c7"
+        ],
+        "existing_title": "Study in the UK - Admizz Education",
+        "existing_characters": 651,
+        "proof": "title_only_not_proven_same_source"
+      },
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "uk-visa-fee",
+      "registry_url": "https://admizzeducation.com/answers/uk-student-visa-fee-nepal",
+      "category": "visa",
+      "country": "uk",
+      "kind": "answer",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": "2026-10-05",
+        "checked": "2026-10",
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/answers/uk-student-visa-fee-nepal",
+      "canonical_url": "https://admizzeducation.com/answers/uk-student-visa-fee-nepal",
+      "title": "UK Student Visa Fee and Health Surcharge: Short Answer",
+      "characters": 1304,
+      "chunks": 1,
+      "tokens": 314,
+      "warnings": [],
+      "dropped_sections": [
+        "Related guides",
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [
+        {
+          "text": "GOV.UK: Student visa, how much it costs",
+          "url": "https://www.gov.uk/student-visa/how-much-it-costs"
+        },
+        {
+          "text": "GOV.UK: Immigration Health Surcharge",
+          "url": "https://www.gov.uk/healthcare-immigration-application/how-much-pay"
+        }
+      ],
+      "has_checked_statement": true,
+      "content_class": "source_backed",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "uk-visa-bank-balance",
+      "registry_url": "https://admizzeducation.com/answers/uk-student-visa-bank-balance-nepal",
+      "category": "visa",
+      "country": "uk",
+      "kind": "answer",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": "2026-10-05",
+        "checked": "2026-10",
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/answers/uk-student-visa-bank-balance-nepal",
+      "canonical_url": "https://admizzeducation.com/answers/uk-student-visa-bank-balance-nepal",
+      "title": "UK Student Visa Bank Balance from Nepal: Short Answer",
+      "characters": 2052,
+      "chunks": 2,
+      "tokens": 584,
+      "warnings": [],
+      "dropped_sections": [
+        "Related guides",
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [
+        {
+          "text": "GOV.UK: Student visa, money you need",
+          "url": "https://www.gov.uk/student-visa/money"
+        },
+        {
+          "text": "OTS Solicitors: student visa maintenance funds increase from November 30, 2026",
+          "url": "https://www.otssolicitors.co.uk/news/student-visa-maintenance-funds-increase-from-30-november-2026"
+        }
+      ],
+      "has_checked_statement": true,
+      "content_class": "source_backed",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "uk-visa-english",
+      "registry_url": "https://admizzeducation.com/answers/uk-student-visa-english-requirement",
+      "category": "visa",
+      "country": "uk",
+      "kind": "answer",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": "2026-10-05",
+        "checked": "2026-10",
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/answers/uk-student-visa-english-requirement",
+      "canonical_url": "https://admizzeducation.com/answers/uk-student-visa-english-requirement",
+      "title": "UK Student Visa English Requirement: Short Answer",
+      "characters": 1347,
+      "chunks": 1,
+      "tokens": 297,
+      "warnings": [],
+      "dropped_sections": [
+        "Related guides",
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [
+        {
+          "text": "GOV.UK: Student visa, knowledge of English",
+          "url": "https://www.gov.uk/student-visa/knowledge-of-english"
+        }
+      ],
+      "has_checked_statement": true,
+      "content_class": "source_backed",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "uk-visa-processing",
+      "registry_url": "https://admizzeducation.com/answers/uk-student-visa-processing-time-nepal",
+      "category": "visa",
+      "country": "uk",
+      "kind": "answer",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": "2026-10-05",
+        "checked": "2026-10",
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/answers/uk-student-visa-processing-time-nepal",
+      "canonical_url": "https://admizzeducation.com/answers/uk-student-visa-processing-time-nepal",
+      "title": "UK Student Visa Processing Time from Nepal",
+      "characters": 1323,
+      "chunks": 1,
+      "tokens": 298,
+      "warnings": [],
+      "dropped_sections": [
+        "Related guides",
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [
+        {
+          "text": "GOV.UK: Student visa, apply",
+          "url": "https://www.gov.uk/student-visa/apply"
+        }
+      ],
+      "has_checked_statement": true,
+      "content_class": "source_backed",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "uk-tb-test",
+      "registry_url": "https://admizzeducation.com/answers/uk-tb-test-nepal",
+      "category": "visa",
+      "country": "uk",
+      "kind": "answer",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": "2026-10-05",
+        "checked": "2026-10",
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/answers/uk-tb-test-nepal",
+      "canonical_url": "https://admizzeducation.com/answers/uk-tb-test-nepal",
+      "title": "UK Student Visa TB Test from Nepal: Short Answer",
+      "characters": 1369,
+      "chunks": 1,
+      "tokens": 336,
+      "warnings": [],
+      "dropped_sections": [
+        "Related guides",
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [
+        {
+          "text": "GOV.UK: TB test for a UK visa",
+          "url": "https://www.gov.uk/tb-test-visa"
+        }
+      ],
+      "has_checked_statement": true,
+      "content_class": "source_backed",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "uk-cost",
+      "registry_url": "https://admizzeducation.com/total-cost-studying-uk-from-nepal-2027",
+      "category": "cost",
+      "country": "uk",
+      "kind": "article",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": "2026-10-01",
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/total-cost-studying-uk-from-nepal-2027",
+      "canonical_url": "https://admizzeducation.com/total-cost-studying-uk-from-nepal-2027",
+      "title": "Cost of Studying in UK from Nepal 2027 — UG & PG",
+      "characters": 12701,
+      "chunks": 9,
+      "tokens": 3832,
+      "warnings": [],
+      "dropped_sections": [
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [],
+      "has_checked_statement": false,
+      "content_class": "dated",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "uk-scholarships",
+      "registry_url": "https://admizzeducation.com/uk-scholarships-financial-support-2026",
+      "category": "scholarship",
+      "country": "uk",
+      "kind": "article",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": "2026-05-16",
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/uk-scholarships-financial-support-2026",
+      "canonical_url": "https://admizzeducation.com/uk-scholarships-financial-support-2026",
+      "title": "UK Scholarships for International Students 2026",
+      "characters": 6871,
+      "chunks": 4,
+      "tokens": 1450,
+      "warnings": [],
+      "dropped_sections": [
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [],
+      "has_checked_statement": false,
+      "content_class": "dated",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "uk-gpa",
+      "registry_url": "https://admizzeducation.com/gpa-required-study-uk-from-nepal-2027",
+      "category": "application",
+      "country": "uk",
+      "kind": "article",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": "2026-10-05",
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/gpa-required-study-uk-from-nepal-2027",
+      "canonical_url": "https://admizzeducation.com/gpa-required-study-uk-from-nepal-2027",
+      "title": "UK Entry GPA and Marks for Nepali Students",
+      "characters": 3240,
+      "chunks": 2,
+      "tokens": 803,
+      "warnings": [],
+      "dropped_sections": [
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [],
+      "has_checked_statement": false,
+      "content_class": "dated",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "uk-intakes",
+      "registry_url": "https://admizzeducation.com/uk-intake-timeline-nepalese-students-2027",
+      "category": "application",
+      "country": "uk",
+      "kind": "article",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": "2026-10-05",
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/uk-intake-timeline-nepalese-students-2027",
+      "canonical_url": "https://admizzeducation.com/uk-intake-timeline-nepalese-students-2027",
+      "title": "UK Intakes and Application Timeline for 2027",
+      "characters": 2755,
+      "chunks": 2,
+      "tokens": 691,
+      "warnings": [],
+      "dropped_sections": [
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [],
+      "has_checked_statement": false,
+      "content_class": "dated",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "us-guide",
+      "registry_url": "https://admizzeducation.com/study-in-the-usa",
+      "category": "guide",
+      "country": "us",
+      "kind": "guide",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": null,
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/study-in-the-usa",
+      "canonical_url": "https://admizzeducation.com/study-in-the-usa",
+      "title": "Study in the USA - Admizz Education",
+      "characters": 10307,
+      "chunks": 6,
+      "tokens": 2415,
+      "warnings": [
+        "university_list",
+        "repeated_sections"
+      ],
+      "dropped_sections": [
+        "Study Abroad Insights",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [],
+      "has_checked_statement": false,
+      "content_class": "explanatory",
+      "overlap": {
+        "match": "title",
+        "job_id": "3be903d7-227b-446c-9afe-313b6f52099e",
+        "job_ids": [
+          "3be903d7-227b-446c-9afe-313b6f52099e"
+        ],
+        "existing_title": "Study in the USA - Admizz Education",
+        "existing_characters": 648,
+        "proof": "title_only_not_proven_same_source"
+      },
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "us-visa-interview",
+      "registry_url": "https://admizzeducation.com/usa-f1-visa-interview-opt-nepali-students-2026",
+      "category": "visa",
+      "country": "us",
+      "kind": "article",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": "2026-10-08",
+        "checked": "2026-10",
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/usa-f1-visa-interview-opt-nepali-students-2026",
+      "canonical_url": "https://admizzeducation.com/usa-f1-visa-interview-opt-nepali-students-2026",
+      "title": "US F-1 Visa Interview from Nepal 2026: Fees, SEVIS, OPT",
+      "characters": 9129,
+      "chunks": 6,
+      "tokens": 2303,
+      "warnings": [],
+      "dropped_sections": [
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [
+        {
+          "text": "US Department of State: Student Visa",
+          "url": "https://travel.state.gov/content/travel/en/us-visas/study/student-visa.html"
+        },
+        {
+          "text": "US Department of State: Announcement of Expanded Screening and Vetting for Visa Applicants",
+          "url": "https://travel.state.gov/content/travel/en/News/visas-news/announcement-of-expanded-screening-and-vetting-for-visa-applicants.html"
+        },
+        {
+          "text": "ICE: I-901 SEVIS Fee",
+          "url": "https://www.ice.gov/sevis/i901"
+        },
+        {
+          "text": "Study in the States: Paying the I-901 SEVIS Fee",
+          "url": "https://studyinthestates.dhs.gov/students/prepare/paying-the-i-901-sevis-fee"
+        },
+        {
+          "text": "Study in the States: Final Rule on Fixed Time Period of Admission, Quick Facts",
+          "url": "https://studyinthestates.dhs.gov/final-rule-establishing-a-fixed-time-period-of-admission-and-an-extension-of-stay-procedure-quick"
+        },
+        {
+          "text": "Study in the States: Applying for Practical Training",
+          "url": "https://studyinthestates.dhs.gov/students/work/applying-for-practical-training"
+        },
+        {
+          "text": "Study in the States: F-1 STEM OPT Extension",
+          "url": "https://studyinthestates.dhs.gov/sevis-help-hub/student-records/fm-student-employment/f-1-stem-optional-practical-training-opt"
+        },
+        {
+          "text": "USCIS: STEM OPT Extension",
+          "url": "https://www.uscis.gov/working-in-the-united-states/students-and-exchange-visitors/optional-practical-training-extension-for-stem-students-stem-opt"
+        }
+      ],
+      "has_checked_statement": true,
+      "content_class": "source_backed",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "us-scholarships",
+      "registry_url": "https://admizzeducation.com/study-in-usa-with-scholarship-from-nepal-a-complete-guide",
+      "category": "scholarship",
+      "country": "us",
+      "kind": "article",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-06",
+        "published": "2025-08-30",
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/study-in-usa-with-scholarship-from-nepal-a-complete-guide",
+      "canonical_url": "https://admizzeducation.com/study-in-usa-with-scholarship-from-nepal-a-complete-guide",
+      "title": "Study in USA with Scholarship from Nepal - Admizz Education",
+      "characters": 4629,
+      "chunks": 2,
+      "tokens": 825,
+      "warnings": [],
+      "dropped_sections": [
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [],
+      "has_checked_statement": false,
+      "content_class": "dated",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "us-i20",
+      "registry_url": "https://admizzeducation.com/form-i-20-your-essential-guide-to-studying-in-the-usa",
+      "category": "application",
+      "country": "us",
+      "kind": "article",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-06",
+        "published": "2025-07-25",
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/form-i-20-your-essential-guide-to-studying-in-the-usa",
+      "canonical_url": "https://admizzeducation.com/form-i-20-your-essential-guide-to-studying-in-the-usa",
+      "title": "Form I-20 Guide for Studying in the USA",
+      "characters": 10103,
+      "chunks": 6,
+      "tokens": 2443,
+      "warnings": [],
+      "dropped_sections": [
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [],
+      "has_checked_statement": false,
+      "content_class": "dated",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "au-guide",
+      "registry_url": "https://admizzeducation.com/study-in-australia",
+      "category": "guide",
+      "country": "au",
+      "kind": "guide",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": null,
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/study-in-australia",
+      "canonical_url": "https://admizzeducation.com/study-in-australia",
+      "title": "Study in Australia - Admizz Education",
+      "characters": 9515,
+      "chunks": 5,
+      "tokens": 2007,
+      "warnings": [
+        "repeated_sections",
+        "university_list"
+      ],
+      "dropped_sections": [
+        "Study Abroad Insights",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [],
+      "has_checked_statement": false,
+      "content_class": "explanatory",
+      "overlap": {
+        "match": "title",
+        "job_id": "38486d6b-ceb6-45a3-b848-92cd5c7ae99a",
+        "job_ids": [
+          "38486d6b-ceb6-45a3-b848-92cd5c7ae99a"
+        ],
+        "existing_title": "Study in Australia",
+        "existing_characters": 697,
+        "proof": "title_only_not_proven_same_source"
+      },
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "au-cost",
+      "registry_url": "https://admizzeducation.com/australia-student-visa-cost-funds-2026-27-nepali-students",
+      "category": "cost",
+      "country": "au",
+      "kind": "article",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": "2026-10-08",
+        "checked": "2026-10",
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/australia-student-visa-cost-funds-2026-27-nepali-students",
+      "canonical_url": "https://admizzeducation.com/australia-student-visa-cost-funds-2026-27-nepali-students",
+      "title": "Australia Student Visa 2026: Fee, Funds, OSHC (Nepal)",
+      "characters": 8319,
+      "chunks": 5,
+      "tokens": 1940,
+      "warnings": [],
+      "dropped_sections": [
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [
+        {
+          "text": "Study Australia: Student visa (subclass 500)",
+          "url": "https://www.studyaustralia.gov.au/en/plan-your-move/your-guide-to-visas/student-visa-subclass-500"
+        },
+        {
+          "text": "Study Australia: How to apply for your visa",
+          "url": "https://www.studyaustralia.gov.au/en/plan-your-move/visa-application-process"
+        },
+        {
+          "text": "Study Australia: Student visa application charge increase",
+          "url": "https://www.studyaustralia.gov.au/en/tools-and-resources/news/student-visa-application-charge-increase"
+        },
+        {
+          "text": "Home Affairs: Genuine Student requirement",
+          "url": "https://immi.homeaffairs.gov.au/visas/getting-a-visa/visa-listing/student-500/genuine-student-requirement"
+        },
+        {
+          "text": "Home Affairs: Fees and charges",
+          "url": "https://immi.homeaffairs.gov.au/visas/getting-a-visa/fees-and-charges"
+        }
+      ],
+      "has_checked_statement": true,
+      "content_class": "source_backed",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "au-visa",
+      "registry_url": "https://admizzeducation.com/australia-student-visa-subclass-500",
+      "category": "visa",
+      "country": "au",
+      "kind": "article",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": "2025-12-20",
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/australia-student-visa-subclass-500",
+      "canonical_url": "https://admizzeducation.com/australia-student-visa-subclass-500",
+      "title": "Australia Student Visa (Subclass 500) - Admizz Education",
+      "characters": 4559,
+      "chunks": 2,
+      "tokens": 903,
+      "warnings": [],
+      "dropped_sections": [
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [],
+      "has_checked_statement": false,
+      "content_class": "dated",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "au-no-ielts",
+      "registry_url": "https://admizzeducation.com/study-in-australia-without-ielts",
+      "category": "application",
+      "country": "au",
+      "kind": "article",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": "2025-11-20",
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/study-in-australia-without-ielts",
+      "canonical_url": "https://admizzeducation.com/study-in-australia-without-ielts",
+      "title": "Study in Australia without IELTS - Admizz Education",
+      "characters": 7647,
+      "chunks": 4,
+      "tokens": 1622,
+      "warnings": [],
+      "dropped_sections": [
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [],
+      "has_checked_statement": false,
+      "content_class": "dated",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "ca-guide",
+      "registry_url": "https://admizzeducation.com/study-in-canada",
+      "category": "guide",
+      "country": "ca",
+      "kind": "guide",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": null,
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/study-in-canada",
+      "canonical_url": "https://admizzeducation.com/study-in-canada",
+      "title": "Study in Canada - Admizz Education",
+      "characters": 8367,
+      "chunks": 4,
+      "tokens": 1821,
+      "warnings": [
+        "university_list",
+        "repeated_sections"
+      ],
+      "dropped_sections": [
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [],
+      "has_checked_statement": false,
+      "content_class": "explanatory",
+      "overlap": {
+        "match": "title",
+        "job_id": "19ec9ad2-32f4-4845-9022-a90ee0c95543",
+        "job_ids": [
+          "19ec9ad2-32f4-4845-9022-a90ee0c95543"
+        ],
+        "existing_title": "Study in Canada - Admizz Education",
+        "existing_characters": 708,
+        "proof": "title_only_not_proven_same_source"
+      },
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "ca-visa-pal",
+      "registry_url": "https://admizzeducation.com/answers/canada-pal-requirement-nepali-students",
+      "category": "visa",
+      "country": "ca",
+      "kind": "answer",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": "2026-10-05",
+        "checked": "2026-10",
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/answers/canada-pal-requirement-nepali-students",
+      "canonical_url": "https://admizzeducation.com/answers/canada-pal-requirement-nepali-students",
+      "title": "Canada PAL Requirement for Nepali Students 2026",
+      "characters": 1449,
+      "chunks": 1,
+      "tokens": 310,
+      "warnings": [],
+      "dropped_sections": [
+        "Related guides",
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [
+        {
+          "text": "IRCC: 2026 provincial and territorial allocations under the international student cap",
+          "url": "https://www.canada.ca/en/immigration-refugees-citizenship/news/notices/2026-provincial-territorial-allocations-under-international-student-cap.html"
+        }
+      ],
+      "has_checked_statement": true,
+      "content_class": "source_backed",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "ca-cost",
+      "registry_url": "https://admizzeducation.com/canada-study-costs-gic-pgwp-2026-nepali-students",
+      "category": "cost",
+      "country": "ca",
+      "kind": "article",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": "2026-10-08",
+        "checked": "2026-10",
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/canada-study-costs-gic-pgwp-2026-nepali-students",
+      "canonical_url": "https://admizzeducation.com/canada-study-costs-gic-pgwp-2026-nepali-students",
+      "title": "Canada Study Costs 2026: Permit Fee, GIC & PGWP Rules",
+      "characters": 8289,
+      "chunks": 5,
+      "tokens": 2056,
+      "warnings": [],
+      "dropped_sections": [
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [
+        {
+          "text": "IRCC: Proof of financial support",
+          "url": "https://www.canada.ca/en/immigration-refugees-citizenship/services/study-canada/study-permit/get-documents/financial-support.html"
+        },
+        {
+          "text": "IRCC: Fee list",
+          "url": "https://ircc.canada.ca/english/information/fees/fees.asp"
+        },
+        {
+          "text": "IRCC: Study permit, get the right documents",
+          "url": "https://www.canada.ca/en/immigration-refugees-citizenship/services/study-canada/study-permit/get-documents.html"
+        },
+        {
+          "text": "IRCC: Provincial and territorial attestation letter",
+          "url": "https://www.canada.ca/en/immigration-refugees-citizenship/services/study-canada/study-permit/get-documents/provincial-attestation-letter.html"
+        },
+        {
+          "text": "IRCC: 2026 provincial and territorial allocations under the international student cap",
+          "url": "https://www.canada.ca/en/immigration-refugees-citizenship/news/notices/2026-provincial-territorial-allocations-under-international-student-cap.html"
+        },
+        {
+          "text": "IRCC: PGWP eligibility",
+          "url": "https://www.canada.ca/en/immigration-refugees-citizenship/services/study-canada/work/after-graduation/eligibility.html"
+        }
+      ],
+      "has_checked_statement": true,
+      "content_class": "source_backed",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "ca-permit-cap",
+      "registry_url": "https://admizzeducation.com/canada-study-permit-cap-2026-nepali-students",
+      "category": "visa",
+      "country": "ca",
+      "kind": "article",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-05",
+        "published": "2026-10-05",
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/canada-study-permit-cap-2026-nepali-students",
+      "canonical_url": "https://admizzeducation.com/canada-study-permit-cap-2026-nepali-students",
+      "title": "Canada Study Permit Cap 2026: What Nepali Students Must Know",
+      "characters": 5081,
+      "chunks": 3,
+      "tokens": 1212,
+      "warnings": [],
+      "dropped_sections": [
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [
+        {
+          "text": "CIC News",
+          "url": "https://www.cicnews.com/2025/11/canada-announces-2026-study-permit-cap-1162628.html"
+        },
+        {
+          "text": "IRCC: 2026 provincial and territorial allocations under the international student cap",
+          "url": "https://www.canada.ca/en/immigration-refugees-citizenship/news/notices/2026-provincial-territorial-allocations-under-international-student-cap.html"
+        }
+      ],
+      "has_checked_statement": false,
+      "content_class": "dated",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "ca-ielts",
+      "registry_url": "https://admizzeducation.com/minimum-ielts-requirement-for-canadian-universities",
+      "category": "application",
+      "country": "ca",
+      "kind": "article",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-06",
+        "published": "2025-07-18",
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/minimum-ielts-requirement-for-canadian-universities",
+      "canonical_url": "https://admizzeducation.com/minimum-ielts-requirement-for-canadian-universities",
+      "title": "Minimum IELTS Score for Canadian Universities",
+      "characters": 4375,
+      "chunks": 3,
+      "tokens": 990,
+      "warnings": [],
+      "dropped_sections": [
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [],
+      "has_checked_statement": false,
+      "content_class": "dated",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "de-guide",
+      "registry_url": "https://admizzeducation.com/study-in-germany",
+      "category": "guide",
+      "country": "de",
+      "kind": "guide",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": null,
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/study-in-germany",
+      "canonical_url": "https://admizzeducation.com/study-in-germany",
+      "title": "Study in Germany: Tuition-Free Public Universities",
+      "characters": 12404,
+      "chunks": 7,
+      "tokens": 2789,
+      "warnings": [
+        "university_list",
+        "repeated_sections"
+      ],
+      "dropped_sections": [
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [],
+      "has_checked_statement": false,
+      "content_class": "explanatory",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "de-blocked-account",
+      "registry_url": "https://admizzeducation.com/answers/germany-blocked-account-amount-2026",
+      "category": "visa",
+      "country": "de",
+      "kind": "answer",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": "2026-10-05",
+        "checked": "2026-10",
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/answers/germany-blocked-account-amount-2026",
+      "canonical_url": "https://admizzeducation.com/answers/germany-blocked-account-amount-2026",
+      "title": "Germany Blocked Account Amount 2026: Short Answer",
+      "characters": 1324,
+      "chunks": 1,
+      "tokens": 296,
+      "warnings": [],
+      "dropped_sections": [
+        "Related guides",
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [
+        {
+          "text": "Study-Abroad.org: Germany Sperrkonto guide 2026",
+          "url": "https://www.study-abroad.org/blog/germany-sperrkonto-guide/"
+        }
+      ],
+      "has_checked_statement": true,
+      "content_class": "dated",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "de-cost",
+      "registry_url": "https://admizzeducation.com/study-in-germany-from-nepal-costs-intakes-visa-2026",
+      "category": "cost",
+      "country": "de",
+      "kind": "article",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": "2026-10-08",
+        "checked": "2026-10",
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/study-in-germany-from-nepal-costs-intakes-visa-2026",
+      "canonical_url": "https://admizzeducation.com/study-in-germany-from-nepal-costs-intakes-visa-2026",
+      "title": "Study in Germany from Nepal 2026: Costs, Visa, APS",
+      "characters": 9648,
+      "chunks": 5,
+      "tokens": 2182,
+      "warnings": [],
+      "dropped_sections": [
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [
+        {
+          "text": "German Embassy Kathmandu: Study Visa",
+          "url": "https://kathmandu.diplo.de/np-en/service/01-visaeinreise/2225320-2225320"
+        },
+        {
+          "text": "DAAD: Costs of education and living",
+          "url": "https://www.daad.de/en/studying-in-germany/living-in-germany/finances/"
+        },
+        {
+          "text": "DAAD: Application process",
+          "url": "https://www.daad.de/en/studying-in-germany/requirements/application-process/"
+        },
+        {
+          "text": "uni-assist: Deadlines and processing time",
+          "url": "https://www.uni-assist.de/en/how-to-apply/plan-your-application/deadlines-processing-time/"
+        }
+      ],
+      "has_checked_statement": true,
+      "content_class": "dated",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "de-blocked-account-guide",
+      "registry_url": "https://admizzeducation.com/germany-blocked-account-2026-nepali-students",
+      "category": "visa",
+      "country": "de",
+      "kind": "article",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-05",
+        "published": "2026-10-05",
+        "checked": "2026-10",
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/germany-blocked-account-2026-nepali-students",
+      "canonical_url": "https://admizzeducation.com/germany-blocked-account-2026-nepali-students",
+      "title": "Germany Blocked Account 2026: €11,904 for Nepali Students",
+      "characters": 4096,
+      "chunks": 3,
+      "tokens": 951,
+      "warnings": [],
+      "dropped_sections": [
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [
+        {
+          "text": "Study-Abroad.org's Sperrkonto guide",
+          "url": "https://www.study-abroad.org/blog/germany-sperrkonto-guide/"
+        }
+      ],
+      "has_checked_statement": true,
+      "content_class": "dated",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "test-prep",
+      "registry_url": "https://admizzeducation.com/test-prep",
+      "category": "test_prep",
+      "country": null,
+      "kind": "service",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": null,
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/test-prep",
+      "canonical_url": "https://admizzeducation.com/test-prep",
+      "title": "Test Preparation in Nepal: IELTS, PTE, GRE, TOEFL, SAT",
+      "characters": 2843,
+      "chunks": 2,
+      "tokens": 647,
+      "warnings": [],
+      "dropped_sections": [
+        "Students Who Made It",
+        "Our Success Stories & Testimonials",
+        "Take the First Step Toward Your Global Future",
+        "Our Students Made It Here"
+      ],
+      "references": [],
+      "has_checked_statement": false,
+      "content_class": "explanatory",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "ielts-prep",
+      "registry_url": "https://admizzeducation.com/ielts-preparation-in-nepal",
+      "category": "test_prep",
+      "country": null,
+      "kind": "article",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-06",
+        "published": "2025-08-16",
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/ielts-preparation-in-nepal",
+      "canonical_url": "https://admizzeducation.com/ielts-preparation-in-nepal",
+      "title": "IELTS Preparation in Nepal - Admizz Education",
+      "characters": 4007,
+      "chunks": 2,
+      "tokens": 801,
+      "warnings": [],
+      "dropped_sections": [
+        "Take the First Step Toward Your Global Education",
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [],
+      "has_checked_statement": false,
+      "content_class": "dated",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "ielts-vs-pte",
+      "registry_url": "https://admizzeducation.com/ielts-vs-pte",
+      "category": "test_prep",
+      "country": null,
+      "kind": "article",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": "2026-01-21",
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/ielts-vs-pte",
+      "canonical_url": "https://admizzeducation.com/ielts-vs-pte",
+      "title": "IELTS vs PTE: Differences in Format, Scoring & Acceptance",
+      "characters": 6099,
+      "chunks": 3,
+      "tokens": 1420,
+      "warnings": [],
+      "dropped_sections": [
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [],
+      "has_checked_statement": false,
+      "content_class": "dated",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "scholarship-assistance",
+      "registry_url": "https://admizzeducation.com/scholarship-assistance-in-nepal",
+      "category": "scholarship",
+      "country": null,
+      "kind": "service",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": null,
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/scholarship-assistance-in-nepal",
+      "canonical_url": "https://admizzeducation.com/scholarship-assistance-in-nepal",
+      "title": "Scholarship Consultancy in Nepal | Scholarship Assistance",
+      "characters": 8301,
+      "chunks": 4,
+      "tokens": 1678,
+      "warnings": [],
+      "dropped_sections": [
+        "Our Success Stories & Testimonials",
+        "Study Abroad Insights"
+      ],
+      "references": [],
+      "has_checked_statement": false,
+      "content_class": "explanatory",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "scholarships-top-15",
+      "registry_url": "https://admizzeducation.com/top-15-scholarships-for-nepali-students-to-study-abroad-in-2026",
+      "category": "scholarship",
+      "country": null,
+      "kind": "article",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": "2026-02-06",
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/top-15-scholarships-for-nepali-students-to-study-abroad-in-2026",
+      "canonical_url": "https://admizzeducation.com/top-15-scholarships-for-nepali-students-to-study-abroad-in-2026",
+      "title": "Top 15 Scholarships for Nepali Students Abroad 2026",
+      "characters": 27284,
+      "chunks": 14,
+      "tokens": 5706,
+      "warnings": [],
+      "dropped_sections": [
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [],
+      "has_checked_statement": false,
+      "content_class": "dated",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "visa-assistance",
+      "registry_url": "https://admizzeducation.com/visa-assistance-for-study-abroad",
+      "category": "visa",
+      "country": null,
+      "kind": "service",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": null,
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/visa-assistance-for-study-abroad",
+      "canonical_url": "https://admizzeducation.com/visa-assistance-for-study-abroad",
+      "title": "Student Visa Consultancy in Nepal | Visa Assistance",
+      "characters": 7426,
+      "chunks": 4,
+      "tokens": 1499,
+      "warnings": [],
+      "dropped_sections": [
+        "Our Success Stories & Testimonials",
+        "Study Abroad Insights"
+      ],
+      "references": [],
+      "has_checked_statement": false,
+      "content_class": "explanatory",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "visa-documents",
+      "registry_url": "https://admizzeducation.com/documents-required-for-student-visa-from-nepal",
+      "category": "visa",
+      "country": null,
+      "kind": "article",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": "2026-01-17",
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/documents-required-for-student-visa-from-nepal",
+      "canonical_url": "https://admizzeducation.com/documents-required-for-student-visa-from-nepal",
+      "title": "Documents Required for a Student Visa from Nepal",
+      "characters": 6712,
+      "chunks": 3,
+      "tokens": 1361,
+      "warnings": [],
+      "dropped_sections": [
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [],
+      "has_checked_statement": false,
+      "content_class": "dated",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "application-documents",
+      "registry_url": "https://admizzeducation.com/four-documents-to-prepare-for-university-applications",
+      "category": "application",
+      "country": null,
+      "kind": "article",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-06",
+        "published": "2025-03-28",
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/four-documents-to-prepare-for-university-applications",
+      "canonical_url": "https://admizzeducation.com/four-documents-to-prepare-for-university-applications",
+      "title": "4 Documents Needed for University Applications",
+      "characters": 3204,
+      "chunks": 2,
+      "tokens": 592,
+      "warnings": [],
+      "dropped_sections": [
+        "Related Articles",
+        "Ready to Build Your Global Career?"
+      ],
+      "references": [],
+      "has_checked_statement": false,
+      "content_class": "dated",
+      "overlap": null,
+      "eligible_for_ingestion": true,
+      "plan_action": "add"
+    },
+    {
+      "id": "book-counseling",
+      "registry_url": "https://admizzeducation.com/register",
+      "category": "contact",
+      "country": null,
+      "kind": "service",
+      "registry_freshness": {
+        "sitemap_lastmod": "2026-10-08",
+        "published": null,
+        "checked": null,
+        "ingested_at": null
+      },
+      "verified": false,
+      "eligible": true,
+      "url": "https://admizzeducation.com/register",
+      "canonical_url": "https://admizzeducation.com/register",
+      "title": "Register — Free Study Abroad Counseling | Admizz Education",
+      "characters": 11002,
+      "chunks": 7,
+      "tokens": 2913,
+      "warnings": [
+        "repeated_sections"
+      ],
+      "dropped_sections": [
+        "Students Who Made It",
+        "Our Success Stories & Testimonials"
+      ],
+      "references": [
+        {
+          "text": "View on Map",
+          "url": "https://www.google.com/maps/search/?api=1&query=Denver%2C%20Colorado%2C%20USA"
+        },
+        {
+          "text": "View on Map",
+          "url": "https://www.google.com/maps/search/?api=1&query=Jayaram%20Building%2C%20Kanakapura%20Main%20Road%2C%20Bengaluru%2C%20Karnataka%20560062"
+        },
+        {
+          "text": "View on Map",
+          "url": "https://www.google.com/maps/search/?api=1&query=Lusaka%2C%20Zambia"
+        },
+        {
+          "text": "View on Map",
+          "url": "https://www.google.com/maps/search/?api=1&query=Bogra%2C%20Bangladesh"
+        },
+        {
+          "text": "View on Map",
+          "url": "https://www.google.com/maps/search/?api=1&query=Admizz%20Education%20Nepal%2C%20Sita%20Ram%20Square%2C%20Putalisadak%2C%20Kathmandu"
+        }
+      ],
+      "has_checked_statement": false,
+      "content_class": "explanatory",
+      "overlap": null,
+      "eligible_for_ingestion": false,
+      "plan_action": "skip: link_only_category"
+    }
+  ],
+  "plan": {
+    "add": [
+      "uk-guide",
+      "uk-visa-fee",
+      "uk-visa-bank-balance",
+      "uk-visa-english",
+      "uk-visa-processing",
+      "uk-tb-test",
+      "uk-cost",
+      "uk-scholarships",
+      "uk-gpa",
+      "uk-intakes",
+      "us-guide",
+      "us-visa-interview",
+      "us-scholarships",
+      "us-i20",
+      "au-guide",
+      "au-cost",
+      "au-visa",
+      "au-no-ielts",
+      "ca-guide",
+      "ca-visa-pal",
+      "ca-cost",
+      "ca-permit-cap",
+      "ca-ielts",
+      "de-guide",
+      "de-blocked-account",
+      "de-cost",
+      "de-blocked-account-guide",
+      "test-prep",
+      "ielts-prep",
+      "ielts-vs-pte",
+      "scholarship-assistance",
+      "scholarships-top-15",
+      "visa-assistance",
+      "visa-documents",
+      "application-documents"
+    ],
+    "skip": [
+      {
+        "page_id": "book-counseling",
+        "reason": "link_only_category"
+      }
+    ],
+    "retire_candidates": [
+      {
+        "job_id": "079e4d10-a844-4500-8d9f-3266b122c6c7",
+        "page_id": "uk-guide",
+        "proof": "title_only_not_proven_same_source"
+      },
+      {
+        "job_id": "3be903d7-227b-446c-9afe-313b6f52099e",
+        "page_id": "us-guide",
+        "proof": "title_only_not_proven_same_source"
+      },
+      {
+        "job_id": "38486d6b-ceb6-45a3-b848-92cd5c7ae99a",
+        "page_id": "au-guide",
+        "proof": "title_only_not_proven_same_source"
+      },
+      {
+        "job_id": "19ec9ad2-32f4-4845-9022-a90ee0c95543",
+        "page_id": "ca-guide",
+        "proof": "title_only_not_proven_same_source"
+      }
+    ]
+  },
+  "estimate": {
+    "chunks": 131,
+    "tokens": 51806,
+    "api_calls": 2,
+    "usd": 0.006734780000000001,
+    "note": "Assumption: about $0.13 per million input tokens for the embedding model and batches of 100 chunks; check current pricing. Tokens and calls come from the chunk manifest."
+  },
+  "problems": [],
+  "existing_jobs": 27
+}
