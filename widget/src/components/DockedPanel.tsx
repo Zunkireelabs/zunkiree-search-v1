@@ -12,6 +12,7 @@ import type { UIBlock, OnBlockAction } from './blocks/types'
 import { ServiceGrid } from './ServiceGrid'
 import { ServiceCard, ServiceItem } from './ServiceCard'
 import { FeedbackButtons } from './FeedbackButtons'
+import { planScroll, scrollToMessageTop } from './scrollPolicy'
 import { CartView } from './CartView'
 import { CheckoutView } from './CheckoutView'
 import { WishlistView } from './WishlistView'
@@ -138,6 +139,7 @@ export function DockedPanel({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [showAutocomplete, setShowAutocomplete] = useState(false)
   const userScrolledUp = useRef(false)
+  const anchoredId = useRef<string | null>(null)
 
   useEffect(() => {
     const container = messagesContainerRef.current
@@ -151,9 +153,18 @@ export function DockedPanel({
   }, [])
 
   useEffect(() => {
-    if (!userScrolledUp.current) {
-      const container = messagesContainerRef.current
-      if (container) {
+    const container = messagesContainerRef.current
+    const plan = planScroll(messages, anchoredId.current)
+    if (plan.type === 'anchor') {
+      anchoredId.current = plan.id
+      userScrolledUp.current = false
+      if (container) scrollToMessageTop(container, plan.id)
+    } else if (plan.type === 'bottom') {
+      if (plan.releaseAnchor) {
+        anchoredId.current = null
+        userScrolledUp.current = false
+      }
+      if (!userScrolledUp.current && container) {
         container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
       }
     }
@@ -313,7 +324,7 @@ export function DockedPanel({
         <div className="zk-docked__messages-inner">
           {websiteType === 'education' && <BlockAnnouncer messages={messages} busy={isLoading} />}
           {messages.map(message => (
-            <div key={message.id} className={`zk-message zk-message-${message.role}${websiteType === 'education' ? ' zk-message--rich' : ''}`}>
+            <div key={message.id} data-message-id={message.id} className={`zk-message zk-message-${message.role}${websiteType === 'education' ? ' zk-message--rich' : ''}`}>
               <div className="zk-message-content">
                 {message.role === 'assistant' ? (
                   streamingId === message.id ? (

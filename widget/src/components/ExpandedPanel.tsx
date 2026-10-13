@@ -12,6 +12,7 @@ import type { UIBlock, OnBlockAction } from './blocks/types'
 import { ServiceGrid } from './ServiceGrid'
 import { ServiceCard, ServiceItem } from './ServiceCard'
 import { FeedbackButtons } from './FeedbackButtons'
+import { planScroll, scrollToMessageTop } from './scrollPolicy'
 import { CartView } from './CartView'
 import { CheckoutView } from './CheckoutView'
 import { WishlistView } from './WishlistView'
@@ -141,6 +142,7 @@ export function ExpandedPanel({
   const panelRef = useRef<HTMLDivElement>(null)
   const [showAutocomplete, setShowAutocomplete] = useState(false)
   const userScrolledUp = useRef(false)
+  const anchoredId = useRef<string | null>(null)
 
   // Track if user has scrolled away from bottom
   useEffect(() => {
@@ -156,10 +158,20 @@ export function ExpandedPanel({
   }, [])
 
   useEffect(() => {
-    // Only auto-scroll if user hasn't scrolled up to read history
-    if (!userScrolledUp.current) {
-      const container = messagesRef.current
-      if (container) {
+    const container = messagesRef.current
+    const plan = planScroll(messages, anchoredId.current)
+    if (plan.type === 'anchor') {
+      // A reply with a card starts at its own top: a tall card must not be cut off by jumping to its bottom
+      anchoredId.current = plan.id
+      userScrolledUp.current = false
+      if (container) scrollToMessageTop(container, plan.id)
+    } else if (plan.type === 'bottom') {
+      if (plan.releaseAnchor) {
+        anchoredId.current = null
+        userScrolledUp.current = false
+      }
+      // Only auto-scroll if user hasn't scrolled up to read history
+      if (!userScrolledUp.current && container) {
         container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
       }
     }
@@ -390,7 +402,7 @@ export function ExpandedPanel({
           <div className="zk-expanded-panel__messages-inner">
             {websiteType === 'education' && <BlockAnnouncer messages={messages} busy={isLoading} />}
             {messages.map(message => (
-              <div key={message.id} className={`zk-message zk-message-${message.role}${websiteType === 'education' ? ' zk-message--rich' : ''}`}>
+              <div key={message.id} data-message-id={message.id} className={`zk-message zk-message-${message.role}${websiteType === 'education' ? ' zk-message--rich' : ''}`}>
                 <div className="zk-message-content">
                   {message.role === 'assistant' ? (
                     streamingId === message.id ? (
