@@ -9,6 +9,7 @@ from app.api.origin_guard import require_allowed_origin
 from app.database import get_db
 from app.models import Customer, WidgetConfig
 from app.services.query import get_query_service
+from app.utils.rate_limit import HISTORY_LIMIT, enforce as enforce_rate_limit
 
 router = APIRouter(prefix="/widget", tags=["widget"])
 
@@ -136,6 +137,7 @@ async def get_widget_history(
     from app.services.education_profile import progress
 
     await require_allowed_origin(request, db, customer.id, get_query_service())
+    enforce_rate_limit(request, site_id, "history", HISTORY_LIMIT)
     if not is_valid_session_id(session_id):
         raise HTTPException(
             status_code=400,

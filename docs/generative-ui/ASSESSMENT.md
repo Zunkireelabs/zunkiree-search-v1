@@ -243,12 +243,13 @@ Original finding:
 
 **Regression test:** a route test with an allowed Origin and a disallowed one.
 
-**1.4 No rate limiting on `/query/stream` or `/widget/history` [CODE: nothing found by grep]**
+**1.4 No rate limiting on `/query/stream` or `/widget/history` [FIXED, TEST]**
+
+**Fixed:** `app/utils/rate_limit.py`, an in-process rolling window per tenant and visitor address (last `X-Forwarded-For` entry, which the proxy adds). Education only: 20 chat messages and 60 history reads per minute, then 429 `RATE_LIMITED` with `Retry-After`, before any AI call. Tests: `tests/test_education_rate_limit.py` (12). Limits: counters are per worker (production runs 2, so the real ceiling is up to double) and reset on restart; many students behind one shared address share one count.
 
 **Code involved:** `backend/app/main.py` and the two routes.
 **Reproduce:** a burst of requests is never throttled.
 **Expected after the fix:** per-IP and per-site limits that return 429.
-**Decision needed:** an in-house limiter, or a new dependency, which needs your approval.
 **Regression test:** a burst test asserting 429.
 
 **1.5 Student text in logs [TEST: reproduced and FIXED 2026-10-13, committed]**

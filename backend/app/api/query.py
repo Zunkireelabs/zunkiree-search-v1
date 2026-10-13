@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models import Customer, QueryLog, DocumentChunk, WidgetConfig
 from app.api.origin_guard import require_allowed_origin
+from app.utils.rate_limit import CHAT_LIMIT, enforce as enforce_rate_limit
 from app.utils.log_redaction import question_for_log
 from app.services.query import get_query_service
 from app.services.verification import (
@@ -571,6 +572,7 @@ async def submit_query_stream(
     if customer.website_type == "education":
         from app.services.education_memory import is_valid_session_id
         await require_allowed_origin(request, db, customer.id, query_service)
+        enforce_rate_limit(request, query.site_id, "chat", CHAT_LIMIT)
         if not is_valid_session_id(query.session_id):
             raise HTTPException(
                 status_code=400,
