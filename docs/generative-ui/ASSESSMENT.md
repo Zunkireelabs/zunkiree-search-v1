@@ -245,7 +245,7 @@ Original finding:
 
 **1.4 No rate limiting on `/query/stream` or `/widget/history` [FIXED, TEST]**
 
-**Fixed:** `app/utils/rate_limit.py`, an in-process rolling window per tenant and visitor address (last `X-Forwarded-For` entry, which the proxy adds). Education only, on `/query/stream`, the non-streaming `POST /query` (same shared count, found in the pre-PR audit) and `/widget/history`: 20 chat messages and 60 history reads per minute, then 429 `RATE_LIMITED` with `Retry-After`, before any AI call. Tests: `tests/test_education_rate_limit.py` (15). Limits: counters are per worker (production runs 2, so the real ceiling is up to double) and reset on restart; many students behind one shared address share one count.
+**Fixed:** `app/utils/rate_limit.py`, an in-process rolling window per tenant and visitor address (last `X-Forwarded-For` entry, which the proxy adds). Education only, on `/query/stream` and `/widget/history`: 20 chat messages and 60 history reads per minute, then 429 `RATE_LIMITED` with `Retry-After`, before any AI call. The non-streaming `POST /query` (found in the pre-PR audit to reach the generic search path unlimited) now refuses education sites with `400 USE_STREAM_ENDPOINT` before any AI call or `query_logs` write. Tests: `tests/test_education_rate_limit.py` (16). Limits: counters are per worker (production runs 2, so the real ceiling is up to double) and reset on restart; many students behind one shared address share one count.
 
 **Code involved:** `backend/app/main.py` and the two routes.
 **Reproduce:** a burst of requests is never throttled.
@@ -323,8 +323,8 @@ Status as of 2026-10-13, branch `feature/generative-ui-education`. An item is ma
 - [x] **Cross-session profile exposure closed.** No profile merge by email; blank or oversized `session_id` refused (`test_education_email_merge.py`, `test_education_session_id.py`).
 - [x] **Student text kept out of the education logs.** Question text and session ids are not logged on the education paths (`test_education_log_privacy.py`). Not covered: knowledge-base error lines and `logger.exception` in `/query/stream`, which can carry AI output.
 - [x] **Markdown injection tests.** 21 attack strings checked structurally (`Markdown.test.ts`).
-- [x] **Website (Origin) check** on the education chat, `/widget/history` and, through the search service, `/query` (`test_education_origin.py`). A request with no Origin header is allowed, as on every other chat path.
-- [x] **Message limit** of 20 per minute per visitor address on `/query/stream` and `/query` (one shared count) and 60 per minute on `/widget/history`, refused with 429 and `Retry-After` before any AI call (`test_education_rate_limit.py`).
+- [x] **Website (Origin) check** on the education chat and `/widget/history` (`test_education_origin.py`). A request with no Origin header is allowed, as on every other chat path.
+- [x] **Message limit** of 20 per minute per visitor address on `/query/stream` and 60 per minute on `/widget/history`, refused with 429 and `Retry-After` before any AI call (`test_education_rate_limit.py`).
 - [x] **Tables exist.** `visitor_profiles` and `widget_messages` (migration 042) exist on the shared database (read-only table-name check; no rows read).
 
 ### Outstanding before the production widget is enabled
@@ -332,14 +332,14 @@ Status as of 2026-10-13, branch `feature/generative-ui-education`. An item is ma
 - [ ] **Add the real Admizz website to the tenant's approved domains.** Tenant `admizz-test` currently lists only `localhost`. Until the real domain is added, the widget gets `403 ORIGIN_NOT_ALLOWED`.
 - [ ] **Replace the placeholder catalog with verified data.** `admizz-test.json` is `PLACEHOLDER`: USD, sample numbers, not Admizz data. The code only logs a warning for an unverified catalog, so nothing yet stops its numbers being shown as real facts. Do not enable for real students until the catalog is verified and a guard exists (Phase 3).
 - [ ] **Build and verify lead delivery.** Submitted contact details are saved to the profile only. The assistant tells the student "Nothing is sent to the team yet" (`education_agent.py`). Do not promise that inquiries reach the Admizz team until delivery exists and is tested.
-- [ ] **Decide how `/query` treats education tenants.** The generic `/query` path stores the question text in `query_logs`, and an education site can reach it. See the pending decision in the PR notes. Read-only count on 2026-10-13: 0 education rows in `query_logs`.
+- [x] **`/query` refuses education tenants** with `400 USE_STREAM_ENDPOINT` before any AI call, log line or `query_logs` write, so student text cannot be stored there (`test_education_rate_limit.py`). Evidence checked before the change: 0 education rows in `query_logs` (count only), 0 non-stream `/query` requests in 72 hours of production access logs, and the only repo caller (`ZunkireeSearch.tsx`) is imported nowhere. An outside integration calling `/query` for an education site was not found, but cannot be ruled out; it would now get the 400.
 - [ ] **Browser-level CORS.** Production `ALLOWED_ORIGINS=*` is unchanged; the per-tenant Origin check above is what limits sites.
 
 ### Accepted limitations of the message limit
 - Counters live in memory, per worker. Production runs 2 workers, so a visitor can reach about 40 per minute. A restart resets them.
 - Visitors behind one shared address (a school or office network) share one count; a visitor with many IPv6 addresses can rotate.
 - If a CDN is later placed in front of the proxy, all visitors behind it would share a counter unless the address logic is updated.
-- Only education traffic is limited. `/query/autocomplete`, `/query/feedback` and the Instagram webhook are not.
+- Only education traffic is limited. `/query/autocomplete`, `/query/feedback` and the Instagram webhook are not. `api-spec.md` lists a 60 requests per minute per site limit on `/query`; no such limiter exists in the code.
 
 ## Not verified in this assessment
 - The full backend test suite, the widget `tsc` and the widget tests.

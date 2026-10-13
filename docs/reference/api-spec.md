@@ -49,7 +49,7 @@ Origin: https://customer-domain.com
 
 | Status | Description |
 |--------|-------------|
-| 400 | Invalid request (missing fields, question too long) |
+| 400 | Invalid request (missing fields, question too long). Education sites get `USE_STREAM_ENDPOINT`: they must use `POST /query/stream` |
 | 401 | Invalid site_id |
 | 403 | Origin domain not allowed |
 | 429 | Rate limit exceeded |

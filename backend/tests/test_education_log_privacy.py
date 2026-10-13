@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 
 from app.api.query import QueryRequest, submit_query, submit_query_stream
 from app.models.customer import Customer
@@ -64,19 +65,18 @@ async def test_other_tenants_keep_logging_the_question_for_debugging(caplog):
 
 
 @pytest.mark.asyncio
-async def test_education_non_stream_route_does_not_log_the_question(caplog):
+async def test_education_non_stream_route_refuses_and_logs_nothing_of_the_question(caplog):
+    """Education is refused on the generic /query route (USE_STREAM_ENDPOINT) before it logs or stores anything."""
     customer = _customer("education")
     request = AsyncMock()
     request.headers = {"origin": "https://admizz.example"}
     with patch("app.api.query.get_query_service") as qs, caplog.at_level(logging.INFO):
         qs.return_value._get_customer = AsyncMock(return_value=customer)
         qs.return_value._get_widget_config = AsyncMock(return_value=WidgetConfig(customer_id=customer.id, brand_name="Edu"))
-        try:
+        with pytest.raises(HTTPException) as e:
             await submit_query(request, QueryRequest(site_id=SITE, question=SECRET, session_id="s1"), db=AsyncMock())
-        except Exception:   # what happens after the log line is not what this test is about
-            pass
-    assert "[QUERY-TRACE]" in caplog.text
-    assert "ielts" not in caplog.text and "30000" not in caplog.text
+    assert e.value.status_code == 400 and e.value.detail["code"] == "USE_STREAM_ENDPOINT"
+    assert "ielts" not in caplog.text and "30000" not in caplog.text and "[QUERY-TRACE]" not in caplog.text
 
 
 @pytest.mark.asyncio

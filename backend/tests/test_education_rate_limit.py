@@ -183,9 +183,9 @@ async def test_history_is_limited_more_loosely():
     assert codes[:HISTORY_LIMIT] == [200] * HISTORY_LIMIT and codes[-1] == 429
 
 
-# --- the non-streaming route (POST /query) reaches the same AI cost, so it shares the same limit -------------------
+# --- the non-streaming route (POST /query) is not for education: it is refused before any AI call or QueryLog write -----
 
-async def _send_plain(service, ip="203.0.113.9", website_type="education", session="s1"):
+async def _send_plain(service, ip="203.0.113.9", website_type="education", session="s1", db=None):
     from app.api.query import submit_query
     customer = _customer(website_type)
     request = AsyncMock()
@@ -193,36 +193,49 @@ async def _send_plain(service, ip="203.0.113.9", website_type="education", sessi
     service._get_customer = AsyncMock(return_value=customer)
     service._get_widget_config = AsyncMock(return_value=WidgetConfig(customer_id=customer.id, brand_name="Edu"))
     with patch("app.api.query.get_query_service", return_value=service):
-        return await submit_query(request, QueryRequest(site_id=SITE, question="tell me about fees", session_id=session), db=AsyncMock())
+        return await submit_query(request, QueryRequest(site_id=SITE, question="tell me about fees", session_id=session),
+                                  db=db if db is not None else AsyncMock())
 
 
 def _service():
     service = MagicMock()
     service.process_query = AsyncMock(return_value={"answer": "ok", "suggestions": [], "sources": [], "session_id": "s1"})
+    service._log_query = AsyncMock()
     return service
 
 
 @pytest.mark.asyncio
-async def test_plain_query_route_is_refused_after_the_limit_and_never_reaches_the_ai():
-    service = _service()
-    for _ in range(CHAT_LIMIT):
-        await _send_plain(service)
+async def test_plain_query_route_refuses_education_with_use_stream_endpoint():
+    service, db = _service(), AsyncMock()
     with pytest.raises(HTTPException) as e:
-        await _send_plain(service)
-    assert e.value.status_code == 429 and e.value.detail["code"] == "RATE_LIMITED"
-    assert int(e.value.headers["Retry-After"]) >= 1
-    assert service.process_query.await_count == CHAT_LIMIT
+        await _send_plain(service, db=db)
+    assert e.value.status_code == 400 and e.value.detail["code"] == "USE_STREAM_ENDPOINT"
+    assert "/query/stream" in e.value.detail["message"]
 
 
 @pytest.mark.asyncio
-async def test_plain_and_stream_routes_share_one_count():
+async def test_plain_query_route_refuses_education_before_any_ai_call_or_query_log_write():
+    service, db = _service(), AsyncMock()
+    with pytest.raises(HTTPException):
+        await _send_plain(service, db=db)
+    service.process_query.assert_not_awaited()      # no embedding / OpenAI
+    service._log_query.assert_not_awaited()         # the question text is never stored in query_logs
+    db.add.assert_not_called()
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_refused_plain_request_does_not_use_up_the_stream_allowance():
     service, agent = _service(), _agent()
-    for _ in range(CHAT_LIMIT - 1):
-        await _send_plain(service)
-    await _send(agent)                                    # the stream route is the 20th
+    for _ in range(CHAT_LIMIT + 5):
+        with pytest.raises(HTTPException) as e:
+            await _send_plain(service)
+        assert e.value.status_code == 400
+    for _ in range(CHAT_LIMIT):                     # the stream route keeps its full, unchanged allowance
+        await _send(agent)
     with pytest.raises(HTTPException) as e:
-        await _send_plain(service)                        # so the next plain request is the 21st
-    assert e.value.status_code == 429
+        await _send(agent)
+    assert e.value.status_code == 429 and agent.calls == CHAT_LIMIT
 
 
 @pytest.mark.asyncio

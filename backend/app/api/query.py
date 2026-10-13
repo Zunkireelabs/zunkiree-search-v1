@@ -281,8 +281,12 @@ async def submit_query(
         )
 
     if customer.website_type == "education":
-        # Same count as /query/stream: an education site answered here still costs AI calls.
-        enforce_rate_limit(request, query.site_id, "chat", CHAT_LIMIT)
+        # Education is served by the counselor agent on /query/stream. This generic search path would answer without the
+        # agent's grounding and memory, call the AI unmetered, and store the student's question in query_logs.
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "USE_STREAM_ENDPOINT", "message": "Education sites must use POST /api/v1/query/stream"},
+        )
 
     brand_name = config.brand_name if config else customer.name
     logger.warning("[QUERY-TRACE] site_id=%s question=%s origin=%s", query.site_id,
