@@ -128,9 +128,14 @@ async def get_widget_history(
     if customer.website_type != "education":
         return {"messages": []}
 
-    from app.services.education_memory import DbEducationMemory
+    from app.services.education_memory import DbEducationMemory, is_valid_session_id
     from app.services.education_profile import progress
 
+    if not is_valid_session_id(session_id):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_SESSION_ID", "message": "A non-empty session_id (max 100 characters) is required"},
+        )
     memory = DbEducationMemory(db)
     return {
         "messages": await memory.list_messages(customer.id, session_id),

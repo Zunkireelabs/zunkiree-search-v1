@@ -565,6 +565,14 @@ async def submit_query_stream(
 
     brand_name = config.brand_name if config else customer.name
 
+    if customer.website_type == "education":
+        from app.services.education_memory import is_valid_session_id
+        if not is_valid_session_id(query.session_id):
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "INVALID_SESSION_ID", "message": "A non-empty session_id (max 100 characters) is required"},
+            )
+
     # Handle greeting — return immediately (no streaming needed). Clinic
     # tenants skip this and go to the clinic agent instead (SBAL-Z4: that's
     # the only place assistant_name self-introduction lives).

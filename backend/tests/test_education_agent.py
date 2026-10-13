@@ -213,7 +213,9 @@ async def test_memory_survives_across_turns_and_agent_instances():
 
 
 @pytest.mark.asyncio
-async def test_contact_submit_links_profile_from_another_device():
+async def test_contact_submit_does_not_link_profile_from_another_device():
+    # Product decision 2026-10-13: an unverified email must not pull in another session's profile (privacy). See
+    # tests/test_education_email_merge.py for the same rule with production flags.
     agent = make_agent([[_chunk("Thanks, noted.")]])
     agent.memory.profiles[("c", "old-device")] = {
         "countries": ["au"], "budget": 30000, "contact": {"email": "ram@x.com"}, "shown": {}}
@@ -224,8 +226,9 @@ async def test_contact_submit_links_profile_from_another_device():
         customer_id="c", customer=None, config=None, brand_name="Admizz", block_action=submit,
     ):
         pass
-    merged = agent.memory.profiles[("c", "new-device")]
-    assert merged["countries"] == ["au"] and merged["budget"] == 30000   # remembered across devices via email
+    new = agent.memory.profiles[("c", "new-device")]
+    assert not new.get("countries") and not new.get("budget")              # nothing pulled in from the other session
+    assert new["contact"]["email"] == "Ram@X.com"                           # the student's own details are still saved
 
 
 # ---- welcome, journeys, knowledge-base components ----

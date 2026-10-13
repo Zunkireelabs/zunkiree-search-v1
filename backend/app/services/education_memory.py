@@ -18,6 +18,16 @@ from app.models.education_memory import VisitorProfile, WidgetMessage
 from app.schemas.ui_blocks import upgrade_stored_block
 from app.services.education_profile import new_profile
 
+# visitor_profiles.session_id and widget_messages.session_id are VARCHAR(100) (migration 042).
+SESSION_ID_MAX_LEN = 100
+
+
+def is_valid_session_id(session_id) -> bool:
+    """Every row here is keyed by (tenant, session_id), so a blank id would put every visitor without one in a single
+    shared profile. Not forced to be a UUID: the widget sends crypto.randomUUID(), other callers may not."""
+    return isinstance(session_id, str) and bool(session_id.strip()) and len(session_id) <= SESSION_ID_MAX_LEN
+
+
 HISTORY_FOR_LLM = 10
 HISTORY_FOR_WIDGET = 50
 BLOCK_LOOKUP_WINDOW = HISTORY_FOR_WIDGET   # a tap can only come from a block the widget can show

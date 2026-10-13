@@ -34,7 +34,7 @@ from app.services.education_kb_blocks import PENDING_LABELS, SHAPE_TO_BLOCK, cla
 from app.services.education_leadins import KB_FOUND, KB_MISS, NEEDS_DETAILS, leadin_for
 from app.services.education_memory import DbEducationMemory
 from app.services.education_profile import (
-    FIELD_LABELS, apply_block_action, display_value, merge_profiles, missing_slots, progress, set_field,
+    FIELD_LABELS, apply_block_action, display_value, missing_slots, progress, set_field,
 )
 from app.services.education_tools import EDUCATION_TOOLS, ToolOutcome, execute_education_tool, tool_for_intent
 from app.services.education_ui_registry import TOOL_TO_INTENT, country_goal, detect_intent, journey_intent
@@ -214,12 +214,9 @@ class EducationAgentService:
                 block_action = None  # degrade to the typed text; nothing from the tap is applied
 
         changed = apply_block_action(profile, block_action)
-        if "contact" in changed:
-            # Same student on another device: pull in what we already learned about this email.
-            other = await memory.find_profile_by_email(customer_id, profile["contact"].get("email", ""), session_id) \
-                if profile["contact"].get("email") else None
-            if other:
-                merge_profiles(profile, other)
+        # No cross-device merge on a submitted email: a typed email is not proof of identity, and merging let anyone who
+        # typed a student's email see that student's profile. `find_profile_by_email` + `merge_profiles` stay for a merge
+        # done after the email is verified.
         if changed:
             await memory.save_profile(customer_id, session_id, profile)  # a tap survives even if the stream is dropped
         if block_action and block_action.get("blockId") and block_action.get("actionId") in _ANSWER_ACTIONS:
