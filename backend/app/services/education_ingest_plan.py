@@ -107,6 +107,11 @@ def _estimate(chunks: int, tokens: int, price_per_million: float, batch_size: in
                      f"{batch_size} chunks; check current pricing. Tokens and calls come from the chunk manifest.")}
 
 
+def estimate_totals(chunks: int, tokens: int, *, price_per_million: float = EMBEDDING_PRICE_PER_MILLION, batch_size: int = EMBEDDING_BATCH_SIZE) -> dict:
+    """The same estimate from totals (what a manifest records per page)."""
+    return _estimate(chunks, tokens, price_per_million, batch_size)
+
+
 def estimate_embeddings(chunk_tokens: list[int], *, price_per_million: float = EMBEDDING_PRICE_PER_MILLION,
                         batch_size: int = EMBEDDING_BATCH_SIZE) -> dict:
     return _estimate(len(chunk_tokens), sum(chunk_tokens), price_per_million, batch_size)

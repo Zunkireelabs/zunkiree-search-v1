@@ -163,7 +163,7 @@ def test_neither_module_imports_a_factory_a_session_maker_or_a_real_client():
         assert not [m for m in modules if m.startswith(("app.database", "openai", "pinecone"))], (module.__name__, modules)
 
 
-def test_the_adapter_is_not_wired_to_any_command_or_route():
+def test_the_adapter_is_wired_only_to_the_one_gated_pilot_command_and_to_no_route():
     root = Path(__file__).resolve().parent.parent
     importers = []
     for path in list((root / "app").rglob("*.py")) + list((root / "scripts").rglob("*.py")):
@@ -172,8 +172,8 @@ def test_the_adapter_is_not_wired_to_any_command_or_route():
         for node in ast.walk(ast.parse(path.read_text())):
             mods = [node.module] if isinstance(node, ast.ImportFrom) and node.module else [a.name for a in node.names] if isinstance(node, ast.Import) else []
             if any("education_prepared_store" in (m or "") for m in mods):
-                importers.append(path.name)
-    assert importers == []
+                importers.append(str(path.relative_to(root)))
+    assert importers == ["scripts/ingest_education_pilot.py"]      # the one gated command (plan / preflight / execute); nothing under app/
 
 
 def test_a_network_attempt_would_fail_this_suite():

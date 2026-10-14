@@ -434,7 +434,17 @@ Nothing below was executed against a real database, Pinecone, an embedding servi
 
 **Add, verify, retire.** (1) Dry run and preflight. (2) Add and verify the new pages. (3) Retrieval checks confirm each replacement is found and useful (the check is a hook the real task supplies; here it is tested with fakes only). (4) Only then, for the exact old job ids named in the approval, delete the job's vectors, then its job row. `retire_confirmed_jobs` refuses unless the executed run was `all_verified`, every confirmed id is a retirement candidate whose replacement page is verified, and the retrieval check passes; it never touches any other job and the adapter has no namespace-wide delete. The four old guide jobs (UK, USA, Australia, Canada, by title only) can be retired only after those four guides, which are in review, have been reviewed, ingested and verified. Temporary duplicate-retrieval risk: between steps 2 and 4 an old thin chunk and its replacement can both be retrieved for the same question. It is kept short by retiring right after verification, and watched with the retrieval checks plus the existing admin retrieval statistics endpoint and a few spot-check questions per country.
 
-**Still limited.** The catalog is still a placeholder and website text is unreviewed, however it is classed. Vector verification reads Pinecone right after the write; if Pinecone is briefly behind, a good page can be reported failed, cleaned and retried (safe, but wasteful). `existing_ids` and `SqlPineconeStore` are tested against fakes, not against live services. The real retrieval check is not implemented. The extractor drops accordion titles outside headings. Everything in this section needs a separate explicit approval before any real run.
+**Still limited.** The catalog is still a placeholder and website text is unreviewed, however it is classed. Vector verification reads Pinecone right after the write; if Pinecone is briefly behind, a good page can be reported failed, cleaned and retried (safe, but wasteful). `existing_ids` and `SqlPineconeStore` are tested against fakes, not against live services. The retrieval check is implemented (`education_retrieval_check.py`, probe questions in `admizz-test.probes.json`) but has not been run against live services. The extractor drops accordion titles outside headings. Everything in this section needs a separate explicit approval before any real run.
+
+### Pilot ingestion command, retrieval check and rollback (built, NOT run; 2026-10-14)
+
+`scripts/ingest_education_pilot.py` has four modes: `plan` (no website, database or index), `preflight` (reads the store, writes nothing), `execute` and `rollback`. It
+targets only `admizz-test`, works on the pages that are `ready` and `source_backed` in a fresh manifest (9 pages, about 23 chunks, about 8,400 tokens, roughly $0.001), and
+`execute` needs an approval file tied to the manifest hash, the tenant and the exact page ids. It fetches politely (robots.txt, 1 request/second, bounded), writes each page
+through the existing chunk pipeline, verifies both stores, then runs the retrieval check: every probe question (questions only) must find the page's own url in the top 3
+results. It never retires or deletes anything; `rollback` removes only the jobs a run added, named one by one in an approval, vectors first. Real services are built in one
+function after every refusal check. Everything is tested against fakes; the full procedure is in `docs/generative-ui/ADMIZZ-INGESTION-RUNBOOK.md`. A real run still needs
+a person's explicit approval, a fresh manifest, a preflight read of the real store, and a person reading the answers afterwards.
 
 ## Not verified in this assessment
 - The full backend test suite, the widget `tsc` and the widget tests.
