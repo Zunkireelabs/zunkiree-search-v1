@@ -18,6 +18,8 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from app.services.education_understanding import LINK_CATEGORY
+
 logger = logging.getLogger("zunkiree.education_sources")
 
 SOURCES_DIR = Path(__file__).resolve().parent.parent / "data" / "education_sources"
@@ -319,11 +321,14 @@ def suggest_link(site_id: str, *, country: str | None, category: str | None, que
     return None
 
 
-def _context_country(catalog, profile: dict, intent_args: dict, question: str) -> str | None:
-    """The country the reply is about: named by the card, else in the question, else the one the student is looking at."""
+def _context_country(catalog, profile: dict, intent_args: dict, question: str, ai_country: str | None = None) -> str | None:
+    """The country the reply is about: named by the card, else understood by the AI (already checked against the catalog), else in the
+    question, else the one the student is looking at."""
     named = str(intent_args.get("country") or "")
     if named and catalog.get(named):
         return named
+    if ai_country and catalog.get(ai_country):
+        return ai_country
     for text in (named, question):
         if text and (found := catalog.find_in_text(text)):
             return found[0]
@@ -334,14 +339,15 @@ def _context_country(catalog, profile: dict, intent_args: dict, question: str) -
 
 
 def link_for_turn(site_id: str, catalog, profile: dict, *, question: str, intent: str | None, intent_args: dict | None,
-                  kb_chunks: list[dict], kb_miss: bool) -> tuple[str, str] | None:
+                  kb_chunks: list[dict], kb_miss: bool, understanding=None, min_confidence: float = 0.7) -> tuple[str, str] | None:
     """The one link (if any) to add to this reply. `intent` is the card shown (by a rule or by the AI's tool), if any.
 
     A card gets a link only when it is about a country's information or cost; a question gets one only when it is about a
     topic we have pages for. A selected country on its own never adds a link."""
     shown = set(profile.get("links_shown") or [])
-    country = _context_country(catalog, profile, intent_args or {}, question)
-    asked = category_for_question(question)
+    sure = understanding is not None and understanding.confidence >= min_confidence     # the AI read the message and is confident
+    country = _context_country(catalog, profile, intent_args or {}, question, ai_country=understanding.country if sure else None)
+    asked = (LINK_CATEGORY.get(understanding.topic) if sure else None) or category_for_question(question)
     if intent:
         category = category_for_intent(intent)
         if not category:

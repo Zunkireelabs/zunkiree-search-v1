@@ -35,6 +35,7 @@ from app.services.education_leadins import KB_FOUND, KB_MISS, NEEDS_DETAILS, lea
 from app.services.education_memory import DbEducationMemory
 from app.services.education_scores import extract_scores
 from app.services.education_sources import link_for_turn
+from app.services.education_understanding import decide as decide_understanding, understand
 from app.services.education_profile import (
     FIELD_LABELS, apply_block_action, apply_updates, display_value, missing_slots, progress, set_field,
 )
@@ -215,8 +216,19 @@ class EducationAgentService:
                                reason, str(block_action.get("blockId"))[:40], str(block_action.get("actionId"))[:20])
                 block_action = None  # degrade to the typed text; nothing from the tap is applied
 
+        # What a typed message MEANS, read by one small constrained AI call (a flag; see education_understanding.py). The AI only picks
+        # from fixed lists and the code validates it; below the confidence floor, on a failure or a timeout this is None or ignored and
+        # the keyword rules decide exactly as before. A tap is already a closed id, so it never asks.
+        followup = resolve_country_switch(question, profile, catalog) if block_action is None else None   # "what about Canada?": decided by the card on screen, no AI needed
+        understanding, min_confidence = None, settings.education_understanding_min_confidence
+        if block_action is None and followup is None and settings.education_ai_understanding:
+            understanding = await understand(self.client, self.model, question, catalog=catalog, profile=profile)
+        ai_choice = decide_understanding(understanding, min_confidence)
+
         changed = apply_block_action(profile, block_action)
         if block_action is None:
+            if understanding is not None and understanding.confidence >= min_confidence:
+                changed += apply_updates(profile, understanding.score_updates())   # own, range-checked scores in any language; the rules below win a tie
             # Scores the student states in their own words are saved here, with their unit, before any card is chosen: the AI
             # sometimes asks "check eligibility" before it saves what was just said, and drops the word "gpa" when it does.
             changed += apply_updates(profile, extract_scores(question))
@@ -235,13 +247,19 @@ class EducationAgentService:
         # A short follow-up on the card on screen is resolved in code and re-runs the SAME intent, so the student gets
         # the same UI with new data: an explicit "what about Canada?" first (the keyword rules would read it as plain
         # facts), then a refinement such as "only under $30k" once the keyword rules have declined the message.
-        followup = resolve_country_switch(question, profile, catalog) if block_action is None else None
-        intent = (followup.intent, followup.args) if followup else _turn_intent(question, block_action, catalog, profile)
-        if intent is None and block_action is None:
+        if followup:
+            intent = (followup.intent, followup.args)
+        elif ai_choice and ai_choice[0] == "card":
+            intent = ai_choice[1]             # a card the AI understood the student wants, for a country that exists in the catalog
+        elif ai_choice:
+            intent = None                     # a knowledge-base question (visa, process...): the keyword rules must not turn it into a card
+        else:
+            intent = _turn_intent(question, block_action, catalog, profile)
+        if intent is None and block_action is None and not ai_choice:
             followup = resolve_refinement(question, profile, catalog)
             if followup:
                 intent = (followup.intent, followup.args)
-        source = "followup" if followup else "rule"
+        source = "followup" if followup else "ai" if (ai_choice and ai_choice[0] == "card") else "rule"
         if followup:
             for field_name, value in followup.updates.items():
                 set_field(profile, field_name, value)
@@ -473,7 +491,7 @@ class EducationAgentService:
         # the country in context. Added after the grounding check, streamed and saved so a reload shows it too.
         card_intent, card_args = intent if intent else (tool_card or (None, {}))
         if link := link_for_turn(site_id, catalog, profile, question=question, intent=card_intent, intent_args=card_args,
-                                 kb_chunks=chunks, kb_miss=kb_miss):
+                                 kb_chunks=chunks, kb_miss=kb_miss, understanding=understanding, min_confidence=min_confidence):
             line, url = link
             profile.setdefault("links_shown", []).append(url)
             suffix = ("\n\n" if full_answer else "") + line
