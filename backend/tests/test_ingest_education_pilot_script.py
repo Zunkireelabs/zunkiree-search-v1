@@ -435,3 +435,46 @@ def test_rollback_opens_the_store_with_writes_and_only_for_admizz_test(world, tm
     fresh = world.factory(store=factory.store)
     assert _rollback(world, report, _rollback_approval(tmp_path, doc, [doc["ingestion"]["pages"][0]["job_id"]]), fresh) == 0
     assert fresh.built == [("admizz-test", True)]
+
+
+# --- dated pages: only by name, only with the flag, never when stale ---------------------------------------------------------------------------------
+
+def _make_dated(world, pid, published="2026-10-05"):
+    for page in world.manifest["pages"]:
+        if page["id"] == pid:
+            page["content_class"] = "dated"
+            page["registry_freshness"] = {**page.get("registry_freshness", {}), "published": published, "checked": None}
+    world.manifest_path.write_text(json.dumps(world.manifest))
+    world.write_approval()
+
+
+def test_a_dated_page_is_not_in_the_pilot_by_default(world, capsys):
+    _make_dated(world, "english")
+    assert world.run("plan") == 0
+    assert "english" not in capsys.readouterr().out.split("pilot pages")[1].split("approval")[0]
+
+
+def test_include_dated_needs_each_page_named(world, capsys):
+    _make_dated(world, "english")
+    assert world.run("plan", "--include-dated") == 0
+    assert "needs each dated page named" in capsys.readouterr().out
+
+
+def test_include_dated_with_only_adds_that_page_and_marks_it_unverified(world, capsys):
+    _make_dated(world, "english")
+    assert world.run("plan", "--include-dated", "--only", "english", "--only", "fee") == 0
+    out = capsys.readouterr().out
+    assert "english" in out and "fee" in out and "NO official source" in out
+
+
+def test_a_dated_page_published_over_a_year_ago_is_refused(world, capsys):
+    _make_dated(world, "english", published="2024-01-01")
+    assert world.run("plan", "--include-dated", "--only", "english") == 0
+    assert "published over a year ago" in capsys.readouterr().out
+
+
+def test_dated_pages_still_need_an_approval_and_do_not_build_services_without_it(world, capsys):
+    _make_dated(world, "english")
+    factory = world.factory()
+    assert world.run("execute", "--include-dated", "--only", "english", factory=factory, approve=False) == 1
+    assert factory.built == [] and world.fetcher.calls == []

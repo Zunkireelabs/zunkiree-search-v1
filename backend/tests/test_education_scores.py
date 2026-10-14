@@ -27,6 +27,13 @@ from tests.test_education_agent import _catalog, _chunk, make_agent, run  # noqa
     ("I scored 65% in my bachelor", {"academic_score": 65}),
     ("my ielts is 6.5 and my gpa is 3.5",
      {"english_test": "IELTS", "english_score": 6.5, "academic_gpa": 3.5, "academic_gpa_scale": 4}),
+    # a question and the student's own score in ONE message (seen live): the score is saved, the question is not mistaken for it
+    ("which is the best country for me i have 7 ielts score and 3.64 gpa",
+     {"english_test": "IELTS", "english_score": 7, "academic_gpa": 3.64, "academic_gpa_scale": 4}),
+    ("what will be the best place for me i have 7 ielts score", {"english_test": "IELTS", "english_score": 7}),
+    ("which country is best? I have 6.5 ielts", {"english_test": "IELTS", "english_score": 6.5}),
+    ("what ielts do i need if i have 3.2 gpa", {"academic_gpa": 3.2, "academic_gpa_scale": 4}),
+    ("i have 7 ielts, do i need more for the uk", {"english_test": "IELTS", "english_score": 7}),
 ])
 def test_scores_are_read_with_their_unit(text, expected):
     assert extract_scores(text) == expected
@@ -44,6 +51,8 @@ def test_scores_are_read_with_their_unit(text, expected):
     "my ielts is 15",                          # not a possible IELTS score
     "my gpa is 12",                            # more than any scale
     "I want to start in 2026",
+    "which country is best, uk requires ielts 6.5",           # a requirement beside a question: still nobody's score
+    "what ielts do i need? my friend has ielts 7",             # somebody else's score
 ])
 def test_nothing_is_read_from_questions_requirements_or_impossible_values(text):
     assert extract_scores(text) == {}

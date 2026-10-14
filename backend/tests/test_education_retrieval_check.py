@@ -35,10 +35,12 @@ def _retriever(table):
 
 # --- loading the probe questions -----------------------------------------------------------------------------------------------------------------
 
-def test_the_shipped_probes_cover_every_source_backed_pilot_page_with_questions_only():
+def test_the_shipped_probes_cover_every_pilot_page_with_questions_only():
     probes = load_probes(SOURCES_DIR / "admizz-test.probes.json")
     assert set(probes) == {"uk-visa-fee", "uk-visa-bank-balance", "uk-visa-english", "uk-visa-processing", "uk-tb-test",
-                           "us-visa-interview", "au-cost", "ca-visa-pal", "ca-cost"}
+                           "us-visa-interview", "au-cost", "ca-visa-pal", "ca-cost",
+                           "uk-cost", "uk-scholarships", "uk-gpa", "uk-intakes", "ca-permit-cap", "de-blocked-account", "de-cost",
+                           "de-blocked-account-guide", "ielts-vs-pte", "scholarships-top-15", "visa-documents"}
     assert all(2 <= len(qs) <= 5 for qs in probes.values())
     assert all(q.strip() and len(q) <= 200 for qs in probes.values() for q in qs)
     # questions, not statements of fact: no figure or currency is baked into a probe
@@ -52,7 +54,7 @@ def test_the_probes_cover_the_pilot_pages_of_the_real_manifest():
     manifest = load_manifest(SOURCES_DIR / "admizz-test.manifest.json")
     classes = {p["id"]: p["content_class"] for p in manifest["pages"]}
     pilot = {d.page_id for d in dispositions_for(manifest, today=date(2026, 10, 14)) if d.status == READY and classes[d.page_id] == "source_backed"}
-    assert pilot == set(load_probes(SOURCES_DIR / "admizz-test.probes.json"))
+    assert pilot <= set(load_probes(SOURCES_DIR / "admizz-test.probes.json"))        # every source-backed page has probes (dated ones may too)
 
 
 @pytest.mark.parametrize("doc", ["not json", "[]", {"probes": "x"}, {"probes": {"a": "question"}}, {"probes": {"a": []}},

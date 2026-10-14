@@ -111,10 +111,26 @@ def fetch_html(url: str, fetcher, pacer, robots) -> tuple[str | None, str | None
 
 # --- the pilot ------------------------------------------------------------------------------------------------------------------------------------
 
-def select_pilot(manifest: dict, dispositions: list, only: list[str]) -> tuple[list[str], list[str]]:
-    """(ids, problems): the pages that are ready AND source-backed, optionally narrowed with --only; a page outside that set is refused."""
+STALE_NOTE = "published_over_a_year_ago_check_freshness"
+
+
+def select_pilot(manifest: dict, dispositions: list, only: list[str], include_dated: bool = False) -> tuple[list[str], list[str]]:
+    """(ids, problems): the pages that are ready AND source-backed, optionally narrowed with --only; a page outside that set is refused.
+
+    With include_dated, `dated` pages (ready, but no official source and no "checked" statement) may be added, and ONLY by naming each one with --only:
+    they are never picked up by default. A dated page published over a year ago is refused until someone confirms it is current."""
     classes = {p["id"]: p.get("content_class") for p in manifest["pages"]}
+    notes = {d.page_id: d.notes for d in dispositions}
     pilot = [d.page_id for d in dispositions if d.status == READY and classes.get(d.page_id) == "source_backed"]
+    if include_dated:
+        if not only:
+            return [], ["--include-dated needs each dated page named with --only (dated pages are never selected by default)"]
+        dated = [d.page_id for d in dispositions if d.status == READY and classes.get(d.page_id) == "dated"]
+        problems = [f"{i}: published over a year ago; have Admizz confirm it is current before it is ingested" for i in only
+                    if i in dated and STALE_NOTE in notes.get(i, ())]
+        pilot += [i for i in dated if i in only and STALE_NOTE not in notes.get(i, ())]
+        problems += [f"{i}: not a pilot page (it must be ready and source-backed or dated in the manifest)" for i in only if i not in pilot and i not in dated]
+        return [i for i in pilot if i in only], problems
     if not only:
         return pilot, ([] if pilot else ["the manifest has no ready, source-backed page"])
     problems = [f"{i}: not a pilot page (it must be ready and source-backed in the manifest)" for i in only if i not in pilot]
@@ -135,9 +151,10 @@ def load_approval(path: Path) -> ExecutionApproval:
 
 
 def print_plan(manifest: dict, entries: list[dict], probes: dict, problems: list[str], missing_hashes: list[str]) -> None:
-    out(f"pilot pages ({len(entries)}): ready and source-backed, in ingestion order")
+    out(f"pilot pages ({len(entries)}): ready and source-backed, in ingestion order" if all(e.get("content_class") == "source_backed" for e in entries)
+        else f"pilot pages ({len(entries)}): ready, in ingestion order; marked * have NO official source (dated, unverified)")
     for e in entries:
-        out(f"  {e['id']:<22} {e['chunks']:>3} chunks {e['tokens']:>6} tokens  {e['canonical_url']}")
+        out(f"  {e['id']:<22}{'*' if e.get('content_class') != 'source_backed' else ' '}{e['chunks']:>3} chunks {e['tokens']:>6} tokens  {e['canonical_url']}")
     est = estimate_totals(sum(e["chunks"] for e in entries), sum(e["tokens"] for e in entries))
     out(f"estimated embedding volume: {est['chunks']} chunks, {est['tokens']} tokens, {est['api_calls']} call(s), about ${est['usd']:.4f}")
     out(f"  {est['note']}")
@@ -236,7 +253,7 @@ async def run(args, *, fetcher, real_factory, clock, sleep, today: date) -> int:
         out(f"refused: {e}")
         return 1
     dispositions = dispositions_for(manifest, today=today)
-    ids, problems = select_pilot(manifest, dispositions, args.only)
+    ids, problems = select_pilot(manifest, dispositions, args.only, args.include_dated)
     entries = {p["id"]: p for p in manifest["pages"]}
     chosen = [entries[i] for i in ids]
     missing_hashes = [e["id"] for e in chosen if not e.get("content_sha256")]
@@ -338,6 +355,7 @@ def main(argv: list[str] | None = None, *, fetcher=None, real_factory=None, cloc
     parser.add_argument("--probes", type=Path, help="probe questions (default: app/data/education_sources/<site>.probes.json)")
     parser.add_argument("--site", default="admizz-test", help="only admizz-test is allowed")
     parser.add_argument("--only", action="append", default=[], help="narrow the pilot to this page id (repeatable)")
+    parser.add_argument("--include-dated", action="store_true", help="also allow DATED pages (no official source), each named with --only; they stay unverified")
     parser.add_argument("--approval-file", type=Path, help="execute only: the approval JSON")
     parser.add_argument("--resume", action="store_true", help="execute only: clean and rewrite a page a crashed run left half-written")
     parser.add_argument("--max-tokens", type=int, default=DEFAULT_MAX_TOKENS, help="refuse a plan larger than this many embedding tokens")
