@@ -164,7 +164,7 @@ def _show_choice(args: dict, profile: dict, catalog: Catalog) -> ToolOutcome:
         current = (profile.get("countries") or []) if kind == "countries" else (
             [profile["focus_country"]] if profile.get("focus_country") else [])
     elif kind == "study_level":
-        options = [{"id": i, "label": l} for i, l in STUDY_LEVELS]
+        options = [{"id": i, "label": label} for i, label in STUDY_LEVELS]
         current = [profile["study_level"]] if profile.get("study_level") else []
     else:
         seen: list[str] = []
@@ -273,7 +273,7 @@ def _facts_rows(c: CountryRecord, cur: str) -> list[dict]:
         ("Post-study visa", c.post_study_visa),
         ("Proof of funds", c.funds_required),
     ]
-    return [{"label": l, "value": v} for l, v in rows if v]
+    return [{"label": label, "value": v} for label, v in rows if v]
 
 
 def _show_country_facts(args: dict, profile: dict, catalog: Catalog) -> ToolOutcome:
