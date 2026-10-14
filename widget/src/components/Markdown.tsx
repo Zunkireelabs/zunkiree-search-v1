@@ -12,8 +12,12 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;')
 }
 
-function renderInline(text: string): string {
-  let result = escapeHtml(text)
+const LINK = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g
+const EMAIL = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g
+
+// Bold, italic and inline code on text that is already escaped.
+function formatInline(escaped: string): string {
+  let result = escaped
   // Bold: **text** or __text__
   result = result.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
   result = result.replace(/__(.+?)__/g, '<strong>$1</strong>')
@@ -22,17 +26,21 @@ function renderInline(text: string): string {
   result = result.replace(/(?<!\w)_(.+?)_(?!\w)/g, '<em>$1</em>')
   // Inline code: `text`
   result = result.replace(/`(.+?)`/g, '<code class="zk-inline-code">$1</code>')
-  // Links: [text](url)
-  result = result.replace(
-    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
-  )
-  // Auto-link emails
-  result = result.replace(
-    /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g,
-    '<a href="mailto:$1">$1</a>'
-  )
   return result
+}
+
+function renderInline(text: string): string {
+  // Links are set aside first (as placeholders) so formatting and email auto-linking can never reach inside an href or
+  // nest a link inside a link. The placeholder character is stripped from the input so text cannot forge one.
+  const anchors: string[] = []
+  let result = escapeHtml(text.replace(/\u0000/g, '')).replace(LINK, (_m, label: string, url: string) => {
+    anchors.push(`<a href="${url}" target="_blank" rel="noopener noreferrer">${formatInline(label)}</a>`)
+    return `\u0000${anchors.length - 1}\u0000`
+  })
+  result = formatInline(result)
+  // Auto-link emails
+  result = result.replace(EMAIL, '<a href="mailto:$1">$1</a>')
+  return result.replace(/\u0000(\d+)\u0000/g, (_m, i: string) => anchors[Number(i)])
 }
 
 function parseTable(lines: string[], startIdx: number): { html: string; endIdx: number } {

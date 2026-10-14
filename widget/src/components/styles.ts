@@ -1,3 +1,5 @@
+import { blockStyles } from './blocks/blockStyles'
+
 export const styles = (primaryColor: string) => `
   /* ===== Zunkiree brand orb =====
      Green gradient sphere with a fine noise grain. Shared by the launcher
@@ -2484,4 +2486,6 @@ export const styles = (primaryColor: string) => `
       animation: none;
     }
   }
+
+  ${blockStyles(primaryColor)}
 `

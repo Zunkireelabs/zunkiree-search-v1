@@ -49,10 +49,9 @@ Origin: https://customer-domain.com
 
 | Status | Description |
 |--------|-------------|
-| 400 | Invalid request (missing fields, question too long) |
+| 400 | Invalid request (missing fields, question too long). Education sites get `USE_STREAM_ENDPOINT`: they must use `POST /query/stream` |
 | 401 | Invalid site_id |
 | 403 | Origin domain not allowed |
-| 429 | Rate limit exceeded |
 | 500 | Internal server error |
 
 **Error Response Format:**
@@ -281,11 +280,21 @@ GET /health
 
 ## Rate Limits
 
-| Endpoint | Limit |
-|----------|-------|
-| POST /query | 60 requests/minute per site |
-| GET /widget/config | 100 requests/minute per site |
-| Admin endpoints | 100 requests/minute total |
+Only the **education** endpoints are rate limited by the application. No other endpoint has an application-level limit, including `POST /api/v1/query` for non-education sites, `GET /api/v1/widget/config/{site_id}` and the admin endpoints. No limit is configured for them by this repository.
+
+| Endpoint | Applies to | Limit |
+|----------|------------|-------|
+| `POST /api/v1/query/stream` | Education sites | 20 requests/minute per visitor |
+| `GET /api/v1/widget/history/{site_id}/{session_id}` | Education sites (other site types get an empty list, unlimited) | 60 requests/minute per visitor |
+| `POST /api/v1/query` | Education sites get `400 USE_STREAM_ENDPOINT` (use `/query/stream`). Other site types: no limit. | None |
+
+**How a visitor is identified.** The counter key is the counter name (`chat` for `/query/stream`, `history` for the history endpoint), the `site_id`, and the visitor's network address: the last entry of the `X-Forwarded-For` header (the entry the proxy adds), or the connection address if the header is absent. The `session_id` is not part of the key, so a new session does not reset the count. Visitors behind one shared address (a school or office network) share a count.
+
+**Window.** A rolling 60-second window. Requests that are refused are not counted.
+
+**When the limit is exceeded** the API answers `429` with `Retry-After: <seconds>` and a body of `{"detail": {"code": "RATE_LIMITED", "message": "..."}}`. The refusal happens before any AI call.
+
+**Per-worker, in-memory limits.** The counters are kept in each server worker's memory. They are not shared between workers and are not a global or distributed quota. With the production setup of 2 workers a visitor can reach up to about twice the numbers above, and a restart resets the counters. Treat these limits as protection against runaway use, not as a billing or security guarantee. Whether the proxy reports the real visitor address is not yet verified (see the go-live checklist in `docs/generative-ui/ASSESSMENT.md`).
 
 ---
 

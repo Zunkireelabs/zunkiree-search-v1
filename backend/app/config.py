@@ -41,6 +41,24 @@ class Settings(BaseSettings):
     # the lane's 2-socket DB budget and CPU doing Stella work that belongs to
     # the main prod API container. One lane, one job. See P2 brief §4 B2.
     enable_inbound_dispatcher: bool = True
+    # Run Base.metadata.create_all() at startup. Default on = unchanged behavior. Stage and prod share one
+    # Supabase DB, so with this on a new model auto-creates its table there without migration review.
+    # Set AUTO_CREATE_TABLES=false once schema changes are migration-only.
+    auto_create_tables: bool = True
+    # Education agent: accept a tapped UI action only if it points at a block shown in this session and asks for
+    # something that block offered (see education_actions.py). A rejected tap is dropped and the turn continues as
+    # plain typed text. On by default; the switch exists for emergency rollback.
+    education_validate_block_actions: bool = True
+    # Education agent: show a result card together with its companions (profile summary, next-step buttons) as a fixed
+    # composition per intent (education_compositions.py). Off = the single card only. On by default.
+    education_compositions: bool = True
+    # Education agent: the one-line sentence that introduces a card is written by code from the card itself (English
+    # only; see education_leadins.py) instead of by the LLM, which sometimes contradicted the card. Off = LLM-written.
+    education_template_leadins: bool = True
+    # Education agent: check the plain text the LLM writes (English only) and drop sentences that make a risky claim nothing we
+    # hold backs, or that offer universities/programs we have no data for (see education_grounding.py). The reply is sent
+    # once checked instead of word by word. Off = streamed unchecked.
+    education_grounding_check: bool = True
     # P4 B2: background pre-warm of the clinic org cache + one OpenAI
     # warm-up call at container start (see clinic_prewarm.py). Additive,
     # config-level rollback (vision §8.12) — default on, off flips the lane

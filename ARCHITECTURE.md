@@ -158,6 +158,8 @@ Every layer enforces tenant boundaries:
 |--------|---------|---------|
 | `POST` | `/api/v1/query` | Submit question → get AI answer |
 
+Education sites (`website_type = education`) are served by the counselor agent on `POST /api/v1/query/stream` only; `POST /api/v1/query` returns `400 USE_STREAM_ENDPOINT` for them.
+
 ### Admin (Protected — `X-Admin-Key` header)
 | Method | Endpoint | Purpose |
 |--------|---------|---------|

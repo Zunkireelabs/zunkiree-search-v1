@@ -8,6 +8,8 @@ import { bootstrap, destroy, getDockPanel } from '../layout/LayoutManager'
 import { enterDock, exitDock, DOCK_MIN_WIDTH } from '../layout/DockStateManager'
 import { fetchStream, assertOkOrThrow, shouldRetryDirect } from '../lib/streamFallback'
 import { ServiceItem } from './ServiceCard'
+import type { UIBlock, BlockActionEvent } from './blocks/types'
+import type { ProfileProgressData } from './blocks/ProfileProgress'
 
 interface Product {
   id: string
@@ -74,6 +76,8 @@ export interface Message {
   paymentSelector?: { orderId: string; total: number; currency: string }
   toolStatus?: { name: string; status: 'running' | 'done' }
   imagePreview?: string
+  blocks?: UIBlock[]
+  pending?: { block_type: string; label: string }
   rooms?: any[]
   // SBAL-Z6: clinic agent's `ui.services`/`ui.service_detail` (see
   // ServiceCard.tsx for the shape) — only rendered when the tenant's
@@ -126,6 +130,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     return id
   })
   const [language, setLanguage] = useState('en')
+  const [profileProgress, setProfileProgress] = useState<ProfileProgressData | null>(null)
   const [dockPortalTarget, setDockPortalTarget] = useState<HTMLElement | null>(null)
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
   const [isOrderSubmitting, setIsOrderSubmitting] = useState(false)
@@ -159,6 +164,26 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       }))
   }, [apiUrl, siteId])
 
+  // Education tenants persist the conversation (and the UI blocks shown) server-side:
+  // restore it after a reload so the student sees exactly what they saw before.
+  useEffect(() => {
+    if (config?.website_type !== 'education') return
+    let cancelled = false
+    fetch(`${apiUrl}/api/v1/widget/history/${siteId}/${sessionId}`)
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        if (cancelled) return
+        if (data?.profile_progress) setProfileProgress(data.profile_progress)
+        if (!data?.messages?.length) return
+        setMessages(prev => prev.length ? prev : data.messages.map((m: any) => ({
+          id: m.id, role: m.role, content: m.content,
+          blocks: m.blocks?.length ? m.blocks : undefined,
+        })))
+      })
+      .catch(() => { /* history is a nicety; the chat works without it */ })
+    return () => { cancelled = true }
+  }, [config?.website_type, apiUrl, siteId])
+
   useLayoutEffect(() => {
     return () => { destroy() }
   }, [])
@@ -178,6 +203,9 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
   const pendingDisplayText = useRef<string | null>(null)
   // Pending image data for visual search
   const pendingImageData = useRef<string | null>(null)
+  // Structured tap on a generative-UI block — sent alongside the display text so the
+  // backend applies it to the student profile deterministically (no LLM parsing).
+  const pendingBlockAction = useRef<BlockActionEvent | null>(null)
 
   const handleSubmit = async (e: React.FormEvent, directMessage?: string) => {
     e.preventDefault()
@@ -189,6 +217,8 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     pendingDisplayText.current = null
     const imageData = pendingImageData.current
     pendingImageData.current = null
+    const blockAction = pendingBlockAction.current
+    pendingBlockAction.current = null
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -209,6 +239,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
       language: language !== 'en' ? language : undefined,
     }
     if (imageData) payload.image_data = imageData
+    if (blockAction) payload.block_action = blockAction
 
     // B2: chat turns go to config.chat_stream_url (Orca) when the tenant
     // has opted in, else the direct Zunkiree path — same SSE shape either
@@ -303,6 +334,18 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
               setMessages(prev =>
                 prev.map(m => m.id === assistantId ? { ...m, wishlistUpdate: event.data } : m)
               )
+            } else if (event.type === 'ui_pending') {
+              ensureMessage()
+              setMessages(prev =>
+                prev.map(m => m.id === assistantId ? { ...m, pending: { block_type: event.block_type, label: event.label } } : m)
+              )
+            } else if (event.type === 'ui_block') {
+              ensureMessage()
+              setMessages(prev =>
+                prev.map(m => m.id === assistantId
+                  ? { ...m, pending: undefined, blocks: [...(m.blocks || []), event.block] }
+                  : m)
+              )
             } else if (event.type === 'tool_call') {
               ensureMessage()
               setMessages(prev =>
@@ -316,6 +359,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
                     localStorage.setItem(`zk_session_${siteId}`, event.session_id)
                   }
               streamingRef.current = null
+              if (event.profile_progress) setProfileProgress(event.profile_progress)
               // SBAL-Z6: the backend always attaches ui.services/
               // ui.service_detail for a clinic tenant (SBAL-Z5, used by
               // IG) — the widget only renders cards from it when this
@@ -330,6 +374,7 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
                   content: event.answer,
                   suggestions: event.suggestions,
                   toolStatus: undefined,
+                  pending: undefined,
                   queryLogId: event.query_log_id,
                   services: ui?.services,
                   serviceDetail: ui?.service_detail,
@@ -483,6 +528,17 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     }
   }
 
+  const handleBlockAction = (event: BlockActionEvent) => {
+    // Collapse the card to its summary right away; the server records the same answer.
+    if (['select', 'set_value', 'start', 'submit'].includes(event.actionId)) {
+      setMessages(prev => prev.map(m => m.blocks?.some(b => b.block_id === event.blockId)
+        ? { ...m, blocks: m.blocks.map(b => b.block_id === event.blockId ? { ...b, answered: event.values } : b) }
+        : m))
+    }
+    pendingBlockAction.current = event
+    handleSubmit(fakeEvent, event.displayText)
+  }
+
   const handleBookRoom = (roomId: string) => {
     handleSubmit(fakeEvent, `I'd like to book room ${roomId}`)
   }
@@ -534,6 +590,8 @@ export function Widget({ siteId, apiUrl }: WidgetProps) {
     onMoveToCart: handleMoveToCart, onAddressSubmit: handleAddressSubmit, isOrderSubmitting, onImageSearch: handleImageSearch,
     onPaymentComplete: handlePaymentComplete, onPaymentFailed: handlePaymentFailed,
     onBookRoom: handleBookRoom,
+    onBlockAction: handleBlockAction,
+    profileProgress,
     onBookService: handleBookService,
     onServiceDetails: handleServiceDetails,
     isLongSession: isLongSession(),

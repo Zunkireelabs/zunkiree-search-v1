@@ -1,12 +1,15 @@
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from app.api.origin_guard import require_allowed_origin
 from app.database import get_db
 from app.models import Customer, WidgetConfig
+from app.services.query import get_query_service
+from app.utils.rate_limit import HISTORY_LIMIT, enforce as enforce_rate_limit
 
 router = APIRouter(prefix="/widget", tags=["widget"])
 
@@ -106,3 +109,42 @@ async def get_widget_config(
         chat_stream_url=config.chat_stream_url,
         service_cards=bool(config.service_cards),
     )
+
+
+@router.get("/history/{site_id}/{session_id}")
+async def get_widget_history(
+    site_id: str,
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    *,
+    request: Request = None,
+):
+    """
+    Restore a conversation (messages + the UI blocks shown) after a page reload.
+    Education tenants only; every other tenant gets an empty list, so their
+    widgets behave exactly as before. The session id is an unguessable UUID
+    kept in the visitor's localStorage.
+    """
+    customer = (await db.execute(
+        select(Customer).where(Customer.site_id == site_id, Customer.is_active == True)  # noqa: E712
+    )).scalar_one_or_none()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Site not found")
+    if customer.website_type != "education":
+        return {"messages": []}
+
+    from app.services.education_memory import DbEducationMemory, is_valid_session_id
+    from app.services.education_profile import progress
+
+    await require_allowed_origin(request, db, customer.id, get_query_service())
+    enforce_rate_limit(request, site_id, "history", HISTORY_LIMIT)
+    if not is_valid_session_id(session_id):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_SESSION_ID", "message": "A non-empty session_id (max 100 characters) is required"},
+        )
+    memory = DbEducationMemory(db)
+    return {
+        "messages": await memory.list_messages(customer.id, session_id),
+        "profile_progress": progress(await memory.load_profile(customer.id, session_id)),
+    }

@@ -11,6 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import Customer, QueryLog, DocumentChunk, WidgetConfig
+from app.api.origin_guard import require_allowed_origin
+from app.utils.rate_limit import CHAT_LIMIT, enforce as enforce_rate_limit
+from app.utils.log_redaction import question_for_log
 from app.services.query import get_query_service
 from app.services.verification import (
     get_or_create_session,
@@ -213,6 +216,10 @@ class QueryRequest(BaseModel):
     session_id: str | None = Field(None, description="Session identifier for identity verification")
     language: str | None = Field(None, description="Response language code (e.g. 'en', 'ne')")
     image_data: str | None = Field(None, description="Base64-encoded image for visual product search")
+    block_action: dict | None = Field(
+        None,
+        description="Structured tap on a generative-UI block: {blockId, blockType, actionId, values, displayText}",
+    )
     channel: str | None = Field(
         None,
         pattern="^(chat|voice|instagram)$",
@@ -246,8 +253,6 @@ async def submit_query(
     """
     Submit a question and receive an AI-generated answer.
     """
-    logger.warning("[QUERY-TRACE] site_id=%s question=%r origin=%s", query.site_id, query.question[:80], request.headers.get("origin"))
-
     if not query.question or not query.question.strip():
         raise HTTPException(
             status_code=400,
@@ -275,7 +280,17 @@ async def submit_query(
             detail={"code": "SERVICE_BUSY", "message": "Service is busy, please retry shortly", "retry_after_seconds": 2},
         )
 
+    if customer.website_type == "education":
+        # Education is served by the counselor agent on /query/stream. This generic search path would answer without the
+        # agent's grounding and memory, call the AI unmetered, and store the student's question in query_logs.
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "USE_STREAM_ENDPOINT", "message": "Education sites must use POST /api/v1/query/stream"},
+        )
+
     brand_name = config.brand_name if config else customer.name
+    logger.warning("[QUERY-TRACE] site_id=%s question=%s origin=%s", query.site_id,
+                   question_for_log(customer.website_type, query.question), request.headers.get("origin"))
 
     # Handle greeting — clinic tenants skip this generic template and go to
     # the clinic agent instead (SBAL-Z4: that's the only place assistant_name
@@ -547,14 +562,6 @@ async def submit_query_stream(
     """
     Submit a question and receive a streamed AI-generated answer via SSE.
     """
-    # channel is logged here (not just deep in clinic_agent's turn_start) so
-    # an Orca-forwarded chat turn and a direct widget turn can be proven to
-    # take the same path straight from this one line — brief B3, exit test 1.
-    logger.warning(
-        "[QUERY-STREAM] site_id=%s channel=%s question=%r",
-        query.site_id, query.channel or "chat", query.question[:80],
-    )
-
     if not query.question or not query.question.strip():
         raise HTTPException(
             status_code=400,
@@ -584,11 +591,30 @@ async def submit_query_stream(
 
     brand_name = config.brand_name if config else customer.name
 
+    # channel is logged here (not just deep in clinic_agent's turn_start) so
+    # an Orca-forwarded chat turn and a direct widget turn can be proven to
+    # take the same path straight from this one line — brief B3, exit test 1.
+    # Logged once the tenant is known so an education student's text stays out of the log.
+    logger.warning(
+        "[QUERY-STREAM] site_id=%s channel=%s question=%s",
+        query.site_id, query.channel or "chat", question_for_log(customer.website_type, query.question),
+    )
+
+    if customer.website_type == "education":
+        from app.services.education_memory import is_valid_session_id
+        await require_allowed_origin(request, db, customer.id, query_service)
+        enforce_rate_limit(request, query.site_id, "chat", CHAT_LIMIT)
+        if not is_valid_session_id(query.session_id):
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "INVALID_SESSION_ID", "message": "A non-empty session_id (max 100 characters) is required"},
+            )
+
     # Handle greeting — return immediately (no streaming needed). Clinic
     # tenants skip this and go to the clinic agent instead (SBAL-Z4: that's
     # the only place assistant_name self-introduction lives).
     cleaned = query.question.lower().strip()
-    if cleaned in GREETING_WORDS and customer.website_type != "clinic":
+    if cleaned in GREETING_WORDS and customer.website_type not in ("clinic", "education"):
         suggestions: list[str] = []
         if config and config.quick_actions:
             try:
@@ -620,8 +646,10 @@ async def submit_query_stream(
     # Clinic tenants have their own agent + booking confirmation flow; the
     # generic "register as a new patient" / "sign me up" phrasing would
     # otherwise be caught by the identity-verification registration gate
-    # below and never reach ClinicAgentService.
-    is_reg_query = False if customer.website_type == "clinic" else _is_registration_query(question_to_answer)
+    # below and never reach ClinicAgentService. Education tenants likewise:
+    # "which countries fit my profile" must reach the counselor agent, and the
+    # agent owns contact capture through its own lead form.
+    is_reg_query = False if customer.website_type in ("clinic", "education") else _is_registration_query(question_to_answer)
     if (verification_enabled or has_lead_intents or is_reg_query) and query.session_id:
         v_session = await get_or_create_session(db, query.session_id, customer.id)
 
@@ -746,6 +774,25 @@ async def submit_query_stream(
                     config=config,
                     brand_name=brand_name,
                     channel=query.channel or "chat",
+                ):
+                    yield f"data: {json.dumps(event)}\n\n"
+                return
+
+            # Route education customers to the generative-UI counselor agent
+            if customer.website_type == "education":
+                from app.services.education_agent import get_education_agent_service
+                agent_service = get_education_agent_service()
+                async for event in agent_service.process_agent_stream(
+                    db=db,
+                    site_id=query.site_id,
+                    session_id=query.session_id or "",
+                    question=question_to_answer,
+                    customer_id=customer.id,
+                    customer=customer,
+                    config=config,
+                    brand_name=brand_name,
+                    channel=query.channel or "chat",
+                    block_action=query.block_action,
                 ):
                     yield f"data: {json.dumps(event)}\n\n"
                 return
