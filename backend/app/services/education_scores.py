@@ -17,6 +17,7 @@ GPA_SCALES = (4, 5, 10)
 PERCENT_RANGE = (10, 100)     # a percentage at or below 10 is, in practice, a GPA that was saved in the wrong field
 _TEST_RANGES = {"IELTS": (0, 9), "TOEFL": (0, 120), "PTE": (10, 90), "Duolingo": (10, 160)}
 _TEST_NAMES = {"ielts": "IELTS", "toefl": "TOEFL", "pte": "PTE", "duolingo": "Duolingo"}
+TEST_RANGES, TEST_NAMES = _TEST_RANGES, _TEST_NAMES      # public names for the AI reader (education_understanding.py)
 
 
 def infer_gpa_scale(gpa: float) -> int | None:

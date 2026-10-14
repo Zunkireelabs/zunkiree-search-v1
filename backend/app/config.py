@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     # hold backs, or that offer universities/programs we have no data for (see education_grounding.py). The reply is sent
     # once checked instead of word by word. Off = streamed unchecked.
     education_grounding_check: bool = True
+    # Education agent: one small temperature-0 AI call reads what a typed message MEANS (any wording or language) as fixed choices only:
+    # a topic, a country that exists in the catalog, a few validated numbers, a confidence (see education_understanding.py). The code
+    # validates every field and builds every card and link itself; the AI writes nothing a student sees. Below the confidence floor, on
+    # a failure or on a timeout the keyword rules decide exactly as before. Off by default.
+    education_ai_understanding: bool = False
+    education_understanding_min_confidence: float = 0.7
+    education_understanding_timeout_s: float = 4.0
     # P4 B2: background pre-warm of the clinic org cache + one OpenAI
     # warm-up call at container start (see clinic_prewarm.py). Additive,
     # config-level rollback (vision §8.12) — default on, off flips the lane

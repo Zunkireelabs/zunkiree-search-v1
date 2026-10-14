@@ -151,6 +151,14 @@ class VectorStoreService:
             for match in results.matches
         ]
 
+    async def existing_ids(self, ids: list[str], namespace: str) -> set[str]:
+        """Which of these vector ids exist in the namespace. A read only (a fetch by id), in batches of 100."""
+        found: set[str] = set()
+        for i in range(0, len(ids), 100):
+            result = await _run_bounded(self.index.fetch, ids=ids[i:i + 100], namespace=namespace)
+            found |= set((getattr(result, "vectors", None) or {}).keys())
+        return found
+
     async def delete_namespace(self, namespace: str) -> None:
         """Delete all vectors in a namespace."""
         await _run_bounded(
