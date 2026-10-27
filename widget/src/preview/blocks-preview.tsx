@@ -77,7 +77,7 @@ const FLOW: { say: string; block: UIBlock }[] = [
     { label: 'Avg. tuition', value: 'A$20–45k / yr' }, { label: 'Intakes', value: 'Feb, Jul' }, { label: 'Work rights', value: '48 hrs / fortnight' }, { label: 'Post-study visa', value: 'Up to 3 years' },
   ] } } },
   { say: 'Here are 3 of the 37 matching courses, across 23 universities.', block: { ...base, block_id: 'b10', type: 'course_results', title: 'Courses that match',
-    subtitle: "Fees are from Admizz's website and are not confirmed yet. A counselor can confirm them.", fallback_text: '37 matching courses at 23 universities.', data: {
+    subtitle: "Fees come from Admizz's website and can change. A counselor can confirm them.", fallback_text: '37 matching courses at 23 universities.', data: {
     total: 37, universities: 23, filters: ["Master's", 'MSc Data Science', 'U.K.', 'Lowest fee first'], items: [
       { course_id: 'c1', name: 'MSc Data Science', level_label: "Master's", university_id: 'york-st-john-university', university: 'York St John University', city: 'York',
         duration: '1 year', fee: '£11,800 / year', intakes: 'January', ielts: 'IELTS 6' },
@@ -90,7 +90,7 @@ const FLOW: { say: string; block: UIBlock }[] = [
     university_id: 'arden-university', name: 'Arden University', city: 'London', rows: [
       { label: 'Location', value: 'London' }, { label: 'Intakes', value: 'January' }, { label: 'Courses', value: "14 (3 bachelor's, 11 master's)" },
       { label: 'Tuition', value: '£12,500–£14,000 / year' }, { label: 'English requirement', value: 'IELTS 6' }, { label: 'Academic requirement', value: '55%' },
-      { label: 'Source', value: 'Admizz website, not confirmed yet' },
+      { label: 'Source', value: 'Admizz website' },
     ] } } },
 ]
 

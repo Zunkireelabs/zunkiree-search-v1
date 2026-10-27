@@ -4,7 +4,8 @@
   "currency": "GBP",
   "source": "https://admizzeducation.com/explore-universities/uk and the university pages under it",
   "extracted_on": "2026-10-27",
-  "note": "Public website text read from admizzeducation.com. Not verified by Admizz or by us; do not present it as confirmed.",
+  "permission": "Admizz confirmed on 2026-10-27 (reported by the project owner) that we may use the numbers on its website.",
+  "note": "Read from admizzeducation.com. Permission to use it is not a check that it is right: fees and intakes can change and are not independently verified.",
   "universities": [
     {"id": "university-of-portsmouth", "name": "University of Portsmouth", "country_id": "uk", "city": "London", "website": "https://admizzeducation.com/explore-universities/uk/university-of-portsmouth", "intakes": ["January"], "source": "Admizz website https://admizzeducation.com/explore-universities/uk/university-of-portsmouth (page says last verified 2026-10-07; not verified by us)"},
     {"id": "university-of-chester", "name": "University of Chester", "country_id": "uk", "city": "Chester", "website": "https://admizzeducation.com/explore-universities/uk/university-of-chester", "intakes": ["January"], "source": "Admizz website https://admizzeducation.com/explore-universities/uk/university-of-chester (page says last verified 2026-10-07; not verified by us)"},

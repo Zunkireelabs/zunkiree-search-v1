@@ -127,7 +127,8 @@ class Result:
         """Records only, one per line so a change shows up as a readable diff. Website text; nobody has verified it."""
         head = {"status": "unverified", "country": COUNTRY_ID, "currency": "GBP", "source": f"{INDEX_URL} and the university pages under it",
                 "extracted_on": datetime.date.today().isoformat(),
-                "note": "Public website text read from admizzeducation.com. Not verified by Admizz or by us; do not present it as confirmed."}
+                "permission": "Admizz confirmed on 2026-10-27 (reported by the project owner) that we may use the numbers on its website.",
+                "note": "Read from admizzeducation.com. Permission to use it is not a check that it is right: fees and intakes can change and are not independently verified."}
         dump = lambda records: ",\n".join("    " + json.dumps(r.model_dump(mode="json"), ensure_ascii=False) for r in records)  # noqa: E731
         meta = json.dumps(head, ensure_ascii=False, indent=2)[:-2]
         return (f'{meta},\n  "universities": [\n{dump(p.university for p in self.parsed)}\n  ],\n'
