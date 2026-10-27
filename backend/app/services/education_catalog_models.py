@@ -4,7 +4,8 @@ Normalized University and Course records for the education catalog.
 These are the shapes a real catalog (a database, an API, a verified spreadsheet import) must produce. UI code is written
 against these models, not against any one source, so replacing the sample data never touches the UI layer.
 
-Nothing here is data: the repository ships no universities or courses. Every field that a source might not know is
+Nothing here is data. The only records the repository ships are the unverified Admizz UK website records in
+`app/data/education_catalogs/admizz-test.uk.json` (see scripts/extract_education_uk_catalog.py). Every field that a source might not know is
 optional, and a card is only built from what is present. Tuition is `Money` (amount + currency) in the record's own
 currency; there is no conversion, so a tuition in a different currency than the student's budget is simply not comparable
 (`Money.compare` returns None) and a caller treats that as "unknown".
@@ -42,9 +43,11 @@ class Course(BaseModel):
     field_of_study: str | None = None
     duration_months: int | None = Field(default=None, gt=0)
     tuition_per_year: Money | None = None
+    tuition_total: Money | None = None          # the whole-course fee when the source states only a total for a multi-year course
+    tuition_note: str | None = None             # the source's own wording when it is more than a plain figure ("from £X total · then ...")
     intakes: list[str] = []
     ielts_min: float | None = Field(default=None, ge=0, le=9)
     academic_min_percent: float | None = Field(default=None, ge=0, le=100)
     source: str | None = None
 
-    _tuition_ok = field_validator("tuition_per_year")(_non_negative)
+    _tuition_ok = field_validator("tuition_per_year", "tuition_total")(_non_negative)

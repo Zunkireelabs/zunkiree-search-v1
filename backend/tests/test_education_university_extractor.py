@@ -54,10 +54,24 @@ def test_foundation_uses_undergraduate_requirements_and_per_year_tuition():
     assert (c.level, c.duration_months, c.tuition_per_year.amount, c.ielts_min) == ("foundation", 48, 18595, 5.5)
 
 
-def test_multi_year_total_is_not_divided():
+def test_multi_year_total_is_kept_as_a_total_never_divided():
     p = _parse(_page(cards_pg=_card("MSc Long", "18 months", "£10,395", "total")))
-    assert p.courses[0].tuition_per_year is None
-    assert any("not a clear per-year figure" in w for w in p.warnings)
+    c = p.courses[0]
+    assert c.tuition_per_year is None and (c.tuition_total.amount, c.tuition_total.currency) == (10395, "GBP") and c.tuition_note is None
+    assert p.warnings == []
+
+
+def test_from_prices_are_never_a_fee_and_extra_wording_is_kept():
+    p = _parse(_page(cards_pg=_card("MSc From", "1 year", "from £14,000", "total")
+                     + _card("MSc Range", "1 year", "from £9,400 per year · £9,400–£17,700 depending on course", "")
+                     + _card("MSc Scholar", "1 year", "£16,000 per year · £13,000 after £3,000 scholarship", "")
+                     + _card("MSc Then", "18 months", "£9,100 total · then master's year £17,500–£21,200", "")))
+    frm, rng, sch, then = p.courses
+    assert frm.tuition_per_year is None and frm.tuition_total is None and frm.tuition_note == "from £14,000 total"
+    assert rng.tuition_per_year is None and rng.tuition_total is None and "depending on course" in rng.tuition_note
+    assert sch.tuition_per_year.amount == 16000 and sch.tuition_note == "£13,000 after £3,000 scholarship"
+    assert then.tuition_per_year is None and then.tuition_total.amount == 9100 and then.tuition_note.startswith("then master's year")
+    assert p.warnings == []
 
 
 def test_ambiguous_requirements_stay_empty():

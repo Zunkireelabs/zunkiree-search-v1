@@ -91,3 +91,16 @@ def test_out_file_is_unverified_and_never_in_the_live_catalog_folder(tmp_path, c
     assert data["status"] == "unverified" and data["currency"] == "GBP" and len(data["universities"]) == 2 and len(data["courses"]) == 2
     assert ext.main(["--out", str(CATALOG_DIR / "x.json")], fetcher=Fake(_site())) == 1
     assert not (CATALOG_DIR / "x.json").exists()
+
+
+def test_fragment_is_written_only_when_named_right_and_every_page_was_read(tmp_path):
+    ok = tmp_path / "admizz-test.uk.json"
+    assert ext.main(["--fragment", str(ok)], fetcher=Fake(_site()), clock=lambda: 0.0, sleep=lambda s: None) == 0
+    data = json.loads(ok.read_text())
+    assert data["status"] == "unverified" and len(data["universities"]) == 2 and len(data["courses"]) == 2
+    assert ext.main(["--fragment", str(tmp_path / "other.json")], fetcher=Fake(_site())) == 1
+    pages = _site()
+    del pages[f"{HOST}/explore-universities/uk/b-uni"]
+    bad = tmp_path / "x.uk.json"
+    assert ext.main(["--fragment", str(bad)], fetcher=Fake(pages), clock=lambda: 0.0, sleep=lambda s: None) == 1
+    assert not bad.exists()
