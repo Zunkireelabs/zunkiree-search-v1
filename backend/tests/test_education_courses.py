@@ -89,11 +89,11 @@ def test_a_broad_search_shows_one_course_per_university(catalog):
 
 # ---- the course results card ----
 
-def test_course_results_card_is_built_from_the_catalog_and_marked_unconfirmed(catalog):
+def test_course_results_card_is_built_from_the_catalog_and_says_fees_can_change(catalog):
     out = execute_education_tool("show_course_results", {"query": "data science", "level": "master", "country": "uk"}, new_profile(), catalog)
     block = out.block
     assert block.type == "course_results" and block.title == "Courses that match"
-    assert block.subtitle and "not confirmed" in block.subtitle
+    assert block.subtitle == "Fees come from Admizz's website and can change. A counselor can confirm them."
     d = block.data
     assert (d["total"], d["universities"], len(d["items"])) == (3, 3, 3)
     first = d["items"][0]
@@ -102,12 +102,12 @@ def test_course_results_card_is_built_from_the_catalog_and_marked_unconfirmed(ca
     assert d["filters"] == ["Master's", "Data Science", "U.K.", "Lowest fee first"]
     assert execute_education_tool("show_course_results", {"query": "msc data science"}, new_profile(), catalog).block.data["filters"][1] == "MSc Data Science"
     assert detect_intent("Can you recommend a university for computer science", catalog) == ("courses", {"query": "computer science"})
-    assert "never quote a fee" in out.message and "not confirmed" in out.message
+    assert "never quote a fee" in out.message and "can change" in out.message
 
 
-def test_a_verified_catalog_carries_no_unconfirmed_note():
+def test_the_fees_can_change_line_stays_on_a_verified_catalog_too():
     block = execute_education_tool("show_course_results", {"query": "law"}, new_profile(), make_course_catalog("verified")).block
-    assert block.subtitle is None
+    assert block.subtitle and "can change" in block.subtitle
 
 
 def test_fees_are_shown_as_the_source_states_them_never_computed(catalog):
@@ -145,7 +145,7 @@ def test_university_card_states_only_what_the_catalog_has(catalog):
     assert rows["Location"] == "London" and rows["Intakes"] == "January"
     assert rows["Courses"] == "3 (1 bachelor's, 2 master's)"
     assert rows["Tuition"] == "£12,500–£14,000 / year" and rows["English requirement"] == "IELTS 6" and rows["Academic requirement"] == "55%"
-    assert rows["Source"] == "Admizz website, not confirmed yet"
+    assert rows["Source"] == "Admizz website"
 
 
 def test_university_card_leaves_out_what_it_does_not_know(catalog):

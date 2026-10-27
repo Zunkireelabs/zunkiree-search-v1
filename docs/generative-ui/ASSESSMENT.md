@@ -449,7 +449,7 @@ a person's explicit approval, a fresh manifest, a preflight read of the real sto
 ### UK universities and courses from the Admizz website (2026-10-27)
 - `scripts/extract_education_uk_catalog.py` reads the 61 UK university pages under `/explore-universities/uk` (links are also inside the page's script data, so an `<a>`-only scan finds 8). `--fragment` writes `app/data/education_catalogs/admizz-test.uk.json`; the catalog provider merges `<site_id>.<country>.json` record files into the tenant's catalog and skips a file that does not validate.
 - Result: 61 universities, 1,981 courses (1,171 master, 241 bachelor, 569 foundation). Fees: 1,032 per-year, 220 multi-year total (`tuition_total`, never divided), 729 only a "from £X" minimum (kept as `tuition_note`, not a fee). Coventry and Liverpool Hope say "Course list coming soon".
-- Website text, unverified; the pages say "last verified 2026-10-07/12" and are marked noindex. Admizz should confirm we may use them. The other four countries are still sample data. No card or tool reads universities or courses yet.
+- Website text, unverified; the pages say "last verified 2026-10-07/12" and are marked noindex. Admizz confirmed on 2026-10-27 that we may use the numbers on its website (permission to use, not a check that they are right; the catalog status stays unverified because the other four countries are still sample data). The other four countries are still sample data. No card or tool reads universities or courses yet.
 
 ## Not verified in this assessment
 - The full backend test suite, the widget `tsc` and the widget tests.

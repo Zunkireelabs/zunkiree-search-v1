@@ -48,7 +48,7 @@ A data export (CSV, JSON or a read-only database view), one row per course, with
 Living cost range, post-study work visa length, work rights during study, funds required for the visa, and the date each was checked.
 
 ## Questions for the data owner
-1. Is this data public, or may we use it for the chatbot? The course finder and university pages are currently marked `noindex`.
+1. ~~Is this data public, or may we use it for the chatbot?~~ **Answered 2026-10-27:** Admizz confirmed we may use the numbers on its website. (This is permission to use them, not a check that they are right.)
 2. Who confirms the numbers are accurate, and how often are they updated?
 3. Can we get a feed or a read-only view so the chatbot stays current without scraping?
 4. Which currency should students see: the university's (GBP) or NPR?

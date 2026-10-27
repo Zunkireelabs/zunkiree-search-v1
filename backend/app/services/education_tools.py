@@ -88,6 +88,30 @@ class ToolOutcome:
     changed: list[str] = field(default_factory=list)
 
 
+# Country figures (tuition, living cost, requirements, fit) are sample data until the tenant verifies its catalog. While they are, every
+# card built from them says so, on the card and in its plain-text version, so nobody reads a sample number as an Admizz fact.
+_INDICATIVE_NOTE = "Indicative figures for planning, not confirmed Admizz data. A counselor can confirm them."
+_INDICATIVE_TEXT = " (Indicative figures, not confirmed.)"
+
+
+def _indicative(catalog: Catalog) -> bool:
+    return catalog.is_placeholder
+
+
+def _note(catalog: Catalog) -> str | None:
+    return _INDICATIVE_NOTE if _indicative(catalog) else None
+
+
+def _text(catalog: Catalog, fallback: str) -> str:
+    return fallback + _INDICATIVE_TEXT if _indicative(catalog) else fallback
+
+
+def _caution(catalog: Catalog) -> str:
+    """Added to what the model is told about a card that shows country figures."""
+    return (" These figures are indicative samples, not confirmed: never state them as facts, and never promise a cost, a requirement "
+            "or a result.") if _indicative(catalog) else ""
+
+
 def _no_block(reason: str) -> ToolOutcome:
     return ToolOutcome(None, f"Nothing was shown. {reason}")
 
@@ -231,11 +255,11 @@ def _show_cost_calculator(args: dict, profile: dict, catalog: Catalog) -> ToolOu
         spec.block_type,
         {"country_id": country.id, "currency": catalog.currency, "parts": parts,
          "note": "Typical ranges: your total depends on the university and city."},
-        title=spec.title.format(country=country.label),
-        fallback_text=f"{country.label} yearly cost: " + ", ".join(
-            f"{p['label'].lower()} {_money(catalog.currency, p['min'], p['max'])}" for p in parts) + ".",
+        title=spec.title.format(country=country.label), subtitle=_note(catalog),
+        fallback_text=_text(catalog, f"{country.label} yearly cost: " + ", ".join(
+            f"{p['label'].lower()} {_money(catalog.currency, p['min'], p['max'])}" for p in parts) + "."),
     )
-    return _shown(block, f"They can drag tuition and living costs for {country.label} and see the yearly total.")
+    return _shown(block, f"They can drag tuition and living costs for {country.label} and see the yearly total." + _caution(catalog))
 
 
 def _show_budget_slider(args: dict, profile: dict, catalog: Catalog) -> ToolOutcome:
@@ -265,14 +289,14 @@ def _show_country_matches(args: dict, profile: dict, catalog: Catalog) -> ToolOu
 
     def build():
         return build_block(
-            spec.block_type, {"items": items}, title=spec.title,
-            fallback_text="Fit with what you told us: " + ", ".join(f"{i['label']} ({i['tier_label']})" for i in items) + ".",
+            spec.block_type, {"items": items}, title=spec.title, subtitle=_note(catalog),
+            fallback_text=_text(catalog, "Fit with what you told us: " + ", ".join(f"{i['label']} ({i['tier_label']})" for i in items) + "."),
         )
 
     block = _cached(profile, spec, "all", build)
     return _shown(block, f"First is {items[0]['label']} ({items[0]['tier_label']}). The tiers describe how the student's own details "
                          "line up with the catalog; never call anything 'best', never give percentages, and never imply a "
-                         "chance of admission or of a visa.")
+                         "chance of admission or of a visa." + _caution(catalog))
 
 
 def _facts_rows(c: CountryRecord, cur: str) -> list[dict]:
@@ -302,12 +326,12 @@ def _show_country_facts(args: dict, profile: dict, catalog: Catalog) -> ToolOutc
     def build():
         return build_block(
             spec.block_type, {"icon": country.icon, "heading": f"{country.label} quick facts", "rows": rows},
-            title=spec.title.format(country=country.label),
-            fallback_text=f"{country.label}: " + "; ".join(f"{r['label']} {r['value']}" for r in rows) + ".",
+            title=spec.title.format(country=country.label), subtitle=_note(catalog),
+            fallback_text=_text(catalog, f"{country.label}: " + "; ".join(f"{r['label']} {r['value']}" for r in rows) + "."),
         )
 
     block = _cached(profile, spec, country.id, build)
-    return _shown(block, f"Facts for {country.label}.")
+    return _shown(block, f"Facts for {country.label}." + _caution(catalog))
 
 
 def _compare_countries(args: dict, profile: dict, catalog: Catalog) -> ToolOutcome:
@@ -338,13 +362,13 @@ def _compare_countries(args: dict, profile: dict, catalog: Catalog) -> ToolOutco
         return build_block(
             spec.block_type,
             {"columns": [{"id": c.id, "label": c.label, "icon": c.icon} for c in countries], "rows": rows},
-            title=spec.title.format(countries=" vs ".join(c.label for c in countries)),
-            fallback_text="Comparison: " + " vs ".join(c.label for c in countries) + ". "
-            + " ".join(f"{r['label']}: " + " | ".join(r["values"]) + "." for r in rows),
+            title=spec.title.format(countries=" vs ".join(c.label for c in countries)), subtitle=_note(catalog),
+            fallback_text=_text(catalog, "Comparison: " + " vs ".join(c.label for c in countries) + ". "
+                                + " ".join(f"{r['label']}: " + " | ".join(r["values"]) + "." for r in rows)),
         )
 
     block = _cached(profile, spec, "|".join(ids), build)
-    return _shown(block, "Side-by-side comparison.")
+    return _shown(block, "Side-by-side comparison." + _caution(catalog))
 
 
 def _check_eligibility(args: dict, profile: dict, catalog: Catalog) -> ToolOutcome:
@@ -360,21 +384,19 @@ def _check_eligibility(args: dict, profile: dict, catalog: Catalog) -> ToolOutco
 
     def build():
         return build_block(
-            spec.block_type, result, title=spec.title.format(country=country.label),
-            fallback_text=f"{country.label}: {result['verdict']}.",
+            spec.block_type, result, title=spec.title.format(country=country.label), subtitle=_note(catalog),
+            fallback_text=_text(catalog, f"{country.label}: {result['verdict']}."),
         )
 
     block = _cached(profile, spec, country.id, build)
-    return _shown(block, f"Result: {result['verdict']}.")
+    return _shown(block, f"Result: {result['verdict']}." + _caution(catalog))
 
 
 # ---- universities and courses ----
 
-_UNVERIFIED_NOTE = "Fees are from Admizz's website and are not confirmed yet. A counselor can confirm them."
-
-
-def _unverified_subtitle(catalog: Catalog) -> str | None:
-    return _UNVERIFIED_NOTE if catalog.status != "verified" else None
+# Admizz confirmed (2026-10-27) that we may use the numbers on its website. That is permission to use them, not a check that they are
+# right: the pages themselves say fees and intakes can change, so every course card keeps that line, whatever the catalog status.
+_COURSES_NOTE = "Fees come from Admizz's website and can change. A counselor can confirm them."
 
 
 def _find_university(catalog: Catalog, value) -> str | None:
@@ -426,7 +448,7 @@ def _show_course_results(args: dict, profile: dict, catalog: Catalog) -> ToolOut
     def build():
         return build_block(
             spec.block_type, {"total": len(courses), "universities": universities, "filters": filters, "items": rows},
-            title=heading, subtitle=_unverified_subtitle(catalog),
+            title=heading, subtitle=_COURSES_NOTE,
             fallback_text=f"{len(courses)} matching courses at {universities} universities. " + "; ".join(
                 f"{r['name']}, {r['university']}" + (f", {r['fee']}" if r["fee"] else "") for r in rows) + ".",
             actions=[],
@@ -435,7 +457,7 @@ def _show_course_results(args: dict, profile: dict, catalog: Catalog) -> ToolOut
     key = f"{university_id}|{country}|{level}|{' '.join(terms)}"
     block = _cached(profile, spec, key, build)
     return _shown(block, f"{len(courses)} courses match, at {universities} universities; the card lists {len(shown)} of them. "
-                         "Fees are as the Admizz website states them and are not confirmed: never call a course 'best' or 'cheapest', "
+                         "Fees are as the Admizz website states them and can change: never call a course 'best' or 'cheapest', "
                          "never promise admission, and never quote a fee yourself.")
 
 
@@ -455,7 +477,7 @@ def _show_university(args: dict, profile: dict, catalog: Catalog) -> ToolOutcome
         ("Tuition", tuition_range(courses)),
         ("English requirement", (f"IELTS {ielts[0]:g}" if len(ielts) == 1 else f"IELTS {ielts[0]:g}–{ielts[-1]:g}") if ielts else None),
         ("Academic requirement", f"{percents[0]:g}%" if len(percents) == 1 else None),
-        ("Source", "Admizz website, not confirmed yet" if catalog.status != "verified" else None),
+        ("Source", "Admizz website"),
     ]
     rows = [{"label": label, "value": v} for label, v in rows if v]
     if not rows:
@@ -469,7 +491,7 @@ def _show_university(args: dict, profile: dict, catalog: Catalog) -> ToolOutcome
         )
 
     block = _cached(profile, spec, university.id, build)
-    return _shown(block, f"Facts for {university.name}. These are from the Admizz website and are not confirmed.")
+    return _shown(block, f"Facts for {university.name}. These are from the Admizz website and can change.")
 
 
 def _show_profile(args: dict, profile: dict, catalog: Catalog) -> ToolOutcome:
