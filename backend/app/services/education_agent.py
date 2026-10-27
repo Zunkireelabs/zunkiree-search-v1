@@ -315,6 +315,7 @@ class EducationAgentService:
         context = "(not needed for this turn)"
         chunks: list[dict] = []   # knowledge-base text retrieved this turn; also what a free-text answer may rest on
         kb_miss = False
+        kb_single_fact = False
         if intent is None and block_action is None and shape_request is None:
             logger.info("[EDU] no_rule_match chars=%d words=%d lang=%s question_like=%s", len(question), len(question.split()),
                         detect_language(question), looks_like_question(question))
@@ -344,6 +345,11 @@ class EducationAgentService:
                         f"The student now sees '{block.title}' right below your reply, built from the knowledge base. "
                         "Write ONE short, natural sentence introducing it (like 'Here's how it works:'). "
                         "Do not repeat its contents and do not say 'component', 'interactive' or 'guide'."))
+                elif chunks and shape in ("timeline", "offerings"):
+                    # No card could be built, but the knowledge base did return text: "how long does the UK visa take?" or "do you offer
+                    # scholarships?" is often a single fact. Let the model answer from that text only; the grounding check still applies.
+                    # Step-by-step and checklist questions stay a strict miss: the model must never write steps from general knowledge.
+                    kb_single_fact = True
                 else:
                     kb_miss = True
                     if settings.education_compositions:
@@ -373,6 +379,11 @@ class EducationAgentService:
                 "The knowledge base does NOT contain a clear answer to this question. Say you don't have that detail "
                 "(you may mention only what the knowledge base does say) and offer to connect them with a counselor. "
                 "Do NOT explain how it generally works or list steps, documents or requirements from general knowledge.")})
+        if kb_single_fact:
+            messages.append({"role": "system", "content": (
+                "No step-by-step, checklist or timeline card fits this question. Answer in one to three sentences using ONLY the "
+                "knowledge base text above. If that text does not state the answer, say you don't have that detail and offer to connect "
+                "them with a counselor. Do NOT use general knowledge.")})
         if outcome is not None:
             messages.append({"role": "system", "content": outcome.message})
         # Code already showed the card -> the LLM only writes the lead-in (no tools).
