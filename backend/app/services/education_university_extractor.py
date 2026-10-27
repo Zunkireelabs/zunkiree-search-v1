@@ -5,8 +5,9 @@ inferred or converted, and a value the page does not state stays None (with a wa
 Every record is website text that nobody has verified: the page's own "last verified" date is kept as provenance, not as proof.
 
 Tuition: the page says "total" or "per year" next to the amount. `Course.tuition_per_year` is filled from "per year" as is, and from
-"total" only when the course lasts one year or less (then the two are the same number). A multi-year "total" is NOT divided: that would
-be a guess, so it is left empty and reported.
+"total" only when the course lasts one year or less (then the two are the same number). A multi-year "total" is NOT divided (that would
+be a guess): it is kept as `tuition_total`. Any wording beyond a plain figure ("from £X total · then master's year £Y") is kept
+verbatim in `tuition_note`.
 """
 import re
 from dataclasses import dataclass, field
@@ -23,6 +24,7 @@ MONTHS = ("January", "February", "March", "April", "May", "June", "July", "Augus
 
 _AMOUNT = re.compile(r"£\s*([\d,]+)")
 _DURATION = re.compile(r"(\d+(?:\.\d+)?)\s*(year|yr|month|mo)s?\b", re.IGNORECASE)
+_FEE = re.compile(r"(from\s+)?£\s*([\d,]+)\s+(per year|total)\b\s*(.*)", re.IGNORECASE | re.DOTALL)
 _PERCENT = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*%")
 _IELTS = re.compile(r"(\d(?:\.\d)?)\s*overall", re.IGNORECASE)
 _VERIFIED = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -164,25 +166,32 @@ def _one_course(name: str, take: list[str], level: str, slug: str, source: str, 
     amount_m = _AMOUNT.search(" ".join(take[t + 1:k]))
     basis = " ".join(take[t + 1:k]).lower()
     intakes = _months_of(take[k + 1:])
+    wording = " ".join(take[t + 1:k]).strip()
     tuition: Money | None = None
-    if amount_m:
-        amount = int(amount_m.group(1).replace(",", ""))
-        if "per year" in basis:
-            tuition = Money(amount, "GBP")
-        elif "total" in basis and duration is not None and duration <= 12:
+    total: Money | None = None
+    note: str | None = None
+    fee = _FEE.match(wording)
+    if fee is None:
+        note = wording or None
+        warnings.append(f"{name}: no tuition amount (the page says '{wording}')" if not _AMOUNT.search(wording)
+                        else f"{name}: tuition wording not read ('{wording}'); kept as a note only")
+    elif fee.group(1):
+        note = wording            # "from £X ...": a minimum, not this course's fee; the page's own words are kept
+    else:
+        amount, basis, rest = int(fee.group(2).replace(",", "")), fee.group(3).lower(), fee.group(4).lstrip("· ").strip()
+        if basis == "per year" or (duration is not None and duration <= 12):
             tuition = Money(amount, "GBP")
         else:
-            warnings.append(f"{name}: tuition £{amount:,} is not a clear per-year figure (basis '{basis.strip()}', duration "
-                            f"{duration} months); left empty")
-    else:
-        warnings.append(f"{name}: no tuition amount (the page says '{' '.join(take[t + 1:k])}')")
+            total = Money(amount, "GBP")                      # a multi-year total: kept as a total, never divided
+        note = rest or None   # anything after the figure, e.g. "£13,000 after £3,000 scholarship"
     req = requirements.get(REQUIREMENT_HEADING[level], {})
     base = f"{slug}--{slugify(name)}"
     seen[base] = seen.get(base, 0) + 1
     course_id = base if seen[base] == 1 else f"{base}-{seen[base]}"
     try:
         return Course(id=course_id, university_id=slug, name=name, level=level, duration_months=duration, tuition_per_year=tuition,
-                      intakes=intakes, ielts_min=req.get("ielts"), academic_min_percent=req.get("percent"), source=source)
+                      tuition_total=total, tuition_note=note, intakes=intakes, ielts_min=req.get("ielts"),
+                      academic_min_percent=req.get("percent"), source=source)
     except ValueError as e:
         warnings.append(f"{name}: rejected ({e})")
         return None

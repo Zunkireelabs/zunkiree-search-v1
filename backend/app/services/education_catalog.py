@@ -169,7 +169,12 @@ class CatalogProvider(Protocol):
 
 
 class JsonFileCatalogProvider:
-    """One <site_id>.json per tenant in a directory (today's source)."""
+    """One <site_id>.json per tenant in a directory (today's source).
+
+    Universities and courses come from optional record files next to it, `<site_id>.<country>.json` (for example
+    `admizz-test.uk.json`, written by `scripts/extract_education_uk_catalog.py --fragment`). They are merged into the tenant's
+    catalog and the result is validated as a whole; a record file that does not validate is logged and skipped, so the tenant's
+    country data still loads."""
 
     def __init__(self, directory: Path = CATALOG_DIR):
         self.directory = directory
@@ -178,7 +183,24 @@ class JsonFileCatalogProvider:
         if not re.fullmatch(r"[A-Za-z0-9_-]+", site_id or ""):
             return None  # never build a file path from anything but a plain id
         path = self.directory / f"{site_id}.json"
-        return load_catalog_file(path) if path.is_file() else None
+        catalog = load_catalog_file(path) if path.is_file() else None
+        if catalog is None:
+            return None
+        for record_file in sorted(self.directory.glob(f"{site_id}.*.json")):
+            catalog = self._merged(catalog, record_file)
+        return catalog
+
+    @staticmethod
+    def _merged(catalog: Catalog, record_file: Path) -> Catalog:
+        try:
+            records = json.loads(record_file.read_text())
+            merged = catalog.model_dump()
+            merged["universities"] = merged["universities"] + list(records.get("universities", []))
+            merged["courses"] = merged["courses"] + list(records.get("courses", []))
+            return Catalog.model_validate(merged)
+        except (OSError, ValueError, AttributeError, TypeError, ValidationError) as e:
+            logger.error("education catalog records %s are invalid and were skipped: %s", record_file.name, e)
+            return catalog
 
 
 _providers: list[CatalogProvider] = [JsonFileCatalogProvider()]

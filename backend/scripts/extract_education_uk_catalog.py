@@ -15,8 +15,13 @@ Usage (from backend/):
     .venv311/bin/python -m scripts.extract_education_uk_catalog                     # dry run, report only
     .venv311/bin/python -m scripts.extract_education_uk_catalog --only university-of-essex
     .venv311/bin/python -m scripts.extract_education_uk_catalog --out /tmp/uk_catalog_dryrun.json
+    .venv311/bin/python -m scripts.extract_education_uk_catalog --fragment app/data/education_catalogs/admizz-test.uk.json
+
+--fragment writes only the university and course records, in the form the catalog provider merges into the tenant's catalog. It is the one
+write allowed inside the catalog folder, only for a file named `<site_id>.uk.json`, and only when every page was read.
 """
 import argparse
+import datetime
 import json
 import re
 import sys
@@ -118,6 +123,16 @@ class Result:
             lines += ["PROBLEMS:"] + [f"  ! {p}" for p in self.problems]
         return "\n".join(lines)
 
+    def fragment_text(self) -> str:
+        """Records only, one per line so a change shows up as a readable diff. Website text; nobody has verified it."""
+        head = {"status": "unverified", "country": COUNTRY_ID, "currency": "GBP", "source": f"{INDEX_URL} and the university pages under it",
+                "extracted_on": datetime.date.today().isoformat(),
+                "note": "Public website text read from admizzeducation.com. Not verified by Admizz or by us; do not present it as confirmed."}
+        dump = lambda records: ",\n".join("    " + json.dumps(r.model_dump(mode="json"), ensure_ascii=False) for r in records)  # noqa: E731
+        meta = json.dumps(head, ensure_ascii=False, indent=2)[:-2]
+        return (f'{meta},\n  "universities": [\n{dump(p.university for p in self.parsed)}\n  ],\n'
+                f'  "courses": [\n{dump(self.courses)}\n  ]\n}}\n')
+
     def to_json(self) -> dict:
         return {"dry_run": True, "status": "unverified",
                 "note": "Public website text read from admizzeducation.com. Nobody has verified it; do not present it as confirmed.",
@@ -164,7 +179,11 @@ def main(argv: list[str] | None = None, *, fetcher: Fetcher | None = None, clock
     parser.add_argument("--only", action="append", default=[], help="only this university slug (repeatable)")
     parser.add_argument("--limit", type=int, help="at most this many universities")
     parser.add_argument("--out", type=Path, help="write the records and warnings as JSON to this path (never inside the live catalog folder)")
+    parser.add_argument("--fragment", type=Path, help="write the records the catalog provider merges, as <site_id>.uk.json")
     args = parser.parse_args(argv)
+    if args.fragment and not re.fullmatch(r"[A-Za-z0-9_-]+\.uk\.json", args.fragment.name):
+        print("--fragment must be named <site_id>.uk.json, for example admizz-test.uk.json.", file=sys.stderr)
+        return 1
     if args.out and CATALOG_DIR.resolve() in args.out.resolve().parents:
         print(f"refusing to write inside {CATALOG_DIR}: this dry run must not change the live catalog.", file=sys.stderr)
         return 1
@@ -173,6 +192,12 @@ def main(argv: list[str] | None = None, *, fetcher: Fetcher | None = None, clock
     if args.out:
         args.out.write_text(json.dumps(result.to_json(), indent=2, ensure_ascii=False) + "\n")
         print(f"records written to {args.out}")
+    if args.fragment:
+        if result.failed or result.problems or not result.parsed:
+            print("not writing the records file: some pages failed or the run had problems.", file=sys.stderr)
+            return 1
+        args.fragment.write_text(result.fragment_text())
+        print(f"records file written to {args.fragment}")
     return 1 if result.problems and not result.parsed else 0
 
 

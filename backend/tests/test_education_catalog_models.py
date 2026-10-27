@@ -235,3 +235,34 @@ def test_providers_satisfy_the_protocol():
     def takes(p: CatalogProvider) -> CatalogProvider:
         return p
     assert takes(JsonFileCatalogProvider()) and takes(FakeProvider())
+
+
+def _write_site(tmp_path, records=None, raw=None):
+    (tmp_path / "t-site.json").write_text(json.dumps({"site_id": "t-site", "status": "PLACEHOLDER", "currency": "$",
+                                                      "countries": [{"id": "uk", "label": "U.K."}]}))
+    if records is not None or raw is not None:
+        (tmp_path / "t-site.uk.json").write_text(raw if raw is not None else json.dumps(records))
+    return JsonFileCatalogProvider(tmp_path).load("t-site")
+
+
+UK_RECORDS = {"universities": [{"id": "u1", "name": "U One", "country_id": "uk"}],
+              "courses": [{"id": "u1--c", "university_id": "u1", "name": "MSc C", "level": "master",
+                           "tuition_total": {"amount": 16200, "currency": "GBP"}, "tuition_note": "from £16,200 total"}]}
+
+
+def test_record_files_are_merged_into_the_tenant_catalog(tmp_path):
+    c = _write_site(tmp_path, UK_RECORDS)
+    assert [u.id for u in c.universities] == ["u1"] and c.courses[0].tuition_total.amount == 16200
+    assert c.courses[0].tuition_per_year is None and c.is_placeholder     # the countries are still sample data
+    assert [x.id for x in c.countries] == ["uk"]
+
+
+def test_an_invalid_record_file_is_skipped_and_the_countries_still_load(tmp_path):
+    for bad in ({"universities": [{"id": "u1", "name": "X", "country_id": "nowhere"}]}, "not json"):
+        c = _write_site(tmp_path, bad) if isinstance(bad, dict) else _write_site(tmp_path, raw=bad)
+        assert c is not None and c.universities == [] and [x.id for x in c.countries] == ["uk"]
+
+
+def test_a_negative_total_is_rejected(tmp_path):
+    bad = {"universities": UK_RECORDS["universities"], "courses": [{**UK_RECORDS["courses"][0], "tuition_total": {"amount": -1, "currency": "GBP"}}]}
+    assert _write_site(tmp_path, bad).courses == []
