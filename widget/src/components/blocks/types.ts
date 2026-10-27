@@ -52,6 +52,12 @@ export interface MatchReason { text: string; status: ReasonStatus }
 export interface MatchItem { id: string; label: string; icon?: string; tier: FitTier; tier_label: string; reasons: MatchReason[] }
 export interface MatchCardsData { items: MatchItem[] }
 export interface InfoCardData { icon?: string; heading: string; rows: { label: string; value: string }[] }
+export interface CourseRow {
+  course_id: string; name: string; level_label: string; university_id: string; university: string
+  city?: string; duration?: string; fee?: string; intakes?: string; ielts?: string
+}
+export interface CourseResultsData { total: number; universities: number; filters: string[]; items: CourseRow[] }
+export interface UniversityCardData { university_id: string; name: string; city?: string; rows: { label: string; value: string }[] }
 export interface ComparisonData { columns: { id: string; label: string; icon?: string }[]; rows: { label: string; values: string[] }[] }
 export interface EligibilityData { verdict: string; checks: { label: string; ok: boolean; detail: string }[] }
 export interface ProfileSummaryData { welcome_back?: boolean; rows: { label: string; value: string }[]; missing?: string[] }

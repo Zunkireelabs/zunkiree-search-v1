@@ -13,6 +13,7 @@ import re
 from dataclasses import dataclass
 
 from app.services.education_catalog import Catalog
+from app.services.education_catalog_search import level_in_text, subject_terms, universities_in_text, without_university_names
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,9 @@ INTENTS: dict[str, IntentSpec] = {s.intent: s for s in [
     IntentSpec("choice", "show_choice", "choice_cards", "{question}"),
     IntentSpec("welcome", "show_welcome", "journey_cards", "How can I help you today?"),
     IntentSpec("cost_calculator", "show_cost_calculator", "cost_calculator", "{country} cost calculator"),
+    # Universities and courses: only for a tenant whose catalog has them. "heading" is "Courses that match" or "Courses at <university>".
+    IntentSpec("courses", "show_course_results", "course_results", "{heading}", ("study_level",)),
+    IntentSpec("university", "show_university", "university_card", "{university}"),
 ]}
 
 TOOL_TO_INTENT: dict[str, str] = {s.tool: s.intent for s in INTENTS.values()}
@@ -94,6 +98,8 @@ _COUNSELOR = _rx(r"counsel+or", r"talk to (a |an )?(person|human|someone|agent)"
 _START = _rx(r"study abroad", r"want to study", r"get started", r"^start$", r"help me (choose|find|pick)")
 _FACTS = _rx(r"tell me (more )?about", r"\babout\b", r"info(rmation)? (on|about)", r"quick facts", r"explore",
              r"what(?:'s| is| are)\s+.{0,30}\blike\b")
+_COURSES = _rx(r"\bcourses?\b", r"\bprogram(me)?s?\b", r"\bdegrees?\b", r"\buniversit(y|ies)\b", r"\bcolleges?\b",
+               r"\b(msc|mba|llm|bsc|beng)\b", r"\b(masters?|bachelors?|undergraduate|postgraduate)\b.{0,20}\b(in|of)\b")
 _GREETING = _rx(r"^(hi+|hello+|hey+|hola|namaste|namaskar|greetings|good (morning|afternoon|evening))\b[\s!.,?]*$")
 
 
@@ -132,6 +138,31 @@ def journey_intent(journey: str, profile: dict | None, catalog: Catalog) -> tupl
     return None
 
 
+def university_or_courses(q: str, catalog: Catalog, mentioned: list[str], *, named_only: bool) -> tuple[str, dict] | None:
+    """A named university -> its facts (or its courses when the question is about courses/subjects); a question about courses or
+    universities in general -> a search. Only for a catalog that has courses; None otherwise so nothing else changes."""
+    if not catalog.courses:
+        return None
+    named = universities_in_text(catalog, q)
+    terms = subject_terms(q, catalog, named)
+    level = level_in_text(q)
+    asks_courses = bool(_COURSES.search(without_university_names(catalog, q, named)))
+    if len(named) > 1:
+        return None
+    if len(named) == 1:
+        if asks_courses or terms or level:
+            return "courses", _course_args(university=named[0], terms=terms, level=level)
+        return "university", {"university": named[0]}
+    if asks_courses and not named_only:
+        return "courses", _course_args(country=mentioned[0] if len(mentioned) == 1 else None, terms=terms, level=level)
+    return None
+
+
+def _course_args(*, country: str | None = None, university: str | None = None, terms: tuple[str, ...] = (), level: str | None = None) -> dict:
+    args = {"country": country, "university": university, "query": " ".join(terms) or None, "level": level}
+    return {k: v for k, v in args.items() if v}
+
+
 def detect_intent(question: str, catalog: Catalog, profile: dict | None = None) -> tuple[str, dict] | None:
     """
     Deterministic question -> (intent, args), or None to continue to the knowledge-base shapes / the LLM.
@@ -144,6 +175,8 @@ def detect_intent(question: str, catalog: Catalog, profile: dict | None = None) 
         return "welcome", {}
     if _COUNSELOR.search(q):
         return "lead_form", {}
+    if found := university_or_courses(q, catalog, mentioned, named_only=True):
+        return found     # a university named by the student always wins over the country rules below
     # Two countries named and compared ("which has cheaper tuition, UK or Canada?") is a comparison, even though it also says "which country".
     if len(mentioned) >= 2 and _COMPARE.search(q):
         return "compare", {"countries": mentioned[:3]}
@@ -156,6 +189,8 @@ def detect_intent(question: str, catalog: Catalog, profile: dict | None = None) 
         goal = country_goal("eligibility", mentioned, profile, catalog)
         if goal:
             return goal
+    if found := university_or_courses(q, catalog, mentioned, named_only=False):
+        return found     # "MSc data science in the UK", "which universities offer law": before cost, so "fees for MSc X" is a course search
     if _COST.search(q) and not _ABOUT_COMPANY.search(q):
         goal = country_goal("costs", mentioned, profile, catalog)
         if goal:

@@ -9,6 +9,8 @@ export const SUPPORTED_VERSIONS: Record<string, number[]> = {
   range_slider: [1],
   match_cards: [2],
   info_card: [1],
+  course_results: [1],
+  university_card: [1],
   comparison_table: [1],
   eligibility_meter: [2],
   profile_summary: [1],

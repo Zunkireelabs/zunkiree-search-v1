@@ -219,6 +219,39 @@ class JourneyCardsData(BaseModel):
     tiles: list[JourneyTile] = Field(min_length=2)
 
 
+class CourseRow(BaseModel):
+    course_id: str
+    name: str
+    level_label: str
+    university_id: str
+    university: str
+    city: str | None = None
+    duration: str | None = None
+    fee: str | None = None          # as the source states it: "£14,000 / year", "£16,200 total" or the source's own wording
+    intakes: str | None = None
+    ielts: str | None = None
+
+
+class CourseResultsData(BaseModel):
+    total: int = Field(ge=1)        # every course that matched, of which `items` shows the first few
+    universities: int = Field(ge=1) # how many universities those courses are at
+    filters: list[str] = []         # what was searched for, in words ("Master's", "data science", "UK")
+    items: list[CourseRow] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _counts(self):
+        if self.total < len(self.items):
+            raise ValueError("total cannot be smaller than the number of items shown")
+        return self
+
+
+class UniversityCardData(BaseModel):
+    university_id: str
+    name: str
+    city: str | None = None
+    rows: list[InfoRow] = Field(min_length=1)
+
+
 @dataclass(frozen=True)
 class UISpec:
     """One registered UI type: the single place that says what it is and how it behaves.
@@ -253,6 +286,11 @@ UI_TYPES: dict[str, UISpec] = {s.type: s for s in [
     UISpec("match_cards", "Destinations grouped by how well they fit what the student told us, each with its reasons.",
            "Answer which countries fit the student's profile. A fit tier is not a chance of admission or of a visa.",
            MatchCardsData, version=2, allowed_actions=("explore",), dims_when_locked=True),
+    UISpec("course_results", "Courses at partner universities that match what the student asked for, with fee, length and intake.",
+           "Answer a question about courses or universities. Fees are shown as the source states them; a tap opens one university.",
+           CourseResultsData, allowed_actions=("open_university",), dims_when_locked=True),
+    UISpec("university_card", "Facts about one partner university: location, intakes, courses, tuition range, entry requirements.",
+           "Answer a question that names one university. The values are copied from the catalog.", UniversityCardData),
     UISpec("profile_summary", "What we know about the student.", "Show or confirm the saved profile.",
            ProfileSummaryData, allowed_actions=("edit",), dims_when_locked=True),
     UISpec("info_card", "Heading with label/value rows.", "Quick facts about one country.", InfoCardData),

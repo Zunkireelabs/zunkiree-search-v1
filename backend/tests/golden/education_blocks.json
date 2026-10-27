@@ -258,6 +258,122 @@
     "title": "Australia cost calculator",
     "type": "cost_calculator"
   },
+  "courses_at_university": {
+    "actions": [],
+    "answered": null,
+    "block_id": "course_results-c8cc27ab04",
+    "changed_because": null,
+    "data": {
+      "filters": [
+        "Arden University",
+        "Lowest fee first"
+      ],
+      "items": [
+        {
+          "city": "London",
+          "course_id": "a3",
+          "duration": "1 year",
+          "fee": "\u00a312,500 / year",
+          "ielts": "IELTS 6",
+          "intakes": "January",
+          "level_label": "Bachelor's",
+          "name": "BSc (Hons) Computing (Top-Up)",
+          "university": "Arden University",
+          "university_id": "arden-university"
+        },
+        {
+          "city": "London",
+          "course_id": "a2",
+          "duration": "1 year",
+          "fee": "\u00a314,000 / year",
+          "ielts": "IELTS 6",
+          "intakes": "January",
+          "level_label": "Master's",
+          "name": "MBA",
+          "university": "Arden University",
+          "university_id": "arden-university"
+        },
+        {
+          "city": "London",
+          "course_id": "a1",
+          "duration": "1 year",
+          "fee": "\u00a314,000 / year",
+          "ielts": "IELTS 6",
+          "intakes": "January",
+          "level_label": "Master's",
+          "name": "MSc Data Science",
+          "university": "Arden University",
+          "university_id": "arden-university"
+        }
+      ],
+      "total": 3,
+      "universities": 1
+    },
+    "fallback_text": "3 matching courses at 1 universities. BSc (Hons) Computing (Top-Up), Arden University, \u00a312,500 / year; MBA, Arden University, \u00a314,000 / year; MSc Data Science, Arden University, \u00a314,000 / year.",
+    "schema_version": 1,
+    "sources": [],
+    "subtitle": "Fees are from Admizz's website and are not confirmed yet. A counselor can confirm them.",
+    "title": "Courses at Arden University",
+    "type": "course_results"
+  },
+  "courses_search": {
+    "actions": [],
+    "answered": null,
+    "block_id": "course_results-8278f16869",
+    "changed_because": null,
+    "data": {
+      "filters": [
+        "Master's",
+        "Data Science",
+        "U.K.",
+        "Lowest fee first"
+      ],
+      "items": [
+        {
+          "city": "London",
+          "course_id": "a1",
+          "duration": "1 year",
+          "fee": "\u00a314,000 / year",
+          "ielts": "IELTS 6",
+          "intakes": "January",
+          "level_label": "Master's",
+          "name": "MSc Data Science",
+          "university": "Arden University",
+          "university_id": "arden-university"
+        },
+        {
+          "city": "Birmingham",
+          "course_id": "s1",
+          "duration": "1 year",
+          "fee": "\u00a319,000 / year",
+          "intakes": "January",
+          "level_label": "Master's",
+          "name": "MSc Data Science and Analytics",
+          "university": "Aston University",
+          "university_id": "aston-university"
+        },
+        {
+          "city": "Colchester",
+          "course_id": "e1",
+          "duration": "1 year",
+          "fee": "\u00a324,675 / year",
+          "intakes": "January",
+          "level_label": "Master's",
+          "name": "MSc Data Science",
+          "university": "University of Essex",
+          "university_id": "university-of-essex"
+        }
+      ],
+      "total": 3,
+      "universities": 3
+    },
+    "fallback_text": "3 matching courses at 3 universities. MSc Data Science, Arden University, \u00a314,000 / year; MSc Data Science and Analytics, Aston University, \u00a319,000 / year; MSc Data Science, University of Essex, \u00a324,675 / year.",
+    "schema_version": 1,
+    "sources": [],
+    "subtitle": "Fees are from Admizz's website and are not confirmed yet. A counselor can confirm them.",
+    "title": "Courses that match",
+    "type": "course_results"
+  },
   "eligibility_uk": {
     "actions": [],
     "answered": null,
@@ -639,6 +755,53 @@
     "subtitle": null,
     "title": null,
     "type": "quick_chips"
+  },
+  "university": {
+    "actions": [],
+    "answered": null,
+    "block_id": "university_card-aafe29c159",
+    "changed_because": null,
+    "data": {
+      "city": "London",
+      "name": "Arden University",
+      "rows": [
+        {
+          "label": "Location",
+          "value": "London"
+        },
+        {
+          "label": "Intakes",
+          "value": "January"
+        },
+        {
+          "label": "Courses",
+          "value": "3 (1 bachelor's, 2 master's)"
+        },
+        {
+          "label": "Tuition",
+          "value": "\u00a312,500\u2013\u00a314,000 / year"
+        },
+        {
+          "label": "English requirement",
+          "value": "IELTS 6"
+        },
+        {
+          "label": "Academic requirement",
+          "value": "55%"
+        },
+        {
+          "label": "Source",
+          "value": "Admizz website, not confirmed yet"
+        }
+      ],
+      "university_id": "arden-university"
+    },
+    "fallback_text": "Arden University: Location London; Intakes January; Courses 3 (1 bachelor's, 2 master's); Tuition \u00a312,500\u2013\u00a314,000 / year; English requirement IELTS 6; Academic requirement 55%; Source Admizz website, not confirmed yet.",
+    "schema_version": 1,
+    "sources": [],
+    "subtitle": null,
+    "title": "Arden University",
+    "type": "university_card"
   },
   "welcome": {
     "actions": [],

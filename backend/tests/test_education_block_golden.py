@@ -77,6 +77,14 @@ def _build_all() -> dict:
         block = asyncio.run(extract_block(FakeClient([KB_REPLIES[shape]]), "m", shape, "q", CHUNKS))
         assert block is not None, f"kb shape {shape} produced no block"
         out[f"kb_{shape}"] = block.model_dump()
+    from tests.test_education_courses import make_course_catalog
+    courses = make_course_catalog()
+    for name, tool, args in (("courses_search", "show_course_results", {"query": "data science", "level": "master", "country": "uk"}),
+                             ("courses_at_university", "show_course_results", {"university": "arden-university"}),
+                             ("university", "show_university", {"university": "arden-university"})):
+        outcome = execute_education_tool(tool, dict(args), _profile(), courses)
+        assert outcome.block is not None, f"{name} produced no block"
+        out[name] = outcome.block.model_dump()
     # No backend tool emits quick_chips today; keep its schema pinned anyway.
     out["quick_chips"] = build_block("quick_chips", {"chips": [{"id": "a", "label": "Chip A"}]},
                                      fallback_text="Chip A").model_dump()
