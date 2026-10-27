@@ -9,6 +9,7 @@ Fees are shown the way the source states them: a plain yearly figure, a whole-co
 ("from £9,400 per year · £9,400–£17,700 depending on course") for a price that varies by course. There is no currency
 conversion, so a course fee is never compared with the student's budget (the budget is in the catalog's country currency).
 """
+import difflib
 import re
 from dataclasses import dataclass
 
@@ -83,7 +84,25 @@ def subject_terms(text: str, catalog: Catalog, university_ids: list[str] | None 
         for part in _SYNONYMS.get(word, (word,)):
             if part not in terms:
                 terms.append(part)
-    return tuple(terms)
+    return _fix_typos(tuple(terms), catalog)
+
+
+def _fix_typos(terms: tuple[str, ...], catalog: Catalog) -> tuple[str, ...]:
+    """A subject word that is in no course name is replaced by the one close spelling that is ("sceinece" -> "science"). A word that
+    matches, a short word, a degree abbreviation, or a word with no close spelling stays as it is, so nothing is guessed loosely."""
+    if not catalog.courses or not terms:
+        return terms
+    vocabulary = {w for c in catalog.courses for w in _words(f"{c.name} {c.field_of_study or ''}") if len(w) >= 4}
+    fixed: list[str] = []
+    for term in terms:
+        known = term in vocabulary or any(w.startswith(term) for w in vocabulary if len(term) >= 4)
+        if known or len(term) < 5 or term in _DEGREE_ABBREVIATIONS:
+            fixed.append(term)
+            continue
+        # Same first letter and nearly the same length, so a different word ('dental' / 'mental') is never taken for a typo.
+        close = difflib.get_close_matches(term, [w for w in vocabulary if w[0] == term[0] and abs(len(w) - len(term)) <= 2], n=1, cutoff=0.75)
+        fixed.append(close[0] if close else term)
+    return tuple(fixed)
 
 
 # ---- universities ----
