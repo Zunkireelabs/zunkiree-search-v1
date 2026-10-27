@@ -49,6 +49,14 @@ def _recommendation(block: UIBlock) -> str:
     return "I couldn't find a clear fit with what you've shared so far. The reasons for each country are below."
 
 
+def _courses(block: UIBlock) -> str:
+    data = block.data
+    shown, total, unis = len(data["items"]), data["total"], data["universities"]
+    if shown == total:
+        return f"Here {'is' if shown == 1 else 'are'} the {shown} matching course{'s' if shown != 1 else ''}."
+    return f"Here are {shown} of the {total} matching courses, across {unis} universit{'ies' if unis != 1 else 'y'}."
+
+
 def leadin_for(intent: str, args: dict, block: UIBlock, catalog: Catalog, brand_name: str) -> str | None:
     """The sentence to show with this card, or None when there isn't a safe one (the caller then asks the LLM)."""
     text = _sentence(intent, args, block, catalog, brand_name)
@@ -71,6 +79,10 @@ def _sentence(intent: str, args: dict, block: UIBlock, catalog: Catalog, brand_n
         return "Please fill in your details below."
     if intent == "compare":
         return f"Here's {_names([c['label'] for c in block.data['columns']])} side by side."
+    if intent == "university":
+        return f"Here's what we have on {block.data['name']}."
+    if intent == "courses":
+        return _courses(block)
     country = _label(catalog, args.get("country"))
     if country is None:
         return None

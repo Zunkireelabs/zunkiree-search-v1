@@ -2,6 +2,8 @@
 Compositions: a result card plus the blocks that make it useful, in a fixed order per intent.
 
     recommend_country -> profile summary, match cards, next-step buttons
+    university -> the university's facts, its courses, next-step buttons
+    courses -> the course results, next-step buttons
     compare / eligibility / country_facts / cost_calculator / profile -> the card, next-step buttons
 
 The same intent and the same state always produce the same blocks. Every part is built by the existing deterministic
@@ -27,6 +29,8 @@ COMPOSITIONS: dict[str, tuple[str, ...]] = {
     "country_facts": ("primary", "next_steps"),
     "cost_calculator": ("primary", "next_steps"),
     "profile": ("primary", "next_steps"),
+    "courses": ("primary", "next_steps"),
+    "university": ("primary", "courses", "next_steps"),
 }
 
 
@@ -42,6 +46,7 @@ _COUNTRY_CHIPS = {  # chip kind -> (intent, label template)
     "eligibility": ("eligibility", "Check my eligibility for {c}"),
     "cost": ("cost_calculator", "Estimate costs for {c}"),
     "facts": ("country_facts", "Quick facts: {c}"),
+    "courses": ("courses", "Browse courses in {c}"),     # offered only for a country that has courses (checked by the real builder)
 }
 
 
@@ -94,6 +99,22 @@ def normalized_args(intent: str, raw: dict, catalog: Catalog) -> dict:
     if intent in COUNTRY_INTENTS:
         country = _country_id(catalog, raw.get("country"))
         return {"country": country} if country else {}
+    if intent == "courses":
+        out: dict = {}
+        if raw.get("country") and (cid := _country_id(catalog, raw["country"])):
+            out["country"] = cid
+        if raw.get("university"):
+            from app.services.education_tools import _find_university     # the same lookup the tool uses
+            if uid := _find_university(catalog, raw["university"]):
+                out["university"] = uid
+        for key in ("query", "level"):
+            if isinstance(raw.get(key), str) and raw[key].strip():
+                out[key] = raw[key].strip()
+        return out
+    if intent == "university":
+        from app.services.education_tools import _find_university
+        uid = _find_university(catalog, raw.get("university"))
+        return {"university": uid} if uid else {}
     if intent == "compare":
         ids: list[str] = []
         for value in raw.get("countries") or []:
@@ -110,7 +131,7 @@ def _candidates(intent: str, args: dict, primary: UIBlock, catalog: Catalog) -> 
         top = fits[0] if fits else None
         out = [f"compare:{fits[0]}+{fits[1]}"] if len(fits) >= 2 else []
         if top:
-            out += [f"eligibility:{top}", f"cost:{top}"]
+            out += [f"eligibility:{top}", f"courses:{top}", f"cost:{top}"]
         return out + ["budget"]
     if intent == "compare":
         first = primary.data["columns"][0]["id"]
@@ -119,7 +140,9 @@ def _candidates(intent: str, args: dict, primary: UIBlock, catalog: Catalog) -> 
     if intent == "eligibility" and country:
         return [f"cost:{country}", "matches", "lead"]
     if intent == "country_facts" and country:
-        return [f"eligibility:{country}", f"cost:{country}", "matches"]
+        return [f"courses:{country}", f"eligibility:{country}", f"cost:{country}", "matches"]
+    if intent in ("courses", "university"):
+        return ["lead"]
     if intent == "cost_calculator" and country:
         return [f"eligibility:{country}", f"facts:{country}", "lead"]
     if intent == "profile":
@@ -156,6 +179,10 @@ def compose(intent: str, args: dict, primary: UIBlock, profile: dict, catalog: C
             summary = execute_education_tool("show_profile", {}, profile, catalog).block
             if summary:
                 blocks.append(summary)
+        elif part == "courses":      # a university's own course list, under its facts
+            courses = execute_education_tool("show_course_results", {"university": args.get("university")}, profile, catalog).block
+            if courses:
+                blocks.append(courses)
         elif part == "next_steps":
             steps = next_steps(intent, args, primary, profile, catalog)
             if steps:

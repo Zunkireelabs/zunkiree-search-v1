@@ -72,7 +72,7 @@ def test_guided_and_input_cards_have_no_companions(catalog, intent, args):
 def test_the_recipe_table_only_uses_known_parts_and_registered_intents():
     for intent, parts in COMPOSITIONS.items():
         assert intent in INTENTS and "primary" in parts
-        assert set(parts) <= {"primary", "profile", "next_steps"}
+        assert set(parts) <= {"primary", "profile", "courses", "next_steps"}
 
 
 def test_the_primary_block_is_returned_untouched(catalog):

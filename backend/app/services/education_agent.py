@@ -151,6 +151,7 @@ def _turn_intent(question: str, block_action: dict | None, catalog: Catalog, pro
     Deterministic routing, so the core flow never depends on the LLM following a prompt rule:
       - tapped welcome tile     -> that journey's first step
       - tapped 'explore'        -> that country's facts
+      - tapped 'open_university' -> that university's facts and courses
       - picked a country for a pending goal (eligibility / costs) -> that goal, for that country
       - tapped answer (select / set_value) -> the next missing slot's card
       - typed text              -> detect_intent
@@ -163,6 +164,9 @@ def _turn_intent(question: str, block_action: dict | None, catalog: Catalog, pro
             return chip_intent(str(action_id), catalog)   # a next-step button: a closed id -> intent, or nothing
         if action_id == "start":
             return journey_intent(values.get("journey", ""), profile, catalog)
+        if action_id == "open_university":
+            university = values.get("university_id")
+            return ("university", {"university": university}) if catalog.get_university(str(university or "")) else None
         if action_id == "explore":
             country = values.get("country")
             return ("country_facts", {"country": country}) if catalog.get(country or "") else None

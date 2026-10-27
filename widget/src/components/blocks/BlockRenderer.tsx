@@ -6,6 +6,8 @@ import { QuickChips } from './QuickChips'
 import { RangeSlider } from './RangeSlider'
 import { MatchCards } from './MatchCards'
 import { InfoCard } from './InfoCard'
+import { CourseResults } from './CourseResults'
+import { UniversityCard } from './UniversityCard'
 import { ComparisonTable } from './ComparisonTable'
 import { EligibilityMeter } from './EligibilityMeter'
 import { ProfileSummary } from './ProfileSummary'
@@ -27,6 +29,8 @@ const REGISTRY: Record<string, ComponentType<BlockComponentProps>> = {
   range_slider: RangeSlider,
   match_cards: MatchCards,
   info_card: InfoCard,
+  course_results: CourseResults,
+  university_card: UniversityCard,
   comparison_table: ComparisonTable,
   eligibility_meter: EligibilityMeter,
   profile_summary: ProfileSummary,
@@ -41,7 +45,7 @@ const REGISTRY: Record<string, ComponentType<BlockComponentProps>> = {
 
 // Only blocks whose job is to send something to the chat look "used up" once superseded.
 // Self-contained ones (stepper, checklist, calculator...) stay fully usable.
-const DIM_WHEN_LOCKED = new Set(['choice_cards', 'range_slider', 'lead_form', 'journey_cards', 'match_cards', 'profile_summary', 'quick_chips'])
+const DIM_WHEN_LOCKED = new Set(['choice_cards', 'range_slider', 'lead_form', 'journey_cards', 'match_cards', 'course_results', 'profile_summary', 'quick_chips'])
 
 interface BlockRendererProps {
   block: UIBlock

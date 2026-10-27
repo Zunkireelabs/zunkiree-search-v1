@@ -15,6 +15,10 @@ from typing import Callable
 
 from app.schemas.ui_blocks import BlockValidationError, UIBlock, build_block, is_current, upgrade_stored_block
 from app.services.education_catalog import Catalog, CountryRecord, check_eligibility, fit_countries
+from app.services.education_catalog_search import (
+    LEVEL_LABELS, CourseQuery, duration_text, fee_text, ielts_text, level_counts, level_in_text, pick_results, search_courses,
+    subject_terms, terms_label, tuition_range, universities_in_text,
+)
 from app.services.education_profile import (
     FIELD_LABELS, apply_updates, missing_slots, profile_hash, profile_rows, snapshot,
 )
@@ -63,6 +67,15 @@ EDUCATION_TOOLS = [
           ["countries"]),
     _tool("check_eligibility", "Check the student's scores against ONE country's entry requirements.",
           {"country": {"type": "string", "description": "Country name or id"}}, ["country"]),
+    _tool("show_course_results",
+          "Show courses at partner universities that match what the student asked for. Use it for questions about courses, degrees "
+          "or universities. All arguments are optional filters.",
+          {"query": {"type": "string", "description": "Subject words only, e.g. 'data science' or 'nursing'"},
+           "level": {"type": "string", "enum": ["foundation", "bachelor", "master", "phd"]},
+           "country": {"type": "string", "description": "Country name or id"},
+           "university": {"type": "string", "description": "One university's name"}}),
+    _tool("show_university", "Show the facts for ONE named partner university.",
+          {"university": {"type": "string", "description": "The university's name"}}, ["university"]),
     _tool("show_profile", "Show the student what you know about them so far."),
     _tool("show_lead_form", "Show a short contact form so a counselor can follow up."),
 ]
@@ -355,6 +368,110 @@ def _check_eligibility(args: dict, profile: dict, catalog: Catalog) -> ToolOutco
     return _shown(block, f"Result: {result['verdict']}.")
 
 
+# ---- universities and courses ----
+
+_UNVERIFIED_NOTE = "Fees are from Admizz's website and are not confirmed yet. A counselor can confirm them."
+
+
+def _unverified_subtitle(catalog: Catalog) -> str | None:
+    return _UNVERIFIED_NOTE if catalog.status != "verified" else None
+
+
+def _find_university(catalog: Catalog, value) -> str | None:
+    """A university id, or the one university a name in the text points to; None when it is not exactly one."""
+    if isinstance(value, str) and catalog.get_university(value):
+        return value
+    found = universities_in_text(catalog, str(value or ""))
+    return found[0] if len(found) == 1 else None
+
+
+def _show_course_results(args: dict, profile: dict, catalog: Catalog) -> ToolOutcome:
+    spec = INTENTS["courses"]
+    if not catalog.courses:
+        return _no_block("No course data is configured. Offer a counselor.")
+    university_id = _find_university(catalog, args.get("university")) if args.get("university") else None
+    if args.get("university") and not university_id:
+        return _no_block("That university isn't in the catalog. Say you don't have it and offer a counselor.")
+    country = _resolve(catalog, args["country"]) if args.get("country") else None
+    level = args.get("level") if args.get("level") in LEVEL_LABELS else level_in_text(str(args.get("query") or ""))
+    from_profile = False
+    if level is None and university_id is None and profile.get("study_level") in LEVEL_LABELS:
+        level, from_profile = profile["study_level"], True      # the level they told us earlier; dropped below if it leaves nothing
+    terms = subject_terms(str(args.get("query") or ""), catalog, [university_id] if university_id else None)
+
+    courses = search_courses(catalog, CourseQuery(country=country, level=level, terms=terms, university=university_id))
+    if not courses and from_profile:
+        level = None
+        courses = search_courses(catalog, CourseQuery(country=country, level=None, terms=terms, university=university_id))
+    if not courses:
+        return _no_block("No course in the catalog matches that. Say so plainly, do not suggest one, and offer a counselor.")
+    shown = pick_results(courses, one_per_university=university_id is None)
+
+    rows = []
+    for c in shown:
+        u = catalog.get_university(c.university_id)
+        rows.append({"course_id": c.id, "name": c.name, "level_label": LEVEL_LABELS[c.level], "university_id": c.university_id,
+                     "university": u.name if u else c.university_id, "city": u.city if u else None,
+                     "duration": duration_text(c.duration_months), "fee": fee_text(c),
+                     "intakes": ", ".join(c.intakes) or None, "ielts": ielts_text(c)})
+    universities = len({c.university_id for c in courses})
+    university = catalog.get_university(university_id) if university_id else None
+    filters = [f for f in (LEVEL_LABELS.get(level) if level else None, terms_label(terms) or None,
+                           catalog.get(country).label if country and catalog.get(country) else None,
+                           university.name if university else None) if f]
+    if any(c.tuition_per_year for c in shown):
+        filters.append("Lowest fee first")       # the order is fee, not fit: say so on the card
+    heading = f"Courses at {university.name}" if university else spec.title.format(heading="Courses that match")
+
+    def build():
+        return build_block(
+            spec.block_type, {"total": len(courses), "universities": universities, "filters": filters, "items": rows},
+            title=heading, subtitle=_unverified_subtitle(catalog),
+            fallback_text=f"{len(courses)} matching courses at {universities} universities. " + "; ".join(
+                f"{r['name']}, {r['university']}" + (f", {r['fee']}" if r["fee"] else "") for r in rows) + ".",
+            actions=[],
+        )
+
+    key = f"{university_id}|{country}|{level}|{' '.join(terms)}"
+    block = _cached(profile, spec, key, build)
+    return _shown(block, f"{len(courses)} courses match, at {universities} universities; the card lists {len(shown)} of them. "
+                         "Fees are as the Admizz website states them and are not confirmed: never call a course 'best' or 'cheapest', "
+                         "never promise admission, and never quote a fee yourself.")
+
+
+def _show_university(args: dict, profile: dict, catalog: Catalog) -> ToolOutcome:
+    spec = INTENTS["university"]
+    uid = _find_university(catalog, args.get("university"))
+    university = catalog.get_university(uid) if uid else None
+    if not university:
+        return _no_block("That university isn't in the catalog. Say you don't have details on it and offer a counselor.")
+    courses = catalog.courses_at(university.id)
+    ielts = sorted({c.ielts_min for c in courses if c.ielts_min is not None})
+    percents = sorted({c.academic_min_percent for c in courses if c.academic_min_percent is not None})
+    rows = [
+        ("Location", university.city),
+        ("Intakes", ", ".join(university.intakes) or None),
+        ("Courses", f"{len(courses)} ({level_counts(courses)})" if courses else None),
+        ("Tuition", tuition_range(courses)),
+        ("English requirement", (f"IELTS {ielts[0]:g}" if len(ielts) == 1 else f"IELTS {ielts[0]:g}–{ielts[-1]:g}") if ielts else None),
+        ("Academic requirement", f"{percents[0]:g}%" if len(percents) == 1 else None),
+        ("Source", "Admizz website, not confirmed yet" if catalog.status != "verified" else None),
+    ]
+    rows = [{"label": label, "value": v} for label, v in rows if v]
+    if not rows:
+        return _no_block(f"No facts are on file for {university.name}. Say so and offer a counselor.")
+
+    def build():
+        return build_block(
+            spec.block_type, {"university_id": university.id, "name": university.name, "city": university.city, "rows": rows},
+            title=spec.title.format(university=university.name),
+            fallback_text=f"{university.name}: " + "; ".join(f"{r['label']} {r['value']}" for r in rows) + ".",
+        )
+
+    block = _cached(profile, spec, university.id, build)
+    return _shown(block, f"Facts for {university.name}. These are from the Admizz website and are not confirmed.")
+
+
 def _show_profile(args: dict, profile: dict, catalog: Catalog) -> ToolOutcome:
     spec = INTENTS["profile"]
     rows = profile_rows(profile, catalog.labels(), catalog.currency)
@@ -412,6 +529,8 @@ _EXECUTORS: dict[str, Callable[[dict, dict, Catalog], ToolOutcome]] = {
     "show_country_facts": _show_country_facts,
     "compare_countries": _compare_countries,
     "check_eligibility": _check_eligibility,
+    "show_course_results": _show_course_results,
+    "show_university": _show_university,
     "show_profile": _show_profile,
     "show_lead_form": _show_lead_form,
 }

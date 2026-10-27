@@ -58,6 +58,10 @@ def _check_explore(block_type: str, data: dict, values: dict) -> str | None:
     return None if values.get("country") in {i.get("id") for i in data.get("items") or []} else "not_an_option"
 
 
+def _check_open_university(block_type: str, data: dict, values: dict) -> str | None:
+    return None if values.get("university_id") in {i.get("university_id") for i in data.get("items") or []} else "not_an_option"
+
+
 def _check_submit(block_type: str, data: dict, values: dict) -> str | None:
     if not all(isinstance(v, str) for v in values.values()):
         return "bad_values"
@@ -69,6 +73,7 @@ _VALUE_CHECKS = {
     "set_value": _check_set_value,
     "start": _check_start,
     "explore": _check_explore,
+    "open_university": _check_open_university,
     "submit": _check_submit,
 }
 

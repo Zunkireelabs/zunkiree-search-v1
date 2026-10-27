@@ -24,6 +24,8 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   range_slider: { field: 'budget', min: 10000, max: 50000, step: 1000, value: 25000, unit: '$' },
   match_cards: { items: [{ id: 'uk', label: 'U.K.', tier: 'strong', tier_label: 'Strong fit', reasons: [{ status: 'pass', text: 'Fits your budget' }] }] },
   info_card: { heading: 'U.K. quick facts', rows: [{ label: 'Intakes', value: 'September' }] },
+  course_results: { total: 1, universities: 1, filters: [], items: [{ course_id: 'c1', name: 'MSc Data Science', level_label: "Master's", university_id: 'u1', university: 'Arden University' }] },
+  university_card: { university_id: 'u1', name: 'Arden University', rows: [{ label: 'Intakes', value: 'January' }] },
   comparison_table: { columns: [{ id: 'uk', label: 'U.K.' }, { id: 'au', label: 'Australia' }], rows: [{ label: 'Tuition', values: ['1', '2'] }] },
   eligibility_meter: { verdict: 'You meet some requirements', checks: [{ label: 'English score', ok: true, detail: '6.5 vs 6 minimum' }] },
   profile_summary: { rows: [{ label: 'Budget', value: '$30,000 / year' }], missing: [] },
@@ -114,5 +116,56 @@ describe('BlockRenderer: answered cards collapse to a one-line summary', () => {
   it('disables Edit while a reply is streaming', () => {
     const out = html(block('choice_cards', SAMPLES.choice_cards, { answered: { selected: ['uk'] } }), { busy: true })
     expect(out).toMatch(/<button[^>]*disabled/)
+  })
+})
+
+describe('BlockRenderer: course results and university card', () => {
+  const rows = [
+    { course_id: 'c1', name: 'MSc Data Science', level_label: "Master's", university_id: 'u1', university: 'Arden University', city: 'London',
+      duration: '1 year', fee: '£14,000 / year', intakes: 'January', ielts: 'IELTS 6' },
+    { course_id: 'c2', name: 'MBA', level_label: "Master's", university_id: 'u2', university: 'University of Essex',
+      fee: 'from £9,400 per year · £9,400–£17,700 depending on course' },
+  ]
+  const data = { total: 37, universities: 23, filters: ["Master's", 'Lowest fee first'], items: rows }
+
+  it('says how many of the matches are shown, at how many universities, and what was searched', () => {
+    const out = html(block('course_results', data))
+    expect(out).toContain('Showing 2 of 37 courses at 23 universities')
+    expect(out).toContain("Master&#x27;s · Lowest fee first")
+  })
+
+  it('shows each course with the fee exactly as the backend wrote it, and leaves out what it was not given', () => {
+    const out = html(block('course_results', data))
+    expect(out).toContain('MSc Data Science')
+    expect(out).toContain('£14,000 / year')
+    expect(out).toContain('from £9,400 per year · £9,400–£17,700 depending on course')
+    expect(out.match(/<dt>English<\/dt>/g)).toHaveLength(1)     // the second course has no IELTS row
+    expect(out.match(/<dt>Length<\/dt>/g)).toHaveLength(1)
+  })
+
+  it('offers one button per course that opens its university, and none once the card is locked', () => {
+    const open = html(block('course_results', data))
+    expect(open.match(/class="zk-course__open"/g)).toHaveLength(2)
+    expect(open).toContain('About Arden University')
+    expect(html(block('course_results', data), { locked: true })).not.toContain('zk-course__open')
+  })
+
+  it('counts a single course and a single university correctly', () => {
+    const out = html(block('course_results', { total: 1, universities: 1, filters: [], items: [rows[0]] }))
+    expect(out).toContain('1 course at 1 university')
+  })
+
+  it('does not turn text from the catalog into markup', () => {
+    const out = html(block('course_results', { ...data, items: [{ ...rows[0], name: '<img src=x onerror=alert(1)>' }] }))
+    expect(out).not.toContain('<img')
+    expect(out).toContain('&lt;img')
+  })
+
+  it('university card shows every row once, and names the university only in its title', () => {
+    const out = html(block('university_card', { university_id: 'u1', name: 'Arden University', city: 'London',
+      rows: [{ label: 'Intakes', value: 'January' }, { label: 'Courses', value: "14 (3 bachelor's, 11 master's)" }] }, { title: 'Arden University' }))
+    expect(out.match(/Arden University/g)).toHaveLength(1)
+    expect(out).toContain('Intakes')
+    expect(out).toContain('14 (3 bachelor')
   })
 })

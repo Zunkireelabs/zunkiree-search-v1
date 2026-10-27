@@ -147,6 +147,22 @@ export const blockStyles = (c: string) => `
   .zk-info__row dd { margin: 0; font-weight: 600; color: var(--zk-ink); text-align: right; }
   .zk-info__missing { margin-top: 10px; padding: 8px 10px; font-size: 12px; color: var(--zk-muted); background: var(--zk-bg); border-radius: 10px; }
 
+  /* ---- course results and university card ---- */
+  .zk-courses__count { margin: 0 0 10px; font-size: 12.5px; font-weight: 600; color: var(--zk-ink-2); }
+  .zk-courses__filters { font-weight: 500; color: var(--zk-muted); }
+  .zk-courses__list { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
+  .zk-course { padding: 12px 14px; background: #fff; border: 1px solid var(--zk-line); border-radius: 14px; animation: zk-rise 0.4s var(--zk-ease) both; animation-delay: calc(var(--i, 0) * 60ms); }
+  .zk-course__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .zk-course__name { font-size: 14px; font-weight: 650; letter-spacing: -0.01em; line-height: 1.3; color: var(--zk-ink); overflow-wrap: anywhere; }
+  .zk-course__level { flex: none; padding: 2px 9px; font-size: 11px; font-weight: 700; white-space: nowrap; color: var(--zk-accent-dark); background: var(--zk-accent-soft); border-radius: 999px; }
+  .zk-course__uni { margin-top: 3px; font-size: 12.5px; color: var(--zk-muted); }
+  .zk-course__facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px 14px; margin: 10px 0 0; }
+  .zk-course__facts div { min-width: 0; }
+  .zk-course__facts dt { font-size: 11px; color: var(--zk-muted); }
+  .zk-course__facts dd { margin: 1px 0 0; font-size: 12.5px; font-weight: 600; color: var(--zk-ink); overflow-wrap: anywhere; }
+  .zk-course__open { margin-top: 10px; padding: 6px 12px; border: 0; border-radius: 999px; font: inherit; font-size: 12px; font-weight: 600; color: var(--zk-accent-dark); background: var(--zk-accent-soft); cursor: pointer; transition: background 0.15s; }
+  .zk-course__open:hover { background: var(--zk-accent-mid); }
+
   /* ---- comparison ---- */
   .zk-compare {
     overflow-x: auto; margin: 0 -4px; padding: 0 4px; border-radius: 10px; background-color: #fff;
@@ -297,7 +313,7 @@ export const blockStyles = (c: string) => `
   .zk-mobile .zk-choice-grid { grid-template-columns: repeat(2, 1fr); }
   .zk-mobile .zk-choice, .zk-mobile .zk-tile, .zk-mobile .zk-check, .zk-mobile .zk-acc__head, .zk-mobile .zk-block__cta { min-height: 48px; }
   /* every tappable control is at least 44px tall on phones and on any touch (coarse-pointer) device */
-  .zk-mobile .zk-block__chips .zk-chip, .zk-mobile .zk-match__more, .zk-mobile .zk-answer__edit { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+  .zk-mobile .zk-block__chips .zk-chip, .zk-mobile .zk-match__more, .zk-mobile .zk-course__open, .zk-mobile .zk-answer__edit { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
   @media (pointer: coarse) {
     .zk-block__chips .zk-chip, .zk-match__more, .zk-answer__edit { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
     .zk-choice, .zk-tile, .zk-check, .zk-acc__head, .zk-block__cta { min-height: 44px; }

@@ -52,6 +52,10 @@ These collect profile answers. Once answered, they **fold into a one-line summar
 | `eligibility_meter` (v2) | Verdict + pass/fail checks | "Am I eligible for the UK?" | English score, academic score |
 | `cost_calculator` | Adjustable cost parts with a live total | "How much does Australia cost?" | none |
 | `profile_summary` | What we know + what's missing | "What do you know about me?" | all profile fields |
+| `course_results` | Up to 6 courses with university, fee, length, intake and IELTS; how many matched and what was searched | "MSc data science in the UK", "which universities offer law", "courses at Essex" | study level (dropped if it leaves nothing) |
+| `university_card` | One university's location, intakes, course count, tuition range and entry requirements | "Tell me about Arden University", or a tap on a course | none |
+
+**Course and university cards** only exist for a tenant whose catalog has courses; for any other tenant these questions behave as before. Courses are searched by fixed filters (country, level, subject words, one university) and listed lowest yearly fee first, one course per university for a broad search; the card says so ("Lowest fee first"). A fee is shown as the source states it: a plain yearly figure, a whole-course total, or the source's own wording ("from £9,400 per year ..."); it is never computed or converted, and never compared with the student's budget (different currency). While the catalog is not `verified` the card carries "Fees are from Admizz's website and are not confirmed yet." Tapping a course opens its university (`open_university`).
 
 **Fit tiers** (`match_cards`): Strong fit · Good fit · Possible fit · Needs review.
 A tier describes how well the student's own details line up. It is **not** a chance of admission or of a visa, and it's never shown as a percentage.
@@ -76,7 +80,7 @@ Single-fact answers ("is it free?") have no shape and stay plain text.
 | `quick_chips` | Up to 3 buttons under a result card | After most result cards (see compositions below) |
 
 Buttons come from a **closed list**:
-Which countries fit me? · What do you know about me? · Update my budget · Talk to a counselor · Compare A and B · Check my eligibility for X · Estimate costs for X · Quick facts: X.
+Which countries fit me? · What do you know about me? · Update my budget · Talk to a counselor · Compare A and B · Check my eligibility for X · Estimate costs for X · Quick facts: X · Browse courses in X (only where the catalog has courses).
 A button only appears if the card it leads to can actually be built right now.
 
 ---
@@ -93,6 +97,8 @@ The same question with the same profile always gives the same cards, in this ord
 | Country facts | `info_card` → `quick_chips` |
 | Costs | `cost_calculator` → `quick_chips` |
 | My profile | `profile_summary` → `quick_chips` |
+| Courses / universities in general | `course_results` → `quick_chips` (Talk to a counselor) |
+| A named university | `university_card` → `course_results` (its courses) → `quick_chips` |
 | Anything else | the single card |
 
 Special cases:
