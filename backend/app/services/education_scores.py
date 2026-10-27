@@ -114,8 +114,27 @@ def _percent(text: str) -> dict:
     return {}
 
 
+# The student talking about themselves: "i have ...", "i got ...", "my ...". A question or a requirement before that point is not part of the score.
+_FIRST_PERSON = re.compile(r"\b(?:i\s+(?:have|had|got|scored|achieved|secured|did)|i['\u2019]?m|i\s+am|my)\b", _I)
+
+
+def _own_words(text: str) -> str:
+    """The part of `text` that is the student's own statement, or "" when it is a question or a requirement.
+
+    "which is the best country for me i have 7 ielts" is a question AND a statement: the question words come before "i have", so the score is
+    read from "i have 7 ielts". The statement ends at its own question mark or question/requirement word ("i have 7 ielts, do i need more"
+    reads "i have 7 ielts, do i"). Without a first-person marker the old rule stands: any question or requirement word rejects the message."""
+    if (marker := _FIRST_PERSON.search(text)):
+        lead = re.search(rf"{_NUM}\s+(?:is|was)\s+$", text[:marker.start()], _I)       # "7 is my english score": the number comes first
+        own = text[lead.start() if lead else marker.start():]
+        stop = _NOT_A_STATEMENT.search(own)
+        return own[:stop.start()] if stop else own
+    return "" if _NOT_A_STATEMENT.search(text) else text
+
+
 def extract_scores(text: str) -> dict:
     """Scores the student stated about themselves in `text`, as profile updates. Empty for questions and requirements."""
-    if not text or _NOT_A_STATEMENT.search(text):
+    own = _own_words(text) if text else ""
+    if not own:
         return {}
-    return {**_english(text), **_gpa(text), **_percent(text)}
+    return {**_english(own), **_gpa(own), **_percent(own)}

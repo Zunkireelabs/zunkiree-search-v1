@@ -170,6 +170,9 @@ def _turn_intent(question: str, block_action: dict | None, catalog: Catalog, pro
             goal = profile.pop("goal")
             return country_goal(goal, [profile["focus_country"]], profile, catalog) if profile.get("focus_country") else None
         if action_id in ("select", "set_value"):
+            if profile.get("awaiting") == "recommend_country" and values.get("field") == "budget" and profile.get("budget"):
+                profile.pop("awaiting")                  # the student asked "which country is best?" and this was the missing detail:
+                return "recommend_country", {}           # finish that answer instead of moving on to the next checklist question
             return _next_card(profile, catalog)  # None = next question is text-only, so the LLM asks it
         return None
     if _ACK.match(question.strip()):
@@ -227,6 +230,7 @@ class EducationAgentService:
 
         changed = apply_block_action(profile, block_action)
         if block_action is None:
+            profile.pop("awaiting", None)   # a typed message decides what is wanted now; a pending recommendation is set again below if it is still needed
             if understanding is not None and understanding.confidence >= min_confidence:
                 changed += apply_updates(profile, understanding.score_updates())   # own, range-checked scores in any language; the rules below win a tie
             # Scores the student states in their own words are saved here, with their unit, before any card is chosen: the AI
@@ -283,6 +287,7 @@ class EducationAgentService:
             if outcome.block is None and intent[0] == "recommend_country" and settings.education_template_leadins:
                 if ask := _ask_for_budget(profile, catalog):
                     needs_details = True
+                    profile["awaiting"] = "recommend_country"   # the budget tap that answers the slider finishes this recommendation
                     outcome = ToolOutcome(ask.block, ask.message + " It appears because countries can't be ranked until you know "
                                           "their budget: say that in one short sentence and do not suggest any country.")
             if outcome.block and needs_details:
@@ -446,6 +451,7 @@ class EducationAgentService:
                 if (result.block is None and TOOL_TO_INTENT.get(tool_name) == "recommend_country"
                         and settings.education_template_leadins and (ask := _ask_for_budget(profile, catalog))):
                     asked_for_details = True
+                    profile["awaiting"] = "recommend_country"
                     result = ToolOutcome(ask.block, "The student now sees a yearly-budget slider because countries can't be ranked "
                                          "until you know their budget. Say that in one short sentence; do not suggest any country.")
 

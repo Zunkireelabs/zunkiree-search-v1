@@ -58,8 +58,9 @@ TIMEOUT = 15.0              # seconds per request
 MAX_BYTES = 1_000_000       # a page larger than this is rejected
 MAX_REDIRECTS = 3
 
-WRITE_REFUSED = ("--write is not available: a real write to the shared admizz-test knowledge base (Supabase + Pinecone, with paid "
-                 "embeddings) needs a separate explicit approval after this dry-run report has been reviewed. Nothing was done.")
+WRITE_REFUSED = ("--write is not available here: a real write to the shared admizz-test knowledge base (Supabase + Pinecone, with paid "
+                 "embeddings) needs a separate explicit approval after this dry-run report has been reviewed, and it is done by the "
+                 "gated command `python -m scripts.ingest_education_pilot` (plan, preflight, execute). Nothing was done.")
 
 
 class FetchError(Exception):

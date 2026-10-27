@@ -1,0 +1,87 @@
+{
+  "site_id": "admizz-test",
+  "note": "Questions only (no answers, no facts): realistic ways a student might ask about each pilot page. After an approved ingestion, each question is put to the chatbot's retrieval and the check passes when that page's own url is among the top results. Whether the retrieved text is actually useful and correct is still judged by a person.",
+  "probes": {
+    "uk-visa-fee": [
+      "what is the uk student visa fee",
+      "uk student visa ko fee kati ho",
+      "how much is the health surcharge for uk students"
+    ],
+    "uk-visa-bank-balance": [
+      "how much bank balance do i need for a uk student visa",
+      "uk visa ko lagi bank balance kati chahincha"
+    ],
+    "uk-visa-english": [
+      "what english test do i need for a uk student visa",
+      "uk visa ko lagi ielts chahinchha ki chahindaina"
+    ],
+    "uk-visa-processing": [
+      "how long does a uk student visa take from nepal",
+      "uk student visa process hune ma kati din lagcha"
+    ],
+    "uk-tb-test": [
+      "do i need a tb test for the uk visa from nepal",
+      "uk jana tb test garnu parcha"
+    ],
+    "us-visa-interview": [
+      "how do i prepare for the us f1 visa interview",
+      "amerika ko visa interview ko lagi k tayari garne"
+    ],
+    "au-cost": [
+      "how much does an australian student visa cost",
+      "australia student visa ko fee ra funds kati chahincha"
+    ],
+    "ca-visa-pal": [
+      "do i need a pal for canada as a nepali student",
+      "canada ko lagi pal letter chahincha"
+    ],
+    "ca-cost": [
+      "how much money do i need for a canada study permit",
+      "canada ma padhna gic ra kharcha kati lagcha"
+    ],
+    "uk-cost": [
+      "how much does it cost to study in the uk from nepal",
+      "uk ma padhna total kharcha kati lagcha"
+    ],
+    "uk-scholarships": [
+      "what scholarships are available for nepali students in the uk",
+      "uk ma scholarship paune tarika k cha"
+    ],
+    "uk-gpa": [
+      "what gpa do i need to study in the uk",
+      "uk ma padhna kati gpa chahincha"
+    ],
+    "uk-intakes": [
+      "when are the uk intakes for nepali students",
+      "uk ko intake kahile kahile hunchha"
+    ],
+    "ca-permit-cap": [
+      "what is the canada study permit cap",
+      "canada ko study permit cap le malai k asar parchha"
+    ],
+    "de-blocked-account": [
+      "how much money is needed in a german blocked account",
+      "germany ko blocked account ma kati paisa chahincha"
+    ],
+    "de-cost": [
+      "how much does it cost to study in germany from nepal",
+      "germany ma padhna kharcha kati lagcha"
+    ],
+    "de-blocked-account-guide": [
+      "how do i open a blocked account for germany",
+      "germany ko blocked account kasari kholne"
+    ],
+    "ielts-vs-pte": [
+      "what is the difference between ielts and pte",
+      "ielts ra pte ma k pharak cha"
+    ],
+    "scholarships-top-15": [
+      "which scholarships can nepali students get to study abroad",
+      "bidesh padhna nepali ko lagi scholarship haru kun kun cha"
+    ],
+    "visa-documents": [
+      "what documents do i need for a student visa from nepal",
+      "student visa ko lagi kun kun kagajat chahincha"
+    ]
+  }
+}
