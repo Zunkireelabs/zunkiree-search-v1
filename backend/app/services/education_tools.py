@@ -394,11 +394,9 @@ def _check_eligibility(args: dict, profile: dict, catalog: Catalog) -> ToolOutco
 
 # ---- universities and courses ----
 
-_UNVERIFIED_NOTE = "Fees are from Admizz's website and are not confirmed yet. A counselor can confirm them."
-
-
-def _unverified_subtitle(catalog: Catalog) -> str | None:
-    return _UNVERIFIED_NOTE if catalog.status != "verified" else None
+# Admizz confirmed (2026-10-27) that we may use the numbers on its website. That is permission to use them, not a check that they are
+# right: the pages themselves say fees and intakes can change, so every course card keeps that line, whatever the catalog status.
+_COURSES_NOTE = "Fees come from Admizz's website and can change. A counselor can confirm them."
 
 
 def _find_university(catalog: Catalog, value) -> str | None:
@@ -450,7 +448,7 @@ def _show_course_results(args: dict, profile: dict, catalog: Catalog) -> ToolOut
     def build():
         return build_block(
             spec.block_type, {"total": len(courses), "universities": universities, "filters": filters, "items": rows},
-            title=heading, subtitle=_unverified_subtitle(catalog),
+            title=heading, subtitle=_COURSES_NOTE,
             fallback_text=f"{len(courses)} matching courses at {universities} universities. " + "; ".join(
                 f"{r['name']}, {r['university']}" + (f", {r['fee']}" if r["fee"] else "") for r in rows) + ".",
             actions=[],
@@ -459,7 +457,7 @@ def _show_course_results(args: dict, profile: dict, catalog: Catalog) -> ToolOut
     key = f"{university_id}|{country}|{level}|{' '.join(terms)}"
     block = _cached(profile, spec, key, build)
     return _shown(block, f"{len(courses)} courses match, at {universities} universities; the card lists {len(shown)} of them. "
-                         "Fees are as the Admizz website states them and are not confirmed: never call a course 'best' or 'cheapest', "
+                         "Fees are as the Admizz website states them and can change: never call a course 'best' or 'cheapest', "
                          "never promise admission, and never quote a fee yourself.")
 
 
@@ -479,7 +477,7 @@ def _show_university(args: dict, profile: dict, catalog: Catalog) -> ToolOutcome
         ("Tuition", tuition_range(courses)),
         ("English requirement", (f"IELTS {ielts[0]:g}" if len(ielts) == 1 else f"IELTS {ielts[0]:g}–{ielts[-1]:g}") if ielts else None),
         ("Academic requirement", f"{percents[0]:g}%" if len(percents) == 1 else None),
-        ("Source", "Admizz website, not confirmed yet" if catalog.status != "verified" else None),
+        ("Source", "Admizz website"),
     ]
     rows = [{"label": label, "value": v} for label, v in rows if v]
     if not rows:
@@ -493,7 +491,7 @@ def _show_university(args: dict, profile: dict, catalog: Catalog) -> ToolOutcome
         )
 
     block = _cached(profile, spec, university.id, build)
-    return _shown(block, f"Facts for {university.name}. These are from the Admizz website and are not confirmed.")
+    return _shown(block, f"Facts for {university.name}. These are from the Admizz website and can change.")
 
 
 def _show_profile(args: dict, profile: dict, catalog: Catalog) -> ToolOutcome:
