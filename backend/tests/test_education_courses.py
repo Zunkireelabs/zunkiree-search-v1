@@ -70,6 +70,11 @@ def test_a_chatty_graduate_degree_question_is_a_master_level_search_with_no_left
     assert detect_intent(q, catalog) == ("courses", {"level": "master"})
 
 
+def test_a_misspelt_subject_word_is_matched_to_the_one_close_spelling_in_the_catalog(catalog):
+    assert subject_terms("msc data sceinece in the uk", catalog, []) == ("msc", "data", "science")
+    assert subject_terms("data zzqxv", catalog, []) == ("data", "zzqxv")        # nothing close: left as written, never guessed
+
+
 def test_longer_university_name_wins_over_the_name_it_contains(catalog):
     assert universities_in_text(catalog, "courses at aston university oncampus") == ["aston-university-oncampus"]
     assert universities_in_text(catalog, "courses at aston university") == ["aston-university"]
