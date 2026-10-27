@@ -441,3 +441,14 @@ async def test_done_reports_profile_progress():
     agent.memory.profiles[(None, "s1")] = {"countries": ["uk"], "budget": 30000, "contact": {}, "shown": {}}
     done = (await run(agent, "U.K.", block_action=_tap("study_level", ["master"])))[-1]
     assert done["profile_progress"] == {"filled": 3, "total": 6}
+
+
+@pytest.mark.asyncio
+async def test_a_timeline_question_the_card_cannot_hold_is_answered_from_the_knowledge_base_text_only():
+    """'how long does the UK visa take?' is a single fact: no timeline card, but the retrieved text states it."""
+    agent = make_agent([json.dumps({"found": False}), [_chunk("A UK student visa decision usually takes 3 weeks.")]], chunks=PROCESS_CHUNKS)
+    events = await run(agent, "how long does UK visa take")
+    assert blocks_of(events) == []
+    notes = [m["content"] for m in agent.client.calls[1]["messages"] if m["role"] == "system"]
+    assert any("ONLY the knowledge base text" in n and "Do NOT use general knowledge" in n for n in notes)
+    assert not any("does NOT contain a clear answer" in n for n in notes)

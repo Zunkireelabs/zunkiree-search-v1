@@ -64,6 +64,12 @@ def test_subject_words_level_and_named_university_are_read_from_the_question(cat
     assert uni == ["university-of-essex"] and subject_terms(q, catalog, uni) == ("msc", "data", "science") and level_in_text(q) == "master"
 
 
+def test_a_chatty_graduate_degree_question_is_a_master_level_search_with_no_leftover_words(catalog):
+    q = "i am try to go for the graduate degree"
+    assert level_in_text(q) == "master" and subject_terms(q, catalog, []) == ()
+    assert detect_intent(q, catalog) == ("courses", {"level": "master"})
+
+
 def test_longer_university_name_wins_over_the_name_it_contains(catalog):
     assert universities_in_text(catalog, "courses at aston university oncampus") == ["aston-university-oncampus"]
     assert universities_in_text(catalog, "courses at aston university") == ["aston-university"]

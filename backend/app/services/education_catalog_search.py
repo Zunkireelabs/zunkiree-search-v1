@@ -20,7 +20,7 @@ MAX_RESULTS = 6
 LEVEL_LABELS = {"foundation": "Foundation", "bachelor": "Bachelor's", "master": "Master's", "phd": "PhD"}
 
 _LEVEL_WORDS = {
-    "master": ("master", "masters", "master's", "msc", "mba", "llm", "postgraduate", "postgrad", "pg", "ma"),
+    "master": ("master", "masters", "master's", "msc", "mba", "llm", "postgraduate", "postgrad", "graduate", "grad", "pg", "ma"),
     "bachelor": ("bachelor", "bachelors", "bachelor's", "bsc", "beng", "undergraduate", "undergrad", "ug", "ba"),
     "foundation": ("foundation",),
     "phd": ("phd", "doctorate", "doctoral"),
@@ -33,7 +33,7 @@ _DEGREE_ABBREVIATIONS = {"msc", "mba", "llm", "ma", "bsc", "ba", "beng"}
 _STOP = set("""
 a an the and or of in on at for to from with without by about as is are was be do does can could would should will my me i we you your our
 what which who whom where when how why please recommend recommended recommendation suggest suggestions advice help have has had having did doing show tell give find list any some all more most best good top cheap cheapest lowest low high
-want wanted need looking look like study studying studied apply get take taking offer offers offered offering available there here
+want wanted wants need looking look like am im try trying go going goes plan planning planned wish interested interest would love hope hoping hope pursue pursuing join joining do doing study studying studied apply get take taking offer offers offered offering available there here
 course courses program programs programme programmes degree degrees subject subjects university universities college colleges
 fee fees tuition cost costs price prices much many option options choice choices related related another other
 abroad country countries uk england britain united kingdom
