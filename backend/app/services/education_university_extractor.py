@@ -114,16 +114,16 @@ def _requirements(lines: list[str], warnings: list[str]) -> dict[str, dict]:
                 if m:
                     ielts_values.add(float(m.group(1)))
         ielts = ielts_values.pop() if len(ielts_values) == 1 else None
-        if eng and any(l.upper().startswith("IELTS") for l in eng) and ielts is None:
+        if eng and any(row.upper().startswith("IELTS") for row in eng) and ielts is None:
             warnings.append(f"{heading}: IELTS not read as one score; left empty")
         out[heading] = {"ielts": ielts, "percent": percent}
     return out
 
 
 def _parse_courses(lines: list[str], slug: str, source: str, requirements: dict[str, dict], warnings: list[str]) -> list[Course]:
-    start = next((i for i, l in enumerate(lines) if l.startswith("Tuition shown is the published fee")), None)
+    start = next((i for i, line in enumerate(lines) if line.startswith("Tuition shown is the published fee")), None)
     if start is None:
-        coming_soon = any(l.startswith("Course list coming soon") for l in lines)
+        coming_soon = any(line.startswith("Course list coming soon") for line in lines)
         warnings.append("course list not published yet (the page says 'coming soon')" if coming_soon else "no course list found")
         return []
     end = next((i for i in range(start, len(lines)) if lines[i] in _SECTION_END), len(lines))
@@ -211,8 +211,8 @@ def parse_university_page(html: str, *, slug: str, country_id: str, url: str) ->
                                                           "Campus locations"))
     intakes = _months_of(intake_block)
     verified = None
-    for i, l in enumerate(lines):
-        if l.startswith("Information last verified on") and i + 1 < len(lines) and _VERIFIED.fullmatch(lines[i + 1]):
+    for i, line in enumerate(lines):
+        if line.startswith("Information last verified on") and i + 1 < len(lines) and _VERIFIED.fullmatch(lines[i + 1]):
             verified = lines[i + 1]
             break
     if verified is None:
@@ -220,7 +220,7 @@ def parse_university_page(html: str, *, slug: str, country_id: str, url: str) ->
     requirements = _requirements(lines, warnings)
     source = f"Admizz website {url}" + (f" (page says last verified {verified}; not verified by us)" if verified else " (unverified)")
     courses = _parse_courses(lines, slug, url, requirements, warnings)
-    stated = next((int(lines[i + 1]) for i, l in enumerate(lines) if l == "Courses" and i + 1 < len(lines) and lines[i + 1].isdigit()), None)
+    stated = next((int(lines[i + 1]) for i, line in enumerate(lines) if line == "Courses" and i + 1 < len(lines) and lines[i + 1].isdigit()), None)
     if stated is not None and stated != len(courses):
         warnings.append(f"page states {stated} courses, {len(courses)} were read")
     university = University(id=slug, name=name, country_id=country_id, city=city, website=url, intakes=intakes, source=source)
