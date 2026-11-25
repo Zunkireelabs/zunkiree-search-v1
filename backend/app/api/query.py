@@ -1,3 +1,4 @@
+import hmac
 import json
 import logging
 
@@ -12,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models import Customer, QueryLog, DocumentChunk, WidgetConfig
 from app.api.origin_guard import require_allowed_origin
-from app.utils.rate_limit import CHAT_LIMIT, enforce as enforce_rate_limit
+from app.utils.rate_limit import CHAT_LIMIT, enforce as enforce_rate_limit, enforce_session as enforce_session_limit
 from app.utils.log_redaction import question_for_log
 from app.services.query import get_query_service
 from app.services.verification import (
@@ -222,8 +223,8 @@ class QueryRequest(BaseModel):
     )
     channel: str | None = Field(
         None,
-        pattern="^(chat|voice|instagram)$",
-        description="Response channel: 'chat' (default), 'voice', or 'instagram' — selects a response-shape profile",
+        pattern="^(chat|voice|instagram|text)$",
+        description="Response channel: 'chat' (default), 'voice', 'instagram' or 'text' (plain text only, for a server caller such as EdgeX) — selects a response-shape profile",
     )
     # P4 (Orca A2): tenant context from the gateway. All optional; absent = today's behaviour.
     channel_open: bool | None = Field(None, description="False when the channel is closed (no handoff possible)")
@@ -603,7 +604,20 @@ async def submit_query_stream(
     if customer.website_type == "education":
         from app.services.education_memory import is_valid_session_id
         await require_allowed_origin(request, db, customer.id, query_service)
-        enforce_rate_limit(request, query.site_id, "chat", CHAT_LIMIT)
+        edgex_key = request.headers.get("x-edgex-key")
+        server_key = settings.edgex_server_key
+        if edgex_key and server_key:
+            # A trusted EdgeX server: every chat arrives from one address, so count per chat session instead of per address.
+            if not hmac.compare_digest(edgex_key.encode(), server_key.encode()):
+                raise HTTPException(status_code=401, detail={"code": "INVALID_SERVER_KEY", "message": "Invalid server key"})
+            if not is_valid_session_id(query.session_id):
+                raise HTTPException(
+                    status_code=400,
+                    detail={"code": "INVALID_SESSION_ID", "message": "A non-empty session_id (max 100 characters) is required"},
+                )
+            enforce_session_limit(query.site_id, "edgex", query.session_id, CHAT_LIMIT)
+        else:
+            enforce_rate_limit(request, query.site_id, "chat", CHAT_LIMIT)
         if not is_valid_session_id(query.session_id):
             raise HTTPException(
                 status_code=400,

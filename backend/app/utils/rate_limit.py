@@ -60,3 +60,15 @@ def enforce(request, site_id: str, scope: str, limit: int) -> None:
             detail={"code": "RATE_LIMITED", "message": "Too many messages. Please wait a moment and try again."},
             headers={"Retry-After": str(wait)},
         )
+
+
+def enforce_session(site_id: str, scope: str, session_id: str, limit: int) -> None:
+    """Like enforce(), but counted per chat session instead of per visitor address. Used for a trusted server (EdgeX) whose
+    every request comes from one address, so an IP count would make unrelated chats block each other."""
+    wait = _limiter.hit(f"{scope}:{site_id}:{session_id}", limit, WINDOW_SECONDS)
+    if wait is not None:
+        raise HTTPException(
+            status_code=429,
+            detail={"code": "RATE_LIMITED", "message": "Too many messages. Please wait a moment and try again."},
+            headers={"Retry-After": str(wait)},
+        )

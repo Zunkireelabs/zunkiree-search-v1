@@ -173,6 +173,9 @@ class Settings(BaseSettings):
     edgex_hrgoel_tenant_slug: str = ""
     edgex_hrgoel_form_slug: str = ""
     edgex_hrgoel_integration_key: str = ""
+    # Shared secret EdgeX sends as X-EdgeX-Key when it calls /query/stream for an education tenant (website-chat AI replies).
+    # Unset = the header is ignored and the endpoint behaves exactly as before.
+    edgex_server_key: str = ""
 
     # Meta Messaging / Chatbot
     meta_app_id: str = ""
