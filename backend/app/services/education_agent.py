@@ -31,6 +31,7 @@ from app.services.education_actions import validate_block_action
 from app.services.education_grounding import build_support, check_answer
 from app.services.education_followup import RESULT_INTENTS, record_ui_state, resolve_country_switch, resolve_refinement
 from app.services.education_kb_blocks import PENDING_LABELS, SHAPE_TO_BLOCK, classify_shape, kb_block, looks_like_question
+from app.services.education_handoff import TEXT_CHANNEL, blocks_as_text, needs_human_reason
 from app.services.education_leadins import KB_FOUND, KB_MISS, NEEDS_DETAILS, leadin_for
 from app.services.education_memory import DbEducationMemory
 from app.services.education_scores import extract_scores
@@ -316,6 +317,7 @@ class EducationAgentService:
         chunks: list[dict] = []   # knowledge-base text retrieved this turn; also what a free-text answer may rest on
         kb_miss = False
         kb_single_fact = False
+        grounding_empty = False   # the grounding check could back nothing in the reply: same as no knowledge-base answer
         if intent is None and block_action is None and shape_request is None:
             logger.info("[EDU] no_rule_match chars=%d words=%d lang=%s question_like=%s", len(question), len(question.split()),
                         detect_language(question), looks_like_question(question))
@@ -432,6 +434,7 @@ class EducationAgentService:
                 if checked.dropped:
                     logger.info("[EDU] grounding dropped=%d kept=%d kinds=%s", checked.dropped, checked.kept, sorted(set(checked.reasons)))
                 if checked.empty:
+                    grounding_empty = True
                     final_text = KB_MISS   # nothing in the reply could be backed: the honest answer, with the counselor button
                     if settings.education_compositions and not any(b.type == "quick_chips" for b in shown):
                         counselor = counselor_block(catalog)
@@ -525,7 +528,15 @@ class EducationAgentService:
             await memory.append_message(customer_id, session_id, "assistant", full_answer,
                                         [b.model_dump() for b in shown])
 
-        yield {"type": "done", "answer": full_answer, "suggestions": [], "sources": [], "profile_progress": progress(profile)}
+        done = {"type": "done", "answer": full_answer, "suggestions": [], "sources": [], "profile_progress": progress(profile)}
+        if channel == TEXT_CHANNEL:
+            # A plain-text caller (EdgeX) cannot show cards: write them into the answer, and say whether a person should take over.
+            if card_text := blocks_as_text(shown):
+                done["answer"] = (full_answer + "\n\n" if full_answer else "") + card_text
+            reason = needs_human_reason(question=question, kb_miss=kb_miss, grounding_empty=grounding_empty)
+            done["needs_human"] = reason is not None
+            done["needs_human_reason"] = reason
+        yield done
 
 
 _education_agent_service: EducationAgentService | None = None
